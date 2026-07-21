@@ -359,21 +359,20 @@ did not match.
 
 **Type:** Detection.
 
-**Context:** Branch (a) — a normalized event records successful creation of a
-ClusterRoleBinding referencing cluster-admin. Branch (b) — a normalized event
-records a successful modification for which the single source event
-demonstrates a newly added subject to a cluster-admin binding.
+**Context:** A normalized event records successful creation of a
+ClusterRoleBinding referencing cluster-admin.
 
-**Action or condition:** The normalized events are evaluated against the
+**Action or condition:** The normalized event is evaluated against the
 scenario 3 detection definition, alongside a negative-control fixture — a
-metadata-only update to a cluster-admin binding.
+modification of an existing cluster-admin binding, including a subject
+addition.
 
-**Pass conditions:** Both branch (a) and branch (b) match, with a reason
-naming the binding, the referenced role, and, for modifications, the
-added-subject evidence; the negative-control fixture does not match; deletion
-of a ClusterRoleBinding does not match.
+**Pass conditions:** The creation event matches, with a reason naming the
+binding and the referenced role; the negative-control modification fixture
+does not match, regardless of whether it adds a subject; deletion of a
+ClusterRoleBinding does not match.
 
-**Required evidence:** The match reasons recorded for branches (a) and (b);
+**Required evidence:** The match reason recorded for the matching fixture;
 the detection-evaluation result confirming that the negative-control fixture
 did not match.
 

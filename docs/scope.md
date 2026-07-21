@@ -123,8 +123,15 @@ characteristic was present and which documented conditions matched.
 
 ### Scenario 3 — Grant of cluster-admin privileges through a ClusterRoleBinding
 
-Detection of the creation or modification of a ClusterRoleBinding that
-references the cluster-admin ClusterRole.
+Detection of the creation of a ClusterRoleBinding that references the
+cluster-admin ClusterRole.
+
+This scenario is deliberately bounded to creation. Detection of a subject
+being added to an already-existing ClusterRoleBinding is deferred to a
+future release: empirical review of representative Kubernetes audit events
+found that common modification techniques do not reliably provide
+single-event, stateless evidence distinguishing a newly added subject from
+one already present (see "Deferred to later releases").
 
 Security relevance: granting cluster-wide administrative privileges through a
 ClusterRoleBinding is a high-impact privilege escalation and persistence
@@ -238,6 +245,13 @@ unless the approved product scope changes.
 4. Aggregate validation reporting.
 5. Detection-content lifecycle tooling.
 6. Contextual evidence beyond the approved v0.1 minimum evidence set.
+7. Detection of a subject added to an already-existing ClusterRoleBinding
+   referencing the cluster-admin ClusterRole. Empirical review of
+   representative Kubernetes audit events for common ClusterRoleBinding
+   modification techniques found that a single audit event does not
+   reliably provide evidence distinguishing a newly added subject from one
+   already present, without comparison to the binding's prior state (see
+   Scenario 3).
 
 ## Undecided — delegated to requirements or architecture
 

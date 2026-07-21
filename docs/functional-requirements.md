@@ -95,7 +95,7 @@ delivery mechanism.
 - **Scenario-relevant operation** — an operation covered by one of the
   three approved detection scenarios: a request to the pods/exec
   subresource of a pod (scenario 1); a Pod-creation request (scenario 2);
-  or the creation or modification of a ClusterRoleBinding (scenario 3).
+  or the creation of a ClusterRoleBinding (scenario 3).
 - **Normalized event** — the representation of a valid source event after
   transformation into the documented normalized representation (PC-G-003).
 - **Detection definition** — the identifiable definition of one detection
@@ -374,14 +374,9 @@ by the documented detection conditions of the applicable scenario: for
 pods/exec requests, the recorded exec request characteristics conveyed by
 the recorded request URI or equivalent recorded request information; for
 Pod-creation requests, the parts of the Pod specification covered by the
-documented high-risk characteristics; for ClusterRoleBinding creation
+documented high-risk characteristics; and for ClusterRoleBinding creation
 requests, the identity of the target binding, the referenced role, and
-the bound subjects; and for ClusterRoleBinding modification requests that
-may qualify under FR-026, the identity of the target binding and the
-recorded request evidence required to demonstrate explicitly that one or
-more subjects were newly added. Where the single source event cannot
-provide that evidence, the modification cannot qualify as a match in v0.1
-(FR-026).
+the bound subjects.
 
 **Traceability:** UC-002; PER-002; PC-G-003, PC-G-004; PD-04 delegated
 decision 9.
@@ -389,9 +384,7 @@ decision 9.
 **Rationale:** Without this content the three detections cannot evaluate
 their documented conditions against normalized events alone. Validation
 guarantees that a valid scenario-relevant source event carries this
-information (FR-007); normalization must not lose it. The modification
-evidence is that of the single source event; no comparison with a
-previous object state is introduced (FR-026).
+information (FR-007); normalization must not lose it.
 
 ### FR-019 — Normalized-to-source reference
 
@@ -521,32 +514,26 @@ assumptions).
 ### FR-026 — Scenario 3 match — cluster-admin ClusterRoleBinding
 
 The platform shall identify a detection match for scenario 3 when a
-normalized event records either: (a) the creation of a ClusterRoleBinding
-whose role reference is the cluster-admin ClusterRole, where the recorded
-outcome indicates the creation completed successfully; or (b) a successful
-modification of a ClusterRoleBinding for which the single source event
-provides sufficient recorded evidence to demonstrate explicitly that one
-or more subjects were newly added to a binding whose role reference is the
-cluster-admin ClusterRole. A generic update, patch, metadata change, or
-full-object replacement shall not match unless the source event itself
-demonstrates the subject addition; a modification whose single supported
-source event cannot provide that evidence does not match in v0.1. The
-evaluation shall not depend on stateful comparison with a previous state
-of the object. Deletion of a ClusterRoleBinding is not within this
-scenario.
+normalized event records the creation of a ClusterRoleBinding whose role
+reference is the cluster-admin ClusterRole, where the recorded outcome
+indicates the creation completed successfully. Modification of an
+existing ClusterRoleBinding — including a subject addition — is not
+evaluated by this scenario in v0.1 (PD-04 "Deferred to later releases").
+Deletion of a ClusterRoleBinding is not within this scenario.
 
 **Traceability:** UC-002, UC-003; PER-002, PER-001; PC-G-004, PC-G-005;
 PD-04 scenario 3, delegated decision 5, exclusion 10.
 
 **Rationale:** Completes the three approved scenarios with reviewable
-conditions. Requiring single-event proof of a subject addition prevents
-routine updates, patches, and metadata changes from being mislabeled as
-privilege grants; modifications that cannot be proven from one event are
-deliberately out of scope together with the stateful semantics their
-evaluation would require (PD-04 exclusion 10). Scenarios 2 and 3 match
-only successful operations because their approved definitions describe
-completed creation or qualifying modification (PD-04), in contrast to
-scenario 1's request-level definition.
+conditions. Empirical review of representative Kubernetes audit events
+showed that the common ways an existing ClusterRoleBinding is modified do
+not reliably provide single-event, stateless evidence that a subject was
+newly added rather than already present; detecting modification is
+therefore deferred rather than approximated with an unreliable signal
+(PD-04 "Deferred to later releases"). Scenarios 2 and 3 match only
+successful operations because their approved definitions describe
+completed creation (PD-04), in contrast to scenario 1's request-level
+definition.
 
 ## Section F — Match reasons and alert generation
 
@@ -763,9 +750,11 @@ their basis:
 11. **Alert deduplication or suppression** — stateful semantics are
     excluded by PD-04 exclusion 10.
 12. **Stateful comparison of ClusterRoleBinding modifications with
-    previous object states** — excluded by PD-04 exclusion 10; FR-026
-    instead requires single-event proof of a subject addition, and
-    modifications that cannot be proven from one event do not match.
+    previous object states** — excluded by PD-04 exclusion 10; scenario 3
+    evaluates only ClusterRoleBinding creation in v0.1, and detection of a
+    modification (which would require either stateful comparison or an
+    unreliable single-event signal) is deferred to a future release
+    (PD-04 "Deferred to later releases").
 
 ## Resolved product details and remaining delegations
 
@@ -778,9 +767,9 @@ are resolved by this document:
    submissions is delegated to architecture with the delivery mechanism.
 2. **Request outcome and matching** — scenario 1 matches the request
    regardless of its recorded outcome; scenario 2 matches only successful
-   Pod creation; scenario 3 matches only successful creation or successful
-   qualifying modification (FR-024, FR-025, FR-026). The recorded outcome
-   is always conveyed in the alert (FR-029).
+   Pod creation; scenario 3 matches only successful creation (FR-024,
+   FR-025, FR-026). The recorded outcome is always conveyed in the alert
+   (FR-029).
 3. **Scenario 1 interactive-execution characteristics** — standard-input
    streaming enabled, or interactive terminal (TTY) allocation requested
    (FR-024).
@@ -788,11 +777,10 @@ are resolved by this document:
    only; higher-level workload-resource creation is not directly
    evaluated; the bounded high-risk characteristic set is the five
    characteristics enumerated in FR-025.
-5. **Scenario 3 modification** — a modification matches only when the
-   single source event explicitly demonstrates that one or more subjects
-   were newly added to a cluster-admin binding; generic updates, patches,
-   metadata changes, and full-object replacements without that proof do
-   not match; deletion excluded (FR-026).
+5. **Scenario 3 scope** — v0.1 evaluates only the creation of a
+   cluster-admin ClusterRoleBinding; modification (including a subject
+   addition) and deletion are excluded from this scenario in v0.1
+   (FR-026; PD-04 "Deferred to later releases").
 6. **Missing scenario-required information** — a submission recording a
    scenario-relevant operation that lacks the information required to
    evaluate the applicable scenario is classified incomplete and does not
@@ -843,10 +831,6 @@ The following remain delegated to later artifacts:
 3. Deliberately limiting scenario 2 to Pod-creation audit events, without
    direct evaluation of higher-level workload-resource creation, is
    sufficient for the v0.1 demonstration goals (FR-025).
-4. Kubernetes audit events for ClusterRoleBinding modifications can, in at
-   least some recorded forms, demonstrate a subject addition from the
-   single recorded event; where they cannot, the modification deliberately
-   does not match (FR-026).
 
 These assumptions must be validated, refined, or rejected during the
 remaining Phase 0 definition work.
