@@ -264,10 +264,10 @@ revision-1 id, negative-control fixtures.
 
 | ID | Title | Status |
 | --- | --- | --- |
-| ADR-0001 | Modular monolith architecture in Go | Proposed |
-| ADR-0002 | PostgreSQL persistence and database-backed durable worker | Proposed |
-| ADR-0003 | Kubernetes audit-webhook-compatible dual-layer intake | Proposed |
-| ADR-0004 | Version-controlled declarative detection definitions | Proposed |
+| ADR-0001 | Modular monolith architecture in Go | Accepted |
+| ADR-0002 | PostgreSQL persistence and database-backed durable worker | Accepted |
+| ADR-0003 | Kubernetes audit-webhook-compatible dual-layer intake | Accepted |
+| ADR-0004 | Version-controlled declarative detection definitions | Accepted |
 
 ### Deferred implementation choices — not silently decided
 
