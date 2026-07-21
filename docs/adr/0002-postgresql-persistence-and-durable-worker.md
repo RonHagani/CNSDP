@@ -34,9 +34,20 @@ Per-artifact uniqueness (confirmed pattern, not a blanket rule):
 | --- | --- |
 | Validation outcome | one per submission |
 | Normalized event | one per submission |
-| Detection result | one per submission and detection-definition revision |
+| Detection result | one per normalized event and detection-definition revision (equivalent to one per submission and revision) |
 | Alert | one per matching detection result |
-| Traceability link | unique per (source, target, relation) |
+
+The alert-to-source chain (alert → detection result → normalized event →
+submission) is represented entirely by enforced, `NOT NULL` foreign keys —
+`detection_results` references `normalized_events` directly, with no
+separately stored submission reference, so the chain has exactly one path
+and cannot become internally inconsistent. No `traceability_links` table
+is persisted: it would duplicate a relationship the foreign keys already
+state unambiguously. The chain is derived and exposed through joins, not
+read from a denormalized table; a broken-chain verifier built on this
+schema concerns missing, corrupted, or out-of-band-damaged relationships
+(an AC-018-class platform fault), not a routine consistency gap, since the
+schema makes the latter structurally impossible.
 
 ## Consequences
 
