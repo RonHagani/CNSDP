@@ -1,0 +1,781 @@
+{
+  "kind": "EventList",
+  "apiVersion": "audit.k8s.io/v1",
+  "items": [
+    {
+      "kind": "Event",
+      "apiVersion": "audit.k8s.io/v1",
+      "level": "RequestResponse",
+      "auditID": "34b75a57-e1c0-4659-a21f-2d39256f018c",
+      "stage": "ResponseComplete",
+      "requestURI": "/api/v1/namespaces/default/pods/high-risk-pod/exec?command=C%3A%2FProgram+Files%2FGit%2Fusr%2Fbin%2Fsh.exe&command=-c&command=echo+interactive-exec-marker&container=high-risk-container&stdin=true&stdout=true&tty=true",
+      "verb": "get",
+      "user": {
+        "username": "kubernetes-admin",
+        "groups": [
+          "kubeadm:cluster-admins",
+          "system:authenticated"
+        ],
+        "extra": {
+          "authentication.kubernetes.io/credential-id": [
+            "X509SHA256=9a4a60dc1b9f9da18482a661944357f22913875d97fd8808e3c19936537749b2"
+          ]
+        }
+      },
+      "sourceIPs": [
+        "172.19.0.1"
+      ],
+      "userAgent": "kubectl.exe/v1.34.1 (windows/amd64) kubernetes/93248f9",
+      "objectRef": {
+        "resource": "pods",
+        "namespace": "default",
+        "name": "high-risk-pod",
+        "apiVersion": "v1",
+        "subresource": "exec"
+      },
+      "responseStatus": {
+        "metadata": {},
+        "code": 101
+      },
+      "requestReceivedTimestamp": "2026-07-21T15:25:11.901891Z",
+      "stageTimestamp": "2026-07-21T15:25:11.959819Z",
+      "annotations": {
+        "authorization.k8s.io/decision": "allow",
+        "authorization.k8s.io/reason": "RBAC: allowed by ClusterRoleBinding \"kubeadm:cluster-admins\" of ClusterRole \"cluster-admin\" to Group \"kubeadm:cluster-admins\""
+      }
+    },
+    {
+      "kind": "Event",
+      "apiVersion": "audit.k8s.io/v1",
+      "level": "RequestResponse",
+      "auditID": "96fe2eaf-085e-48e6-943a-b33e1e0d6c4f",
+      "stage": "ResponseComplete",
+      "requestURI": "/api/v1/namespaces/default/pods?fieldManager=kubectl-client-side-apply&fieldValidation=Strict",
+      "verb": "create",
+      "user": {
+        "username": "kubernetes-admin",
+        "groups": [
+          "kubeadm:cluster-admins",
+          "system:authenticated"
+        ],
+        "extra": {
+          "authentication.kubernetes.io/credential-id": [
+            "X509SHA256=9a4a60dc1b9f9da18482a661944357f22913875d97fd8808e3c19936537749b2"
+          ]
+        }
+      },
+      "sourceIPs": [
+        "172.19.0.1"
+      ],
+      "userAgent": "kubectl.exe/v1.34.1 (windows/amd64) kubernetes/93248f9",
+      "objectRef": {
+        "resource": "pods",
+        "namespace": "default",
+        "name": "high-risk-pod",
+        "apiVersion": "v1"
+      },
+      "responseStatus": {
+        "metadata": {},
+        "code": 201
+      },
+      "requestObject": {
+        "kind": "Pod",
+        "apiVersion": "v1",
+        "metadata": {
+          "name": "high-risk-pod",
+          "namespace": "default",
+          "labels": {
+            "spike": "audit-intake"
+          },
+          "annotations": {
+            "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Pod\",\"metadata\":{\"annotations\":{},\"labels\":{\"spike\":\"audit-intake\"},\"name\":\"high-risk-pod\",\"namespace\":\"default\"},\"spec\":{\"containers\":[{\"command\":[\"sleep\",\"3600\"],\"image\":\"busybox:1.36\",\"name\":\"high-risk-container\",\"securityContext\":{\"privileged\":true},\"volumeMounts\":[{\"mountPath\":\"/host\",\"name\":\"host-root\"}]}],\"hostIPC\":true,\"hostNetwork\":true,\"hostPID\":true,\"volumes\":[{\"hostPath\":{\"path\":\"/\",\"type\":\"Directory\"},\"name\":\"host-root\"}]}}\n"
+          }
+        },
+        "spec": {
+          "volumes": [
+            {
+              "name": "host-root",
+              "hostPath": {
+                "path": "/",
+                "type": "Directory"
+              }
+            }
+          ],
+          "containers": [
+            {
+              "name": "high-risk-container",
+              "image": "busybox:1.36",
+              "command": [
+                "sleep",
+                "3600"
+              ],
+              "resources": {},
+              "volumeMounts": [
+                {
+                  "name": "host-root",
+                  "mountPath": "/host"
+                }
+              ],
+              "terminationMessagePath": "/dev/termination-log",
+              "terminationMessagePolicy": "File",
+              "imagePullPolicy": "IfNotPresent",
+              "securityContext": {
+                "privileged": true
+              }
+            }
+          ],
+          "restartPolicy": "Always",
+          "terminationGracePeriodSeconds": 30,
+          "dnsPolicy": "ClusterFirst",
+          "hostNetwork": true,
+          "hostPID": true,
+          "hostIPC": true,
+          "securityContext": {},
+          "schedulerName": "default-scheduler",
+          "enableServiceLinks": true
+        },
+        "status": {}
+      },
+      "responseObject": {
+        "kind": "Pod",
+        "apiVersion": "v1",
+        "metadata": {
+          "name": "high-risk-pod",
+          "namespace": "default",
+          "uid": "37f9dd46-7a1b-480c-84e5-ac4fe6f1a71c",
+          "resourceVersion": "607",
+          "generation": 1,
+          "creationTimestamp": "2026-07-21T15:23:33Z",
+          "labels": {
+            "spike": "audit-intake"
+          },
+          "annotations": {
+            "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Pod\",\"metadata\":{\"annotations\":{},\"labels\":{\"spike\":\"audit-intake\"},\"name\":\"high-risk-pod\",\"namespace\":\"default\"},\"spec\":{\"containers\":[{\"command\":[\"sleep\",\"3600\"],\"image\":\"busybox:1.36\",\"name\":\"high-risk-container\",\"securityContext\":{\"privileged\":true},\"volumeMounts\":[{\"mountPath\":\"/host\",\"name\":\"host-root\"}]}],\"hostIPC\":true,\"hostNetwork\":true,\"hostPID\":true,\"volumes\":[{\"hostPath\":{\"path\":\"/\",\"type\":\"Directory\"},\"name\":\"host-root\"}]}}\n"
+          },
+          "managedFields": [
+            {
+              "manager": "kubectl-client-side-apply",
+              "operation": "Update",
+              "apiVersion": "v1",
+              "time": "2026-07-21T15:23:33Z",
+              "fieldsType": "FieldsV1",
+              "fieldsV1": {
+                "f:metadata": {
+                  "f:annotations": {
+                    ".": {},
+                    "f:kubectl.kubernetes.io/last-applied-configuration": {}
+                  },
+                  "f:labels": {
+                    ".": {},
+                    "f:spike": {}
+                  }
+                },
+                "f:spec": {
+                  "f:containers": {
+                    "k:{\"name\":\"high-risk-container\"}": {
+                      ".": {},
+                      "f:command": {},
+                      "f:image": {},
+                      "f:imagePullPolicy": {},
+                      "f:name": {},
+                      "f:resources": {},
+                      "f:securityContext": {
+                        ".": {},
+                        "f:privileged": {}
+                      },
+                      "f:terminationMessagePath": {},
+                      "f:terminationMessagePolicy": {},
+                      "f:volumeMounts": {
+                        ".": {},
+                        "k:{\"mountPath\":\"/host\"}": {
+                          ".": {},
+                          "f:mountPath": {},
+                          "f:name": {}
+                        }
+                      }
+                    }
+                  },
+                  "f:dnsPolicy": {},
+                  "f:enableServiceLinks": {},
+                  "f:hostIPC": {},
+                  "f:hostNetwork": {},
+                  "f:hostPID": {},
+                  "f:restartPolicy": {},
+                  "f:schedulerName": {},
+                  "f:securityContext": {},
+                  "f:terminationGracePeriodSeconds": {},
+                  "f:volumes": {
+                    ".": {},
+                    "k:{\"name\":\"host-root\"}": {
+                      ".": {},
+                      "f:hostPath": {
+                        ".": {},
+                        "f:path": {},
+                        "f:type": {}
+                      },
+                      "f:name": {}
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "spec": {
+          "volumes": [
+            {
+              "name": "host-root",
+              "hostPath": {
+                "path": "/",
+                "type": "Directory"
+              }
+            },
+            {
+              "name": "kube-api-access-tpgr8",
+              "projected": {
+                "sources": [
+                  {
+                    "serviceAccountToken": {
+                      "expirationSeconds": 3607,
+                      "path": "token"
+                    }
+                  },
+                  {
+                    "configMap": {
+                      "name": "kube-root-ca.crt",
+                      "items": [
+                        {
+                          "key": "ca.crt",
+                          "path": "ca.crt"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "downwardAPI": {
+                      "items": [
+                        {
+                          "path": "namespace",
+                          "fieldRef": {
+                            "apiVersion": "v1",
+                            "fieldPath": "metadata.namespace"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "defaultMode": 420
+              }
+            }
+          ],
+          "containers": [
+            {
+              "name": "high-risk-container",
+              "image": "busybox:1.36",
+              "command": [
+                "sleep",
+                "3600"
+              ],
+              "resources": {},
+              "volumeMounts": [
+                {
+                  "name": "host-root",
+                  "mountPath": "/host"
+                },
+                {
+                  "name": "kube-api-access-tpgr8",
+                  "readOnly": true,
+                  "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount"
+                }
+              ],
+              "terminationMessagePath": "/dev/termination-log",
+              "terminationMessagePolicy": "File",
+              "imagePullPolicy": "IfNotPresent",
+              "securityContext": {
+                "privileged": true
+              }
+            }
+          ],
+          "restartPolicy": "Always",
+          "terminationGracePeriodSeconds": 30,
+          "dnsPolicy": "ClusterFirst",
+          "serviceAccountName": "default",
+          "serviceAccount": "default",
+          "hostNetwork": true,
+          "hostPID": true,
+          "hostIPC": true,
+          "securityContext": {},
+          "schedulerName": "default-scheduler",
+          "tolerations": [
+            {
+              "key": "node.kubernetes.io/not-ready",
+              "operator": "Exists",
+              "effect": "NoExecute",
+              "tolerationSeconds": 300
+            },
+            {
+              "key": "node.kubernetes.io/unreachable",
+              "operator": "Exists",
+              "effect": "NoExecute",
+              "tolerationSeconds": 300
+            }
+          ],
+          "priority": 0,
+          "enableServiceLinks": true,
+          "preemptionPolicy": "PreemptLowerPriority"
+        },
+        "status": {
+          "phase": "Pending",
+          "qosClass": "BestEffort"
+        }
+      },
+      "requestReceivedTimestamp": "2026-07-21T15:23:33.525838Z",
+      "stageTimestamp": "2026-07-21T15:23:33.531528Z",
+      "annotations": {
+        "authorization.k8s.io/decision": "allow",
+        "authorization.k8s.io/reason": "RBAC: allowed by ClusterRoleBinding \"kubeadm:cluster-admins\" of ClusterRole \"cluster-admin\" to Group \"kubeadm:cluster-admins\"",
+        "pod-security.kubernetes.io/enforce-policy": "privileged:latest"
+      }
+    },
+    {
+      "kind": "Event",
+      "apiVersion": "audit.k8s.io/v1",
+      "level": "RequestResponse",
+      "auditID": "5eceafdc-699c-4ae8-83b9-c3feb1e28cd5",
+      "stage": "ResponseComplete",
+      "requestURI": "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings?fieldManager=kubectl-client-side-apply&fieldValidation=Strict",
+      "verb": "create",
+      "user": {
+        "username": "kubernetes-admin",
+        "groups": [
+          "kubeadm:cluster-admins",
+          "system:authenticated"
+        ],
+        "extra": {
+          "authentication.kubernetes.io/credential-id": [
+            "X509SHA256=9a4a60dc1b9f9da18482a661944357f22913875d97fd8808e3c19936537749b2"
+          ]
+        }
+      },
+      "sourceIPs": [
+        "172.19.0.1"
+      ],
+      "userAgent": "kubectl.exe/v1.34.1 (windows/amd64) kubernetes/93248f9",
+      "objectRef": {
+        "resource": "clusterrolebindings",
+        "name": "spike-crb-jsonpatch",
+        "apiGroup": "rbac.authorization.k8s.io",
+        "apiVersion": "v1"
+      },
+      "responseStatus": {
+        "metadata": {},
+        "code": 201
+      },
+      "requestObject": {
+        "kind": "ClusterRoleBinding",
+        "apiVersion": "rbac.authorization.k8s.io/v1",
+        "metadata": {
+          "name": "spike-crb-jsonpatch",
+          "annotations": {
+            "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"rbac.authorization.k8s.io/v1\",\"kind\":\"ClusterRoleBinding\",\"metadata\":{\"annotations\":{},\"name\":\"spike-crb-jsonpatch\"},\"roleRef\":{\"apiGroup\":\"rbac.authorization.k8s.io\",\"kind\":\"ClusterRole\",\"name\":\"cluster-admin\"},\"subjects\":[{\"apiGroup\":\"rbac.authorization.k8s.io\",\"kind\":\"User\",\"name\":\"alice@example.com\"}]}\n"
+          }
+        },
+        "subjects": [
+          {
+            "kind": "User",
+            "apiGroup": "rbac.authorization.k8s.io",
+            "name": "alice@example.com"
+          }
+        ],
+        "roleRef": {
+          "apiGroup": "rbac.authorization.k8s.io",
+          "kind": "ClusterRole",
+          "name": "cluster-admin"
+        }
+      },
+      "responseObject": {
+        "kind": "ClusterRoleBinding",
+        "apiVersion": "rbac.authorization.k8s.io/v1",
+        "metadata": {
+          "name": "spike-crb-jsonpatch",
+          "uid": "332ce377-889f-436f-abb9-331006fee8a4",
+          "resourceVersion": "848",
+          "creationTimestamp": "2026-07-21T15:26:24Z",
+          "annotations": {
+            "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"rbac.authorization.k8s.io/v1\",\"kind\":\"ClusterRoleBinding\",\"metadata\":{\"annotations\":{},\"name\":\"spike-crb-jsonpatch\"},\"roleRef\":{\"apiGroup\":\"rbac.authorization.k8s.io\",\"kind\":\"ClusterRole\",\"name\":\"cluster-admin\"},\"subjects\":[{\"apiGroup\":\"rbac.authorization.k8s.io\",\"kind\":\"User\",\"name\":\"alice@example.com\"}]}\n"
+          },
+          "managedFields": [
+            {
+              "manager": "kubectl-client-side-apply",
+              "operation": "Update",
+              "apiVersion": "rbac.authorization.k8s.io/v1",
+              "time": "2026-07-21T15:26:24Z",
+              "fieldsType": "FieldsV1",
+              "fieldsV1": {
+                "f:metadata": {
+                  "f:annotations": {
+                    ".": {},
+                    "f:kubectl.kubernetes.io/last-applied-configuration": {}
+                  }
+                },
+                "f:roleRef": {},
+                "f:subjects": {}
+              }
+            }
+          ]
+        },
+        "subjects": [
+          {
+            "kind": "User",
+            "apiGroup": "rbac.authorization.k8s.io",
+            "name": "alice@example.com"
+          }
+        ],
+        "roleRef": {
+          "apiGroup": "rbac.authorization.k8s.io",
+          "kind": "ClusterRole",
+          "name": "cluster-admin"
+        }
+      },
+      "requestReceivedTimestamp": "2026-07-21T15:26:24.599870Z",
+      "stageTimestamp": "2026-07-21T15:26:24.601990Z",
+      "annotations": {
+        "authorization.k8s.io/decision": "allow",
+        "authorization.k8s.io/reason": "RBAC: allowed by ClusterRoleBinding \"kubeadm:cluster-admins\" of ClusterRole \"cluster-admin\" to Group \"kubeadm:cluster-admins\""
+      }
+    },
+    {
+      "kind": "Event",
+      "apiVersion": "audit.k8s.io/v1",
+      "level": "RequestResponse",
+      "auditID": "e2e3b484-4ce2-4c73-a93f-9cb9d2a8e254",
+      "stage": "ResponseComplete",
+      "requestURI": "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings/spike-crb-fullupdate?fieldManager=kubectl-client-side-apply&fieldValidation=Strict",
+      "verb": "patch",
+      "user": {
+        "username": "kubernetes-admin",
+        "groups": [
+          "kubeadm:cluster-admins",
+          "system:authenticated"
+        ],
+        "extra": {
+          "authentication.kubernetes.io/credential-id": [
+            "X509SHA256=9a4a60dc1b9f9da18482a661944357f22913875d97fd8808e3c19936537749b2"
+          ]
+        }
+      },
+      "sourceIPs": [
+        "172.19.0.1"
+      ],
+      "userAgent": "kubectl.exe/v1.34.1 (windows/amd64) kubernetes/93248f9",
+      "objectRef": {
+        "resource": "clusterrolebindings",
+        "name": "spike-crb-fullupdate",
+        "apiGroup": "rbac.authorization.k8s.io",
+        "apiVersion": "v1"
+      },
+      "responseStatus": {
+        "metadata": {},
+        "code": 200
+      },
+      "requestObject": {
+        "metadata": {
+          "annotations": {
+            "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"rbac.authorization.k8s.io/v1\",\"kind\":\"ClusterRoleBinding\",\"metadata\":{\"annotations\":{},\"name\":\"spike-crb-fullupdate\"},\"roleRef\":{\"apiGroup\":\"rbac.authorization.k8s.io\",\"kind\":\"ClusterRole\",\"name\":\"cluster-admin\"},\"subjects\":[{\"apiGroup\":\"rbac.authorization.k8s.io\",\"kind\":\"User\",\"name\":\"alice@example.com\"},{\"apiGroup\":\"rbac.authorization.k8s.io\",\"kind\":\"User\",\"name\":\"mallory@example.com\"}]}\n"
+          }
+        },
+        "subjects": [
+          {
+            "apiGroup": "rbac.authorization.k8s.io",
+            "kind": "User",
+            "name": "alice@example.com"
+          },
+          {
+            "apiGroup": "rbac.authorization.k8s.io",
+            "kind": "User",
+            "name": "mallory@example.com"
+          }
+        ]
+      },
+      "responseObject": {
+        "kind": "ClusterRoleBinding",
+        "apiVersion": "rbac.authorization.k8s.io/v1",
+        "metadata": {
+          "name": "spike-crb-fullupdate",
+          "uid": "e60e8d9a-2124-4617-8566-ce096a10f3fa",
+          "resourceVersion": "862",
+          "creationTimestamp": "2026-07-21T15:26:24Z",
+          "annotations": {
+            "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"rbac.authorization.k8s.io/v1\",\"kind\":\"ClusterRoleBinding\",\"metadata\":{\"annotations\":{},\"name\":\"spike-crb-fullupdate\"},\"roleRef\":{\"apiGroup\":\"rbac.authorization.k8s.io\",\"kind\":\"ClusterRole\",\"name\":\"cluster-admin\"},\"subjects\":[{\"apiGroup\":\"rbac.authorization.k8s.io\",\"kind\":\"User\",\"name\":\"alice@example.com\"},{\"apiGroup\":\"rbac.authorization.k8s.io\",\"kind\":\"User\",\"name\":\"mallory@example.com\"}]}\n"
+          },
+          "managedFields": [
+            {
+              "manager": "kubectl-client-side-apply",
+              "operation": "Update",
+              "apiVersion": "rbac.authorization.k8s.io/v1",
+              "time": "2026-07-21T15:26:34Z",
+              "fieldsType": "FieldsV1",
+              "fieldsV1": {
+                "f:metadata": {
+                  "f:annotations": {
+                    ".": {},
+                    "f:kubectl.kubernetes.io/last-applied-configuration": {}
+                  }
+                },
+                "f:roleRef": {},
+                "f:subjects": {}
+              }
+            }
+          ]
+        },
+        "subjects": [
+          {
+            "kind": "User",
+            "apiGroup": "rbac.authorization.k8s.io",
+            "name": "alice@example.com"
+          },
+          {
+            "kind": "User",
+            "apiGroup": "rbac.authorization.k8s.io",
+            "name": "mallory@example.com"
+          }
+        ],
+        "roleRef": {
+          "apiGroup": "rbac.authorization.k8s.io",
+          "kind": "ClusterRole",
+          "name": "cluster-admin"
+        }
+      },
+      "requestReceivedTimestamp": "2026-07-21T15:26:34.872394Z",
+      "stageTimestamp": "2026-07-21T15:26:34.875837Z",
+      "annotations": {
+        "authorization.k8s.io/decision": "allow",
+        "authorization.k8s.io/reason": "RBAC: allowed by ClusterRoleBinding \"kubeadm:cluster-admins\" of ClusterRole \"cluster-admin\" to Group \"kubeadm:cluster-admins\""
+      }
+    },
+    {
+      "kind": "Event",
+      "apiVersion": "audit.k8s.io/v1",
+      "level": "RequestResponse",
+      "auditID": "ef29560b-d104-48e9-9179-7b200e4c7ef9",
+      "stage": "ResponseComplete",
+      "requestURI": "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings/spike-crb-mergepatch?fieldManager=kubectl-patch",
+      "verb": "patch",
+      "user": {
+        "username": "kubernetes-admin",
+        "groups": [
+          "kubeadm:cluster-admins",
+          "system:authenticated"
+        ],
+        "extra": {
+          "authentication.kubernetes.io/credential-id": [
+            "X509SHA256=9a4a60dc1b9f9da18482a661944357f22913875d97fd8808e3c19936537749b2"
+          ]
+        }
+      },
+      "sourceIPs": [
+        "172.19.0.1"
+      ],
+      "userAgent": "kubectl.exe/v1.34.1 (windows/amd64) kubernetes/93248f9",
+      "objectRef": {
+        "resource": "clusterrolebindings",
+        "name": "spike-crb-mergepatch",
+        "apiGroup": "rbac.authorization.k8s.io",
+        "apiVersion": "v1"
+      },
+      "responseStatus": {
+        "metadata": {},
+        "code": 200
+      },
+      "requestObject": {
+        "subjects": [
+          {
+            "kind": "User",
+            "name": "alice@example.com",
+            "apiGroup": "rbac.authorization.k8s.io"
+          },
+          {
+            "kind": "User",
+            "name": "mallory@example.com",
+            "apiGroup": "rbac.authorization.k8s.io"
+          }
+        ]
+      },
+      "responseObject": {
+        "kind": "ClusterRoleBinding",
+        "apiVersion": "rbac.authorization.k8s.io/v1",
+        "metadata": {
+          "name": "spike-crb-mergepatch",
+          "uid": "6841bca9-2f48-4fdd-9202-41edd25eb0fd",
+          "resourceVersion": "863",
+          "creationTimestamp": "2026-07-21T15:26:24Z",
+          "annotations": {
+            "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"rbac.authorization.k8s.io/v1\",\"kind\":\"ClusterRoleBinding\",\"metadata\":{\"annotations\":{},\"name\":\"spike-crb-mergepatch\"},\"roleRef\":{\"apiGroup\":\"rbac.authorization.k8s.io\",\"kind\":\"ClusterRole\",\"name\":\"cluster-admin\"},\"subjects\":[{\"apiGroup\":\"rbac.authorization.k8s.io\",\"kind\":\"User\",\"name\":\"alice@example.com\"}]}\n"
+          },
+          "managedFields": [
+            {
+              "manager": "kubectl-client-side-apply",
+              "operation": "Update",
+              "apiVersion": "rbac.authorization.k8s.io/v1",
+              "time": "2026-07-21T15:26:24Z",
+              "fieldsType": "FieldsV1",
+              "fieldsV1": {
+                "f:metadata": {
+                  "f:annotations": {
+                    ".": {},
+                    "f:kubectl.kubernetes.io/last-applied-configuration": {}
+                  }
+                },
+                "f:roleRef": {}
+              }
+            },
+            {
+              "manager": "kubectl-patch",
+              "operation": "Update",
+              "apiVersion": "rbac.authorization.k8s.io/v1",
+              "time": "2026-07-21T15:26:34Z",
+              "fieldsType": "FieldsV1",
+              "fieldsV1": {
+                "f:subjects": {}
+              }
+            }
+          ]
+        },
+        "subjects": [
+          {
+            "kind": "User",
+            "apiGroup": "rbac.authorization.k8s.io",
+            "name": "alice@example.com"
+          },
+          {
+            "kind": "User",
+            "apiGroup": "rbac.authorization.k8s.io",
+            "name": "mallory@example.com"
+          }
+        ],
+        "roleRef": {
+          "apiGroup": "rbac.authorization.k8s.io",
+          "kind": "ClusterRole",
+          "name": "cluster-admin"
+        }
+      },
+      "requestReceivedTimestamp": "2026-07-21T15:26:34.956861Z",
+      "stageTimestamp": "2026-07-21T15:26:34.959179Z",
+      "annotations": {
+        "authorization.k8s.io/decision": "allow",
+        "authorization.k8s.io/reason": "RBAC: allowed by ClusterRoleBinding \"kubeadm:cluster-admins\" of ClusterRole \"cluster-admin\" to Group \"kubeadm:cluster-admins\""
+      }
+    },
+    {
+      "kind": "Event",
+      "apiVersion": "audit.k8s.io/v1",
+      "level": "RequestResponse",
+      "auditID": "1b77ba7f-87ee-4bd3-96c5-7f19023ec5ba",
+      "stage": "ResponseComplete",
+      "requestURI": "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings/spike-crb-jsonpatch?fieldManager=kubectl-patch",
+      "verb": "patch",
+      "user": {
+        "username": "kubernetes-admin",
+        "groups": [
+          "kubeadm:cluster-admins",
+          "system:authenticated"
+        ],
+        "extra": {
+          "authentication.kubernetes.io/credential-id": [
+            "X509SHA256=9a4a60dc1b9f9da18482a661944357f22913875d97fd8808e3c19936537749b2"
+          ]
+        }
+      },
+      "sourceIPs": [
+        "172.19.0.1"
+      ],
+      "userAgent": "kubectl.exe/v1.34.1 (windows/amd64) kubernetes/93248f9",
+      "objectRef": {
+        "resource": "clusterrolebindings",
+        "name": "spike-crb-jsonpatch",
+        "apiGroup": "rbac.authorization.k8s.io",
+        "apiVersion": "v1"
+      },
+      "responseStatus": {
+        "metadata": {},
+        "code": 200
+      },
+      "requestObject": [
+        {
+          "op": "add",
+          "path": "/subjects/-",
+          "value": {
+            "apiGroup": "rbac.authorization.k8s.io",
+            "kind": "User",
+            "name": "mallory@example.com"
+          }
+        }
+      ],
+      "responseObject": {
+        "kind": "ClusterRoleBinding",
+        "apiVersion": "rbac.authorization.k8s.io/v1",
+        "metadata": {
+          "name": "spike-crb-jsonpatch",
+          "uid": "332ce377-889f-436f-abb9-331006fee8a4",
+          "resourceVersion": "864",
+          "creationTimestamp": "2026-07-21T15:26:24Z",
+          "annotations": {
+            "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"rbac.authorization.k8s.io/v1\",\"kind\":\"ClusterRoleBinding\",\"metadata\":{\"annotations\":{},\"name\":\"spike-crb-jsonpatch\"},\"roleRef\":{\"apiGroup\":\"rbac.authorization.k8s.io\",\"kind\":\"ClusterRole\",\"name\":\"cluster-admin\"},\"subjects\":[{\"apiGroup\":\"rbac.authorization.k8s.io\",\"kind\":\"User\",\"name\":\"alice@example.com\"}]}\n"
+          },
+          "managedFields": [
+            {
+              "manager": "kubectl-client-side-apply",
+              "operation": "Update",
+              "apiVersion": "rbac.authorization.k8s.io/v1",
+              "time": "2026-07-21T15:26:24Z",
+              "fieldsType": "FieldsV1",
+              "fieldsV1": {
+                "f:metadata": {
+                  "f:annotations": {
+                    ".": {},
+                    "f:kubectl.kubernetes.io/last-applied-configuration": {}
+                  }
+                },
+                "f:roleRef": {}
+              }
+            },
+            {
+              "manager": "kubectl-patch",
+              "operation": "Update",
+              "apiVersion": "rbac.authorization.k8s.io/v1",
+              "time": "2026-07-21T15:26:35Z",
+              "fieldsType": "FieldsV1",
+              "fieldsV1": {
+                "f:subjects": {}
+              }
+            }
+          ]
+        },
+        "subjects": [
+          {
+            "kind": "User",
+            "apiGroup": "rbac.authorization.k8s.io",
+            "name": "alice@example.com"
+          },
+          {
+            "kind": "User",
+            "apiGroup": "rbac.authorization.k8s.io",
+            "name": "mallory@example.com"
+          }
+        ],
+        "roleRef": {
+          "apiGroup": "rbac.authorization.k8s.io",
+          "kind": "ClusterRole",
+          "name": "cluster-admin"
+        }
+      },
+      "requestReceivedTimestamp": "2026-07-21T15:26:35.037052Z",
+      "stageTimestamp": "2026-07-21T15:26:35.039293Z",
+      "annotations": {
+        "authorization.k8s.io/decision": "allow",
+        "authorization.k8s.io/reason": "RBAC: allowed by ClusterRoleBinding \"kubeadm:cluster-admins\" of ClusterRole \"cluster-admin\" to Group \"kubeadm:cluster-admins\""
+      }
+    }
+  ]
+}
