@@ -7,57 +7,11 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
-
-	"cnsdp/internal/db"
+	"cnsdp/internal/testutil"
 )
 
-func startPostgres(t *testing.T) string {
-	t.Helper()
-	ctx := context.Background()
-
-	container, err := postgres.Run(ctx, "postgres:16-alpine",
-		postgres.WithDatabase("cnsdp_test"),
-		postgres.WithUsername("postgres"),
-		postgres.WithPassword("test"),
-		postgres.BasicWaitStrategies(),
-	)
-	if err != nil {
-		t.Fatalf("start postgres container: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := container.Terminate(context.Background()); err != nil {
-			t.Logf("terminate postgres container: %v", err)
-		}
-	})
-
-	dsn, err := container.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("resolve connection string: %v", err)
-	}
-	return dsn
-}
-
-func migratedConn(t *testing.T) *sql.DB {
-	t.Helper()
-	dsn := startPostgres(t)
-	ctx := context.Background()
-
-	conn, err := db.Connect(ctx, dsn)
-	if err != nil {
-		t.Fatalf("connect: %v", err)
-	}
-	t.Cleanup(func() { conn.Close() })
-
-	if err := db.RunMigrations(conn); err != nil {
-		t.Fatalf("run migrations: %v", err)
-	}
-
-	return conn
-}
-
 func TestMigrations_ApplyExpectedSchema(t *testing.T) {
-	conn := migratedConn(t)
+	conn := testutil.MigratedPostgres(t)
 	ctx := context.Background()
 
 	wantTables := []string{
@@ -110,7 +64,7 @@ func TestMigrations_ApplyExpectedSchema(t *testing.T) {
 }
 
 func TestMigrations_StatusCheckConstraintRejectsInvalidValue(t *testing.T) {
-	conn := migratedConn(t)
+	conn := testutil.MigratedPostgres(t)
 	ctx := context.Background()
 
 	_, err := conn.ExecContext(ctx,
@@ -198,7 +152,7 @@ func resolveSubmissionForAlert(t *testing.T, conn *sql.DB, alertID int64) int64 
 // what makes an already-established alert-to-source chain durable against
 // an out-of-band deletion, not just against a mismatched insert.
 func TestForeignKeys_PreventDeletionOfReferencedArtifact(t *testing.T) {
-	conn := migratedConn(t)
+	conn := testutil.MigratedPostgres(t)
 	ctx := context.Background()
 
 	definitionID := insertDefinition(t, conn, "scenario-1", "rev1")
@@ -243,7 +197,7 @@ func TestForeignKeys_PreventDeletionOfReferencedArtifact(t *testing.T) {
 // chain always, unambiguously, resolves back to its own submission and
 // never to the other one.
 func TestChainResolution_NeverCrossesBetweenSubmissions(t *testing.T) {
-	conn := migratedConn(t)
+	conn := testutil.MigratedPostgres(t)
 
 	definitionID := insertDefinition(t, conn, "scenario-1", "rev1")
 
@@ -267,7 +221,7 @@ func TestChainResolution_NeverCrossesBetweenSubmissions(t *testing.T) {
 // (ADR-0002): a second detection_results row for the same normalized event
 // and detection definition must be rejected by Postgres.
 func TestDetectionResults_UniqueConstraintRejectsDuplicateEvaluation(t *testing.T) {
-	conn := migratedConn(t)
+	conn := testutil.MigratedPostgres(t)
 	ctx := context.Background()
 
 	definitionID := insertDefinition(t, conn, "scenario-1", "rev1")
@@ -283,7 +237,7 @@ func TestDetectionResults_UniqueConstraintRejectsDuplicateEvaluation(t *testing.
 }
 
 func TestMigrations_MatchReasonCheckConstraint(t *testing.T) {
-	conn := migratedConn(t)
+	conn := testutil.MigratedPostgres(t)
 	ctx := context.Background()
 
 	definitionID := insertDefinition(t, conn, "scenario-1", "rev1")
