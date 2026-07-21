@@ -1,7 +1,9 @@
 // Command platform is the single deployable for the Cloud-Native Security
-// Telemetry and Detection Platform (ARCH-01). At this checkpoint it only
-// connects to PostgreSQL and applies migrations — intake, the worker, and
-// every workflow-stage module are not implemented yet.
+// Telemetry and Detection Platform (ARCH-01). At this checkpoint it
+// connects to PostgreSQL, applies migrations, and loads the
+// version-controlled detection definitions (ADR-0004) — intake, the
+// worker's stage handlers beyond validate, and every other
+// workflow-stage module are not implemented yet.
 package main
 
 import (
@@ -10,6 +12,7 @@ import (
 	"os"
 
 	"cnsdp/internal/db"
+	"cnsdp/internal/detection"
 )
 
 func main() {
@@ -30,5 +33,9 @@ func main() {
 		log.Fatalf("run migrations: %v", err)
 	}
 
-	log.Println("database connected and migrations applied")
+	if err := detection.Load(ctx, conn); err != nil {
+		log.Fatalf("load detection definitions: %v", err)
+	}
+
+	log.Println("database connected, migrations applied, detection definitions loaded")
 }

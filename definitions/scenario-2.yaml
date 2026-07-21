@@ -1,0 +1,21 @@
+scenario: scenario-2
+name: High-risk Pod creation
+description: >
+  Detection of the creation of a Pod whose specification includes at least
+  one documented high-risk privilege or host-access characteristic.
+conditions:
+  operation:
+    resource: pods
+    verb: create
+  requires_outcome: success
+  requires_any:
+    - id: privileged_container
+      description: A container in the Pod requests privileged mode.
+    - id: host_network
+      description: The Pod uses the host network.
+    - id: host_pid
+      description: The Pod uses the host process-identifier (PID) namespace.
+    - id: host_ipc
+      description: The Pod uses the host inter-process-communication (IPC) namespace.
+    - id: host_path_volume
+      description: The Pod mounts a volume backed by a host filesystem path.

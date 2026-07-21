@@ -118,7 +118,7 @@ func insertDefinition(t *testing.T, conn *sql.DB, scenario, revision string) int
 	ctx := context.Background()
 	var id int64
 	if err := conn.QueryRowContext(ctx,
-		`INSERT INTO detection_definitions (scenario, revision, conditions) VALUES ($1, $2, '{}') RETURNING id`,
+		`INSERT INTO detection_definitions (scenario, revision, content) VALUES ($1, $2, '{}') RETURNING id`,
 		scenario, revision).Scan(&id); err != nil {
 		t.Fatalf("insert detection definition: %v", err)
 	}

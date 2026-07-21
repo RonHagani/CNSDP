@@ -1,0 +1,14 @@
+scenario: scenario-1
+name: Interactive container exec request
+description: >
+  Detection of a Kubernetes API request to the pods/exec subresource that
+  exhibits documented interactive-execution characteristics.
+conditions:
+  operation:
+    resource: pods
+    subresource: exec
+  requires_any:
+    - id: stdin_streaming
+      description: The exec request enables standard-input streaming.
+    - id: tty_allocation
+      description: The exec request requests interactive terminal (TTY) allocation.

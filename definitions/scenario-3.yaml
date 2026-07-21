@@ -1,0 +1,14 @@
+scenario: scenario-3
+name: Cluster-admin ClusterRoleBinding grant
+description: >
+  Detection of the creation of a ClusterRoleBinding that references the
+  cluster-admin ClusterRole. Modification of an existing binding, including
+  a subject addition, is not evaluated by this scenario in v0.1.
+conditions:
+  operation:
+    resource: clusterrolebindings
+    verb: create
+  requires_outcome: success
+  requires_all:
+    - id: role_ref_cluster_admin
+      description: The ClusterRoleBinding's role reference is the cluster-admin ClusterRole.

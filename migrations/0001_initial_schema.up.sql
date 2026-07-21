@@ -39,7 +39,7 @@ CREATE TABLE detection_definitions (
     id          BIGSERIAL PRIMARY KEY,
     scenario    TEXT NOT NULL,
     revision    TEXT NOT NULL,
-    conditions  JSONB NOT NULL,
+    content     JSONB NOT NULL,
     loaded_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (scenario, revision)
 );
