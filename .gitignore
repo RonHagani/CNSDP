@@ -5,3 +5,15 @@
 # Local reference-environment secrets (docker-compose.yml, .env.example).
 # Never commit real values -- see docs/reference-environment.md.
 .env
+
+# Local build/test artifacts.
+coverage.out
+coverage.html
+tmp/
+
+# Editor and OS metadata.
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

@@ -17,7 +17,7 @@ breadth. See `docs/product.md` for the full charter.
 Phase 1 — Architecture and Implementation. Phase 0 (Product Definition and
 Requirements) is complete and approved; the Phase 1 architecture baseline
 (`docs/architecture.md`, ARCH-01) is approved, and the walking-skeleton
-implementation defined by ARCH-01 §8 is in progress.
+implementation defined by ARCH-01 §8 is complete and locally verified.
 
 Create each project artifact only when it becomes necessary in the approved
 project sequence. Never create empty placeholder documents. Update this section
