@@ -7,6 +7,7 @@ require (
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.43.0
 	go.yaml.in/yaml/v3 v3.0.4
+	k8s.io/api v0.34.9
 	k8s.io/apiserver v0.34.9
 )
 
@@ -77,7 +78,6 @@ require (
 	golang.org/x/text v0.37.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/api v0.34.9 // indirect
 	k8s.io/apimachinery v0.34.9 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/utils v0.0.0-20250604170112-4c0f3b243397 // indirect

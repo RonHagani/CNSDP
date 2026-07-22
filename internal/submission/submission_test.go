@@ -83,6 +83,49 @@ func TestOldestNonTerminal_NoWorkWhenAllEvidenced(t *testing.T) {
 	}
 }
 
+func TestOldestAtStatus_SelectsOldestAtGivenStatus(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	first := seedSubmission(t, db, StatusAdmitted)
+	seedSubmission(t, db, StatusAdmitted) // a second, newer one
+
+	got, err := OldestAtStatus(context.Background(), db, StatusAdmitted)
+	if err != nil {
+		t.Fatalf("oldest at status: %v", err)
+	}
+	if got.ID != first {
+		t.Errorf("selected submission %d, want the oldest (%d)", got.ID, first)
+	}
+}
+
+// TestOldestAtStatus_SkipsOtherStatuses is the direct proof behind the
+// Checkpoint 5 claim-behavior decision: a submission parked at validated
+// (e.g. after a non-valid classification, FR-014) must never be selected
+// by a query for admitted work, even though it is older and even though it
+// is non-terminal by OldestNonTerminal's definition.
+func TestOldestAtStatus_SkipsOtherStatuses(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	seedSubmission(t, db, StatusValidated) // older, but not admitted: must never be selected
+	admitted := seedSubmission(t, db, StatusAdmitted)
+
+	got, err := OldestAtStatus(context.Background(), db, StatusAdmitted)
+	if err != nil {
+		t.Fatalf("oldest at status: %v", err)
+	}
+	if got.ID != admitted {
+		t.Errorf("selected submission %d, want the admitted one (%d)", got.ID, admitted)
+	}
+}
+
+func TestOldestAtStatus_NoWorkWhenNoneAtStatus(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	seedSubmission(t, db, StatusValidated)
+
+	_, err := OldestAtStatus(context.Background(), db, StatusAdmitted)
+	if !errors.Is(err, ErrNoWork) {
+		t.Fatalf("expected ErrNoWork, got %v", err)
+	}
+}
+
 func TestAdvance_Succeeds(t *testing.T) {
 	db := testutil.MigratedPostgres(t)
 	id := seedSubmission(t, db, StatusAdmitted)

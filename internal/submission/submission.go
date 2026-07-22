@@ -111,6 +111,28 @@ func OldestNonTerminal(ctx context.Context, db DB) (*Submission, error) {
 	return s, nil
 }
 
+// OldestAtStatus returns the oldest submission (by id) currently at exactly
+// the given status. Unlike OldestNonTerminal, a status is not "claimable"
+// merely for being non-terminal: a stage's worker handler only knows how to
+// advance a submission from the one status it owns, and some statuses (e.g.
+// validated with a non-valid recorded outcome) are permanently parked short
+// of evidenced (FR-014) without any handler ever claiming them again.
+// Returns ErrNoWork if no submission is currently at that status.
+func OldestAtStatus(ctx context.Context, db DB, status Status) (*Submission, error) {
+	row := db.QueryRowContext(ctx,
+		`SELECT id, status, raw_event, audit_id, audit_stage, created_at
+		 FROM submissions WHERE status = $1 ORDER BY id LIMIT 1`,
+		string(status))
+	s, err := scanSubmission(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNoWork
+	}
+	if err != nil {
+		return nil, fmt.Errorf("submission: select oldest at status %s: %w", status, err)
+	}
+	return s, nil
+}
+
 func scanSubmission(row *sql.Row) (*Submission, error) {
 	var s Submission
 	var status string
