@@ -396,14 +396,21 @@ type Record struct {
 	Event        Event
 }
 
+// DB is the minimal subset of *sql.DB / *sql.Tx Get needs, so a caller
+// can pass either a plain connection or an already-open transaction --
+// e.g. internal/evidence's verification transaction (ADR-0002).
+type DB interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
 // Get retrieves the normalized event already persisted for submissionID.
 // It is the sanctioned way a downstream module reads normalized_events:
 // internal/normalization owns every read and write against this table
 // (see package doc), so a stage that needs the normalized representation
-// -- currently detection evaluation -- calls Get rather than querying the
-// table directly. Returns ErrNotFound if no normalized event has been
-// persisted for this submission yet.
-func Get(ctx context.Context, db *sql.DB, submissionID int64) (*Record, error) {
+// -- detection evaluation, evidence assembly -- calls Get rather than
+// querying the table directly. Returns ErrNotFound if no normalized event
+// has been persisted for this submission yet.
+func Get(ctx context.Context, db DB, submissionID int64) (*Record, error) {
 	var (
 		id      int64
 		content []byte

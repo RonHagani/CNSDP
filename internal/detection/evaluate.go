@@ -247,26 +247,38 @@ func upsertResult(ctx context.Context, tx *sql.Tx, normalizedEventID, definition
 }
 
 // MatchedResult is one matched detection_results row as needed by
-// downstream alert generation (ARCH-01 §2 module 5): the result's own id
-// -- the value alerts.detection_result_id must reference -- and the
-// match reason exactly as it was persisted at evaluation time.
+// downstream alert generation (ARCH-01 §2 module 5) and evidence
+// assembly (module 6): the result's own id -- the value
+// alerts.detection_result_id must reference -- the detection_definitions
+// row it was evaluated against, and the match reason exactly as it was
+// persisted at evaluation time.
 type MatchedResult struct {
-	ID          int64
-	MatchReason MatchReason
+	ID                    int64
+	DetectionDefinitionID int64
+	MatchReason           MatchReason
+}
+
+// DB is the minimal subset of *sql.DB / *sql.Tx MatchedResults and
+// GetDefinition need, so a caller can pass either a plain connection or
+// an already-open transaction -- e.g. internal/evidence's verification
+// transaction (ADR-0002).
+type DB interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }
 
 // MatchedResults returns every matched detection_results row for the
 // given normalized event, ordered by id for determinism. This is the
 // sanctioned way a downstream module reads detection_results:
 // internal/detection owns every read and write against this table (see
-// package doc), so internal/alerting calls this rather than querying the
-// table directly. The match reason is returned exactly as persisted --
-// never re-derived from the currently active definition set, which could
-// disagree with an older persisted result after a definition change
-// (AC-014).
-func MatchedResults(ctx context.Context, db *sql.DB, normalizedEventID int64) ([]MatchedResult, error) {
+// package doc), so internal/alerting and internal/evidence call this
+// rather than querying the table directly. The match reason is returned
+// exactly as persisted -- never re-derived from the currently active
+// definition set, which could disagree with an older persisted result
+// after a definition change (AC-014).
+func MatchedResults(ctx context.Context, db DB, normalizedEventID int64) ([]MatchedResult, error) {
 	rows, err := db.QueryContext(ctx,
-		`SELECT id, match_reason FROM detection_results
+		`SELECT id, detection_definition_id, match_reason FROM detection_results
 		 WHERE normalized_event_id = $1 AND matched
 		 ORDER BY id`,
 		normalizedEventID,
@@ -279,20 +291,58 @@ func MatchedResults(ctx context.Context, db *sql.DB, normalizedEventID int64) ([
 	var out []MatchedResult
 	for rows.Next() {
 		var (
-			id     int64
-			reason []byte
+			id           int64
+			definitionID int64
+			reason       []byte
 		)
-		if err := rows.Scan(&id, &reason); err != nil {
+		if err := rows.Scan(&id, &definitionID, &reason); err != nil {
 			return nil, fmt.Errorf("detection: matched results for normalized event %d: scan: %w", normalizedEventID, err)
 		}
 		var mr MatchReason
 		if err := json.Unmarshal(reason, &mr); err != nil {
 			return nil, fmt.Errorf("detection: matched results for normalized event %d: unmarshal match reason for result %d: %w", normalizedEventID, id, err)
 		}
-		out = append(out, MatchedResult{ID: id, MatchReason: mr})
+		out = append(out, MatchedResult{ID: id, DetectionDefinitionID: definitionID, MatchReason: mr})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("detection: matched results for normalized event %d: %w", normalizedEventID, err)
 	}
 	return out, nil
+}
+
+// ErrDefinitionNotFound is returned by GetDefinition when no
+// detection_definitions row exists for the given id -- normally
+// impossible for an id referenced by a persisted detection_results row,
+// since detection_definition_id is a NOT NULL foreign key.
+var ErrDefinitionNotFound = errors.New("detection: detection definition not found")
+
+// GetDefinition returns the exact detection_definitions row content and
+// revision for id -- the definition a specific persisted detection_result
+// referenced, read back exactly as stored, never re-resolved from the
+// currently active definition set (mirrors MatchedResults' AC-014
+// rationale: a later definition change must not alter what an existing
+// result or alert resolves to). This is the sanctioned way
+// internal/evidence reads detection_definitions content for the evidence
+// inventory's detection-definition artifact.
+func GetDefinition(ctx context.Context, db DB, id int64) (Definition, string, error) {
+	var (
+		revision string
+		content  []byte
+	)
+	err := db.QueryRowContext(ctx,
+		`SELECT revision, content FROM detection_definitions WHERE id = $1`,
+		id,
+	).Scan(&revision, &content)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Definition{}, "", ErrDefinitionNotFound
+	}
+	if err != nil {
+		return Definition{}, "", fmt.Errorf("detection: get definition %d: %w", id, err)
+	}
+
+	var def Definition
+	if err := json.Unmarshal(content, &def); err != nil {
+		return Definition{}, "", fmt.Errorf("detection: get definition %d: unmarshal content: %w", id, err)
+	}
+	return def, revision, nil
 }

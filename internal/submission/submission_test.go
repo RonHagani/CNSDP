@@ -5,6 +5,7 @@ package submission
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"testing"
 
@@ -13,10 +14,11 @@ import (
 
 func seedSubmission(t *testing.T, db DB, status Status) int64 {
 	t.Helper()
+	digest := sha256.Sum256([]byte("{}"))
 	var id int64
 	err := db.QueryRowContext(context.Background(),
-		`INSERT INTO submissions (status, raw_event, audit_id, audit_stage, source_key) VALUES ($1, '{}', 'a', 'ResponseComplete', $2) RETURNING id`,
-		string(status), testutil.UniqueKey(t)).Scan(&id)
+		`INSERT INTO submissions (status, raw_event, audit_id, audit_stage, source_key, raw_event_sha256) VALUES ($1, '{}', 'a', 'ResponseComplete', $2, $3) RETURNING id`,
+		string(status), testutil.UniqueKey(t), digest[:]).Scan(&id)
 	if err != nil {
 		t.Fatalf("seed submission with status %s: %v", status, err)
 	}

@@ -171,17 +171,21 @@ recorded in PD-03:
    Excluded from v0.1. Verification under UC-002 relies on the recorded match
    reasons of matching detection results that produce alerts.
 8. **Definition of contextual evidence** — boundary resolved. The minimum
-   evidence available for the investigation of an alert consists of:
-   1. the source Kubernetes audit event
-   2. the normalized event
-   3. the detection definition and its documented conditions
-   4. the recorded match reason
-   5. the generated alert
-   6. traceability links between these artifacts
+   evidence available for the investigation of an alert consists of six
+   persisted artifacts:
+   1. the source submission (raw event)
+   2. the validation outcome
+   3. the normalized event
+   4. the detection definition and its documented conditions
+   5. the detection result, including its recorded match reason
+   6. the generated alert
 
-   Requirements work defines the required content of each artifact in the
-   minimum evidence set. Additional contextual evidence beyond this minimum
-   is deferred to later releases.
+   Traceability verification — confirming these six artifacts connect
+   correctly and remain unmodified — describes the integrity and
+   connectivity of this set; it is not a seventh artifact. Requirements
+   work defines the required content of each artifact in the minimum
+   evidence set. Additional contextual evidence beyond this minimum is
+   deferred to later releases.
 9. **Validation-outcome review granularity** — boundary resolved.
    Per-submission validation-outcome visibility for telemetry that reaches
    the defined intake is in scope. Aggregate validation reporting is
@@ -285,9 +289,9 @@ unless the approved product scope changes.
 
 1. Kubernetes API audit events provide sufficient source evidence for an
    evidence-backed assessment of the selected scenarios when combined with
-   the normalized event, the detection definition and documented conditions,
-   the recorded match reason, the generated alert, and the traceability links
-   between them (refines PC-A-004).
+   the validation outcome, the normalized event, the detection definition
+   and documented conditions, the detection result and its recorded match
+   reason, and the generated alert (refines PC-A-004).
 2. Three detection scenarios evaluated against individual audit events are
    sufficient to credibly demonstrate the complete PC-005 workflow, including
    for portfolio review (PC-A-002, PC-G-009).

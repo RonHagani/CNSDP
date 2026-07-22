@@ -291,3 +291,52 @@ func Advance(ctx context.Context, db *sql.DB, sub *submission.Submission) error 
 	}
 	return nil
 }
+
+// ErrNotFound is returned by Get when no validation outcome has been
+// persisted for the given submission id.
+var ErrNotFound = errors.New("validation: validation outcome not found")
+
+// Record is one persisted validation_outcomes row: its own id, the
+// submission it classifies, and its recorded Result.
+type Record struct {
+	ID           int64
+	SubmissionID int64
+	Result       Result
+}
+
+// DB is the minimal subset of *sql.DB / *sql.Tx Get needs, so a caller
+// can pass either a plain connection or an already-open transaction --
+// e.g. internal/evidence's verification transaction (ADR-0002).
+type DB interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// Get retrieves the validation outcome already persisted for
+// submissionID. It is the sanctioned way a downstream module reads
+// validation_outcomes: internal/validation owns every read and write
+// against this table (see package doc), so a stage that needs the
+// recorded outcome -- currently evidence assembly -- calls Get rather
+// than querying the table directly. Returns ErrNotFound if no outcome
+// has been persisted for this submission yet.
+func Get(ctx context.Context, db DB, submissionID int64) (*Record, error) {
+	var (
+		id      int64
+		outcome string
+		reason  sql.NullString
+	)
+	err := db.QueryRowContext(ctx,
+		`SELECT id, outcome, reason FROM validation_outcomes WHERE submission_id = $1`,
+		submissionID,
+	).Scan(&id, &outcome, &reason)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("validation: get validation outcome for submission %d: %w", submissionID, err)
+	}
+	return &Record{
+		ID:           id,
+		SubmissionID: submissionID,
+		Result:       Result{Outcome: Outcome(outcome), Reason: reason.String},
+	}, nil
+}

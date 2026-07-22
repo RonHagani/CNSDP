@@ -145,8 +145,8 @@ required by v0.1. *Source:* PD-05 Definitions, FR-023; PD-04 scope decision
 **Match reason** — The recorded explanation of why a matching detection
 result matched: it identifies the detection definition, the documented
 conditions that were satisfied, and the event information that satisfied
-them. One of the six minimum-evidence-set artifacts. *Source:* PD-05
-Definitions; FR-028.
+them. Persisted as part of the detection result, one of the six
+minimum-evidence-set artifacts. *Source:* PD-05 Definitions; FR-028.
 
 ### Alerts and explainability
 
@@ -165,13 +165,16 @@ NFR-031.
 
 ### Evidence and traceability
 
-**Minimum evidence set** — The fixed set of six investigation artifacts
-approved for v0.1: (1) the source Kubernetes audit event, (2) the
-normalized event, (3) the detection definition and its documented
-conditions, (4) the recorded match reason, (5) the generated alert, and (6)
-the traceability links between them. This boundary is fixed for v0.1;
-broader contextual evidence is deferred to later releases. *Source:* PD-04
-scope decision 8; PD-05 FR-031.
+**Minimum evidence set** — The fixed set of six persisted artifacts
+approved for v0.1: (1) the source submission (raw event), (2) the
+validation outcome, (3) the normalized event, (4) the detection
+definition and its documented conditions, (5) the detection result,
+including its recorded match reason, and (6) the generated alert.
+Traceability verification — confirming these six artifacts connect
+correctly and remain unmodified — describes the integrity and
+connectivity of this set; it is not a seventh artifact. This boundary is
+fixed for v0.1; broader contextual evidence is deferred to later
+releases. *Source:* PD-04 scope decision 8; PD-05 FR-031.
 
 **Evidence inventory** — The per-alert account of the six
 minimum-evidence-set artifacts, stating which are available for inspection.

@@ -595,11 +595,13 @@ presentation mechanism is deliberately unstated.
 
 For every alert, the platform shall provide an evidence inventory that
 covers all six artifacts of the approved minimum evidence set — (1) the
-source Kubernetes audit event; (2) the normalized event; (3) the detection
-definition and its documented conditions; (4) the recorded match reason;
-(5) the generated alert; and (6) the traceability links between these
-artifacts — and shall make every available artifact available for
-inspection.
+source submission (raw event); (2) the validation outcome; (3) the
+normalized event; (4) the detection definition and its documented
+conditions; (5) the detection result, including its recorded match
+reason; and (6) the generated alert — and shall make every available
+artifact available for inspection. Traceability verification, confirming
+these six artifacts connect correctly and remain unmodified, describes
+the integrity and connectivity of this set; it is not a seventh artifact.
 
 **Traceability:** UC-002, UC-003; PER-001, PER-002; PC-G-006; PD-04 scope
 decision 8, in-scope 7.
@@ -635,8 +637,10 @@ normalized event that was evaluated, and the source audit event.
 **Traceability:** UC-002, UC-003; PER-001, PER-002; PC-G-007; PD-04
 in-scope 7.
 
-**Rationale:** Traceability by design (PC-P-005). The links are themselves
-artifact (6) of the minimum evidence set.
+**Rationale:** Traceability by design (PC-P-005). Traceability
+verification — confirming these links connect correctly — describes the
+integrity and connectivity of the minimum evidence set; it is not itself
+a numbered artifact of that set.
 
 ### FR-034 — Traceability navigation from alert to source
 

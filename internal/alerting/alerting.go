@@ -140,3 +140,52 @@ func upsertAlert(ctx context.Context, tx *sql.Tx, detectionResultID int64, summa
 	}
 	return nil
 }
+
+// ErrNotFound is returned by Get when no alert has been persisted for the
+// given detection result id.
+var ErrNotFound = errors.New("alerting: alert not found")
+
+// Alert is one persisted alerts row: its own id -- the value
+// internal/traceability's chain walk resolves through -- the detection
+// result it was generated from, and its recorded Summary.
+type Alert struct {
+	ID                int64
+	DetectionResultID int64
+	Summary           Summary
+}
+
+// DB is the minimal subset of *sql.DB / *sql.Tx Get needs, so a caller
+// can pass either a plain connection or an already-open transaction --
+// e.g. internal/evidence's verification transaction (ADR-0002).
+type DB interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// Get retrieves the alert already persisted for detectionResultID. It is
+// the sanctioned way a downstream module reads alerts: internal/alerting
+// owns every read and write against this table (see package doc), so a
+// stage that needs the alert -- currently evidence assembly -- calls Get
+// rather than querying the table directly. Returns ErrNotFound if no
+// alert has been persisted for this detection result yet.
+func Get(ctx context.Context, db DB, detectionResultID int64) (*Alert, error) {
+	var (
+		id  int64
+		raw []byte
+	)
+	err := db.QueryRowContext(ctx,
+		`SELECT id, summary FROM alerts WHERE detection_result_id = $1`,
+		detectionResultID,
+	).Scan(&id, &raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("alerting: get alert for detection result %d: %w", detectionResultID, err)
+	}
+
+	var summary Summary
+	if err := json.Unmarshal(raw, &summary); err != nil {
+		return nil, fmt.Errorf("alerting: get alert for detection result %d: unmarshal summary: %w", detectionResultID, err)
+	}
+	return &Alert{ID: id, DetectionResultID: detectionResultID, Summary: summary}, nil
+}

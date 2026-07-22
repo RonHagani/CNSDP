@@ -3,7 +3,9 @@
 package integration
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"testing"
@@ -87,15 +89,30 @@ func TestMigrations_ApplyExpectedSchema(t *testing.T) {
 		t.Errorf("submissions.source_key is_nullable = %q, want NO", sourceKeyNullable)
 	}
 
+	// raw_event_sha256 must exist, be NOT NULL, and be BYTEA -- migration 0003.
+	var digestNullable, digestType string
+	if err := conn.QueryRowContext(ctx,
+		`SELECT is_nullable, data_type FROM information_schema.columns WHERE table_schema='public' AND table_name='submissions' AND column_name='raw_event_sha256'`,
+	).Scan(&digestNullable, &digestType); err != nil {
+		t.Fatalf("check submissions.raw_event_sha256 existence/nullability/type: %v", err)
+	}
+	if digestNullable != "NO" {
+		t.Errorf("submissions.raw_event_sha256 is_nullable = %q, want NO", digestNullable)
+	}
+	if digestType != "bytea" {
+		t.Errorf("submissions.raw_event_sha256 data_type = %q, want bytea", digestType)
+	}
+
 	definitionID := insertDefinition(t, conn, "scenario-1", "rev-schema-check")
 	submissionID, _, _, _ := seedChain(t, conn, definitionID)
 	var existingKey string
 	if err := conn.QueryRowContext(ctx, `SELECT source_key FROM submissions WHERE id = $1`, submissionID).Scan(&existingKey); err != nil {
 		t.Fatalf("read seeded source_key: %v", err)
 	}
+	dupDigest := sha256.Sum256([]byte("{}"))
 	if _, err := conn.ExecContext(ctx,
-		`INSERT INTO submissions (raw_event, audit_id, audit_stage, source_key) VALUES ('{}', 'b', 'ResponseComplete', $1)`,
-		existingKey,
+		`INSERT INTO submissions (raw_event, audit_id, audit_stage, source_key, raw_event_sha256) VALUES ('{}', 'b', 'ResponseComplete', $1, $2)`,
+		existingKey, dupDigest[:],
 	); err == nil {
 		t.Error("expected a duplicate submissions.source_key to be rejected by the UNIQUE constraint")
 	}
@@ -104,21 +121,24 @@ func TestMigrations_ApplyExpectedSchema(t *testing.T) {
 // TestMigration0002_DownPreservesJSONSemanticsAndUpRestoresBytea drives
 // migration 0002's down/up reversibility directly, rather than only
 // asserting the end-state schema: it seeds a row with deliberately
-// non-canonically-formatted JSON, steps down across 0002, confirms the
-// column reverted to JSONB with the same JSON content (not the same
-// bytes -- JSONB canonicalizes on storage, so byte-for-byte preservation
-// across this lossy rollback is not claimed), steps back up, and confirms
-// raw_event is BYTEA again and source_key still exists, is NOT NULL, and
-// is UNIQUE.
+// non-canonically-formatted JSON, steps down two versions (across 0003 --
+// which depends on raw_event already being BYTEA -- and then 0002
+// itself), confirms the column reverted to JSONB with the same JSON
+// content (not the same bytes -- JSONB canonicalizes on storage, so
+// byte-for-byte preservation across this lossy rollback is not claimed),
+// steps back up two versions, and confirms raw_event is BYTEA again and
+// source_key and raw_event_sha256 both still exist, are NOT NULL, and
+// source_key is still UNIQUE.
 func TestMigration0002_DownPreservesJSONSemanticsAndUpRestoresBytea(t *testing.T) {
 	conn := testutil.MigratedPostgres(t)
 	ctx := context.Background()
 
 	const original = `{"b": 2, "a": 1}` // unsorted keys, internal spacing
+	digest := sha256.Sum256([]byte(original))
 	var id int64
 	if err := conn.QueryRowContext(ctx,
-		`INSERT INTO submissions (raw_event, audit_id, audit_stage, source_key) VALUES ($1, 'a', 'ResponseComplete', $2) RETURNING id`,
-		[]byte(original), testutil.UniqueKey(t),
+		`INSERT INTO submissions (raw_event, audit_id, audit_stage, source_key, raw_event_sha256) VALUES ($1, 'a', 'ResponseComplete', $2, $3) RETURNING id`,
+		[]byte(original), testutil.UniqueKey(t), digest[:],
 	).Scan(&id); err != nil {
 		t.Fatalf("seed row: %v", err)
 	}
@@ -128,8 +148,8 @@ func TestMigration0002_DownPreservesJSONSemanticsAndUpRestoresBytea(t *testing.T
 		t.Fatalf("construct migrator: %v", err)
 	}
 
-	if err := m.Steps(-1); err != nil {
-		t.Fatalf("migrate down across 0002: %v", err)
+	if err := m.Steps(-2); err != nil {
+		t.Fatalf("migrate down across 0003 and 0002: %v", err)
 	}
 
 	dataType := columnDataType(t, conn, "submissions", "raw_event")
@@ -145,8 +165,8 @@ func TestMigration0002_DownPreservesJSONSemanticsAndUpRestoresBytea(t *testing.T
 	}
 	assertSameJSONContent(t, "after down", storedAfterDown, original)
 
-	if err := m.Steps(1); err != nil {
-		t.Fatalf("migrate up across 0002 again: %v", err)
+	if err := m.Steps(2); err != nil {
+		t.Fatalf("migrate up across 0002 and 0003 again: %v", err)
 	}
 
 	dataType = columnDataType(t, conn, "submissions", "raw_event")
@@ -172,15 +192,131 @@ func TestMigration0002_DownPreservesJSONSemanticsAndUpRestoresBytea(t *testing.T
 		t.Errorf("source_key is_nullable after re-migration = %q, want NO", sourceKeyNullable)
 	}
 
+	var digestNullable string
+	if err := conn.QueryRowContext(ctx,
+		`SELECT is_nullable FROM information_schema.columns WHERE table_schema='public' AND table_name='submissions' AND column_name='raw_event_sha256'`,
+	).Scan(&digestNullable); err != nil {
+		t.Fatalf("check raw_event_sha256 existence/nullability after re-migration: %v", err)
+	}
+	if digestNullable != "NO" {
+		t.Errorf("raw_event_sha256 is_nullable after re-migration = %q, want NO", digestNullable)
+	}
+
 	var existingKey string
 	if err := conn.QueryRowContext(ctx, `SELECT source_key FROM submissions WHERE id = $1`, id).Scan(&existingKey); err != nil {
 		t.Fatalf("read existing source_key: %v", err)
 	}
+	dupDigest := sha256.Sum256([]byte("{}"))
 	if _, err := conn.ExecContext(ctx,
-		`INSERT INTO submissions (raw_event, audit_id, audit_stage, source_key) VALUES ('{}', 'b', 'ResponseComplete', $1)`,
-		existingKey,
+		`INSERT INTO submissions (raw_event, audit_id, audit_stage, source_key, raw_event_sha256) VALUES ('{}', 'b', 'ResponseComplete', $1, $2)`,
+		existingKey, dupDigest[:],
 	); err == nil {
 		t.Error("expected a duplicate source_key to still be rejected by the UNIQUE constraint after the down/up round trip")
+	}
+}
+
+// TestMigration0003_DownDropsColumnAndUpRestoresBackfilled drives
+// migration 0003's own down/up reversibility: it seeds a row (present
+// before the round trip, so the up-migration's backfill path is
+// exercised on re-apply, not just its bare ALTER TABLE ADD COLUMN),
+// steps down one version (undoing 0003 only -- 0002 remains applied, so
+// raw_event stays BYTEA throughout), confirms raw_event_sha256 is gone,
+// steps back up, and confirms the column is restored, NOT NULL, and
+// correctly backfilled to sha256(raw_event) for the pre-existing row.
+func TestMigration0003_DownDropsColumnAndUpRestoresBackfilled(t *testing.T) {
+	conn := testutil.MigratedPostgres(t)
+	ctx := context.Background()
+
+	const rawEvent = `{"c":3}`
+	digest := sha256.Sum256([]byte(rawEvent))
+	var id int64
+	if err := conn.QueryRowContext(ctx,
+		`INSERT INTO submissions (raw_event, audit_id, audit_stage, source_key, raw_event_sha256) VALUES ($1, 'a', 'ResponseComplete', $2, $3) RETURNING id`,
+		[]byte(rawEvent), testutil.UniqueKey(t), digest[:],
+	).Scan(&id); err != nil {
+		t.Fatalf("seed row: %v", err)
+	}
+
+	m, err := db.NewMigrator(conn)
+	if err != nil {
+		t.Fatalf("construct migrator: %v", err)
+	}
+
+	if err := m.Steps(-1); err != nil {
+		t.Fatalf("migrate down across 0003: %v", err)
+	}
+
+	var columnExists bool
+	if err := conn.QueryRowContext(ctx,
+		`SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='submissions' AND column_name='raw_event_sha256')`,
+	).Scan(&columnExists); err != nil {
+		t.Fatalf("check raw_event_sha256 absence after down: %v", err)
+	}
+	if columnExists {
+		t.Error("raw_event_sha256 still exists after migrating down across 0003")
+	}
+
+	dataType := columnDataType(t, conn, "submissions", "raw_event")
+	if dataType != "bytea" {
+		t.Errorf("raw_event data_type after down across 0003 only = %q, want unchanged bytea (0002 remains applied)", dataType)
+	}
+
+	if err := m.Steps(1); err != nil {
+		t.Fatalf("migrate up across 0003 again: %v", err)
+	}
+
+	var digestNullable, digestType string
+	if err := conn.QueryRowContext(ctx,
+		`SELECT is_nullable, data_type FROM information_schema.columns WHERE table_schema='public' AND table_name='submissions' AND column_name='raw_event_sha256'`,
+	).Scan(&digestNullable, &digestType); err != nil {
+		t.Fatalf("check raw_event_sha256 existence/nullability/type after re-up: %v", err)
+	}
+	if digestNullable != "NO" {
+		t.Errorf("raw_event_sha256 is_nullable after re-up = %q, want NO", digestNullable)
+	}
+	if digestType != "bytea" {
+		t.Errorf("raw_event_sha256 data_type after re-up = %q, want bytea", digestType)
+	}
+
+	var backfilled []byte
+	if err := conn.QueryRowContext(ctx,
+		`SELECT raw_event_sha256 FROM submissions WHERE id = $1`, id,
+	).Scan(&backfilled); err != nil {
+		t.Fatalf("read raw_event_sha256 after re-up: %v", err)
+	}
+	if !bytes.Equal(backfilled, digest[:]) {
+		t.Errorf("raw_event_sha256 after re-up backfill = %x, want %x (sha256 of the pre-existing raw_event)", backfilled, digest)
+	}
+}
+
+// TestMigrations_RawEventSHA256CheckConstraint proves the digest-shape
+// enforcement at the database boundary (migration 0003): a 32-byte digest
+// is accepted, and both a too-short and a too-long digest are rejected by
+// the octet_length CHECK constraint, independent of any application code
+// path.
+func TestMigrations_RawEventSHA256CheckConstraint(t *testing.T) {
+	conn := testutil.MigratedPostgres(t)
+	ctx := context.Background()
+
+	if _, err := conn.ExecContext(ctx,
+		`INSERT INTO submissions (raw_event, audit_id, audit_stage, source_key, raw_event_sha256) VALUES ('{}', 'a', 'ResponseComplete', $1, $2)`,
+		testutil.UniqueKey(t), make([]byte, 32),
+	); err != nil {
+		t.Fatalf("expected a 32-byte digest to be accepted, got: %v", err)
+	}
+
+	if _, err := conn.ExecContext(ctx,
+		`INSERT INTO submissions (raw_event, audit_id, audit_stage, source_key, raw_event_sha256) VALUES ('{}', 'a', 'ResponseComplete', $1, $2)`,
+		testutil.UniqueKey(t), make([]byte, 31),
+	); err == nil {
+		t.Error("expected a 31-byte digest to be rejected by the octet_length CHECK constraint")
+	}
+
+	if _, err := conn.ExecContext(ctx,
+		`INSERT INTO submissions (raw_event, audit_id, audit_stage, source_key, raw_event_sha256) VALUES ('{}', 'a', 'ResponseComplete', $1, $2)`,
+		testutil.UniqueKey(t), make([]byte, 33),
+	); err == nil {
+		t.Error("expected a 33-byte digest to be rejected by the octet_length CHECK constraint")
 	}
 }
 
@@ -221,17 +357,18 @@ func assertSameJSONContent(t *testing.T, label, got, want string) {
 func TestMigrations_StatusCheckConstraintRejectsInvalidValue(t *testing.T) {
 	conn := testutil.MigratedPostgres(t)
 	ctx := context.Background()
+	digest := sha256.Sum256([]byte("{}"))
 
 	_, err := conn.ExecContext(ctx,
-		`INSERT INTO submissions (status, raw_event, audit_id, audit_stage, source_key) VALUES ($1, '{}', 'a', 'ResponseComplete', $2)`,
-		"not-a-real-status", testutil.UniqueKey(t))
+		`INSERT INTO submissions (status, raw_event, audit_id, audit_stage, source_key, raw_event_sha256) VALUES ($1, '{}', 'a', 'ResponseComplete', $2, $3)`,
+		"not-a-real-status", testutil.UniqueKey(t), digest[:])
 	if err == nil {
 		t.Fatal("expected the status CHECK constraint to reject an invalid value, got no error")
 	}
 
 	_, err = conn.ExecContext(ctx,
-		`INSERT INTO submissions (status, raw_event, audit_id, audit_stage, source_key) VALUES ($1, '{}', 'a', 'ResponseComplete', $2)`,
-		"admitted", testutil.UniqueKey(t))
+		`INSERT INTO submissions (status, raw_event, audit_id, audit_stage, source_key, raw_event_sha256) VALUES ($1, '{}', 'a', 'ResponseComplete', $2, $3)`,
+		"admitted", testutil.UniqueKey(t), digest[:])
 	if err != nil {
 		t.Fatalf("expected a valid status value to be accepted, got: %v", err)
 	}
@@ -243,10 +380,11 @@ func TestMigrations_StatusCheckConstraintRejectsInvalidValue(t *testing.T) {
 func seedChain(t *testing.T, conn *sql.DB, definitionID int64) (submissionID, normalizedEventID, detectionResultID, alertID int64) {
 	t.Helper()
 	ctx := context.Background()
+	digest := sha256.Sum256([]byte("{}"))
 
 	if err := conn.QueryRowContext(ctx,
-		`INSERT INTO submissions (raw_event, audit_id, audit_stage, source_key) VALUES ('{}', 'a', 'ResponseComplete', $1) RETURNING id`,
-		testutil.UniqueKey(t),
+		`INSERT INTO submissions (raw_event, audit_id, audit_stage, source_key, raw_event_sha256) VALUES ('{}', 'a', 'ResponseComplete', $1, $2) RETURNING id`,
+		testutil.UniqueKey(t), digest[:],
 	).Scan(&submissionID); err != nil {
 		t.Fatalf("insert submission: %v", err)
 	}

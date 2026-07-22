@@ -4,6 +4,7 @@ package normalization
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -22,11 +23,12 @@ const validEventJSON = `{"kind":"Event","apiVersion":"audit.k8s.io/v1","auditID"
 
 func seedValidated(t *testing.T, db *sql.DB, rawEvent string) *submission.Submission {
 	t.Helper()
+	digest := sha256.Sum256([]byte(rawEvent))
 	var id int64
 	err := db.QueryRowContext(context.Background(),
-		`INSERT INTO submissions (status, raw_event, audit_id, audit_stage, source_key)
-		 VALUES ('validated', $1, 'a', 'ResponseComplete', $2) RETURNING id`,
-		rawEvent, testutil.UniqueKey(t),
+		`INSERT INTO submissions (status, raw_event, audit_id, audit_stage, source_key, raw_event_sha256)
+		 VALUES ('validated', $1, 'a', 'ResponseComplete', $2, $3) RETURNING id`,
+		rawEvent, testutil.UniqueKey(t), digest[:],
 	).Scan(&id)
 	if err != nil {
 		t.Fatalf("seed validated submission: %v", err)

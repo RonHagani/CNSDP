@@ -194,18 +194,19 @@ func Advance(ctx context.Context, db DB, id int64, from, to Status) error {
 // a separate check-then-act (concurrent admissions of the same key are
 // serialized by Postgres's own row lock on the conflicting row).
 func Admit(ctx context.Context, db DB, rawEvent json.RawMessage, auditID, auditStage string) (int64, error) {
-	key := sourceKey(rawEvent, auditID, auditStage)
+	key := SourceKey(rawEvent, auditID, auditStage)
+	digest := sha256.Sum256(rawEvent)
 	var id int64
 	err := db.QueryRowContext(ctx,
-		`INSERT INTO submissions (raw_event, audit_id, audit_stage, source_key)
-		 VALUES ($1, $2, $3, $4)
+		`INSERT INTO submissions (raw_event, audit_id, audit_stage, source_key, raw_event_sha256)
+		 VALUES ($1, $2, $3, $4, $5)
 		 ON CONFLICT (source_key) DO UPDATE
 		 SET raw_event = EXCLUDED.raw_event
 		 WHERE submissions.raw_event = EXCLUDED.raw_event
 		   AND submissions.audit_id = EXCLUDED.audit_id
 		   AND submissions.audit_stage = EXCLUDED.audit_stage
 		 RETURNING id`,
-		[]byte(rawEvent), auditID, auditStage, key,
+		[]byte(rawEvent), auditID, auditStage, key, digest[:],
 	).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		// The conflicting row exists but its content doesn't match --
@@ -219,14 +220,21 @@ func Admit(ctx context.Context, db DB, rawEvent json.RawMessage, auditID, auditS
 	return id, nil
 }
 
-// sourceKey derives Admit's deterministic dedup key. The "id:"/"raw:"
+// SourceKey derives Admit's deterministic dedup key. The "id:"/"raw:"
 // prefixes keep the two derivation schemes disjoint. The identity-based
 // scheme canonically JSON-encodes the (auditID, auditStage) pair before
 // hashing -- not a delimited concatenation -- because auditID/auditStage
 // come from unconditionally-admitted, possibly-malformed items and cannot
 // be assumed not to contain whatever separator a naive concatenation would
 // pick; JSON's string escaping makes the encoding of the pair injective.
-func sourceKey(rawEvent json.RawMessage, auditID, auditStage string) string {
+//
+// Exported so internal/traceability can re-derive the same key from a
+// submission's currently stored identity fields and compare it against
+// the persisted source_key column, to detect out-of-band audit-identity
+// drift (NFR-017, AC-015) -- source_key itself is never used as a
+// raw_event integrity signal: in the identity-based branch it does not
+// cover raw_event content at all (see migrations/0003_submission_integrity).
+func SourceKey(rawEvent json.RawMessage, auditID, auditStage string) string {
 	if auditID != "" && auditStage != "" {
 		canonical, _ := json.Marshal([2]string{auditID, auditStage}) // marshaling a fixed-size []string cannot fail
 		sum := sha256.Sum256(canonical)

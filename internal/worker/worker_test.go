@@ -4,12 +4,14 @@ package worker
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"testing"
 	"time"
 
+	"cnsdp/internal/alerting"
 	"cnsdp/internal/detection"
 	"cnsdp/internal/normalization"
 	"cnsdp/internal/submission"
@@ -33,12 +35,29 @@ const unsupportedEventJSON = `{"kind":"Pod","apiVersion":"v1"}`
 // outcome-agnostic just like every other tier.
 const benignPodCreateEventJSON = `{"kind":"Event","apiVersion":"audit.k8s.io/v1","auditID":"8f2b6a5e-1111-4c2d-9a3f-0000000000aa","stage":"ResponseComplete","requestURI":"/api/v1/namespaces/default/pods?fieldManager=kubectl-client-side-apply","verb":"create","user":{"username":"kubernetes-admin"},"objectRef":{"resource":"pods","namespace":"default","name":"benign-pod","apiVersion":"v1"},"responseStatus":{"code":201},"requestObject":{"kind":"Pod","apiVersion":"v1","metadata":{"name":"benign-pod","namespace":"default"},"spec":{"containers":[{"name":"benign-container","image":"busybox:1.36","command":["sleep","3600"]}]}},"requestReceivedTimestamp":"2026-07-21T15:23:33.525838Z"}`
 
+// seedAuditIdentity returns a per-call-unique (auditID, auditStage) pair
+// and the source_key genuinely derived from it (submission.SourceKey) --
+// used by every seed helper below instead of an arbitrary unrelated
+// unique string, so a seeded row's source_key is what
+// internal/traceability's chain verifier actually re-derives and expects
+// (Checkpoint 9). auditID being unique per call is what keeps repeated
+// seed calls collision-free under the identity-based derivation branch,
+// exactly as testutil.UniqueKey did before it was repurposed here.
+func seedAuditIdentity(t *testing.T) (auditID, auditStage, sourceKey string) {
+	t.Helper()
+	auditID = testutil.UniqueKey(t)
+	auditStage = "ResponseComplete"
+	return auditID, auditStage, submission.SourceKey(nil, auditID, auditStage)
+}
+
 func seedAdmitted(t *testing.T, db *sql.DB, rawEvent string) int64 {
 	t.Helper()
+	auditID, auditStage, key := seedAuditIdentity(t)
+	digest := sha256.Sum256([]byte(rawEvent))
 	var id int64
 	err := db.QueryRowContext(context.Background(),
-		`INSERT INTO submissions (raw_event, audit_id, audit_stage, source_key) VALUES ($1, 'a', 'ResponseComplete', $2) RETURNING id`,
-		rawEvent, testutil.UniqueKey(t),
+		`INSERT INTO submissions (raw_event, audit_id, audit_stage, source_key, raw_event_sha256) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+		rawEvent, auditID, auditStage, key, digest[:],
 	).Scan(&id)
 	if err != nil {
 		t.Fatalf("seed admitted submission: %v", err)
@@ -48,10 +67,12 @@ func seedAdmitted(t *testing.T, db *sql.DB, rawEvent string) int64 {
 
 func seedAtStatus(t *testing.T, db *sql.DB, status submission.Status, rawEvent string) int64 {
 	t.Helper()
+	auditID, auditStage, key := seedAuditIdentity(t)
+	digest := sha256.Sum256([]byte(rawEvent))
 	var id int64
 	err := db.QueryRowContext(context.Background(),
-		`INSERT INTO submissions (status, raw_event, audit_id, audit_stage, source_key) VALUES ($1, $2, 'a', 'ResponseComplete', $3) RETURNING id`,
-		string(status), rawEvent, testutil.UniqueKey(t),
+		`INSERT INTO submissions (status, raw_event, audit_id, audit_stage, source_key, raw_event_sha256) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+		string(status), rawEvent, auditID, auditStage, key, digest[:],
 	).Scan(&id)
 	if err != nil {
 		t.Fatalf("seed submission at status %s: %v", status, err)
@@ -64,11 +85,13 @@ func seedAtStatus(t *testing.T, db *sql.DB, status submission.Status, rawEvent s
 // instead of relying on real wall-clock gaps between INSERT statements.
 func seedAtStatusWithCreatedAt(t *testing.T, db *sql.DB, status submission.Status, rawEvent string, createdAt time.Time) int64 {
 	t.Helper()
+	auditID, auditStage, key := seedAuditIdentity(t)
+	digest := sha256.Sum256([]byte(rawEvent))
 	var id int64
 	err := db.QueryRowContext(context.Background(),
-		`INSERT INTO submissions (status, raw_event, audit_id, audit_stage, source_key, created_at)
-		 VALUES ($1, $2, 'a', 'ResponseComplete', $3, $4) RETURNING id`,
-		string(status), rawEvent, testutil.UniqueKey(t), createdAt,
+		`INSERT INTO submissions (status, raw_event, audit_id, audit_stage, source_key, raw_event_sha256, created_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+		string(status), rawEvent, auditID, auditStage, key, digest[:], createdAt,
 	).Scan(&id)
 	if err != nil {
 		t.Fatalf("seed submission at status %s with created_at %s: %v", status, createdAt, err)
@@ -137,6 +160,33 @@ func seedEvaluatedWithCreatedAt(t *testing.T, db *sql.DB, rawEvent string, creat
 	}
 	if err := detection.Advance(context.Background(), db, sub); err != nil {
 		t.Fatalf("seed detection evaluation: %v", err)
+	}
+	return id
+}
+
+// seedAlertedWithCreatedAt seeds a submission at alerted status, with
+// explicit created_at, together with the validation_outcomes,
+// normalized_events, detection_results, and alerts rows a real upstream
+// pipeline run would have produced for it -- required for evidence
+// dispatch to have a complete, verifiable inventory (evidence.Advance
+// reads the validation outcome through validation.Get). detection.Load
+// must already have run against db before calling this.
+func seedAlertedWithCreatedAt(t *testing.T, db *sql.DB, rawEvent string, createdAt time.Time) int64 {
+	t.Helper()
+	id := seedEvaluatedWithCreatedAt(t, db, rawEvent, createdAt)
+
+	if _, err := db.ExecContext(context.Background(),
+		`INSERT INTO validation_outcomes (submission_id, outcome, reason) VALUES ($1, 'valid', NULL)`, id,
+	); err != nil {
+		t.Fatalf("seed validation outcome: %v", err)
+	}
+
+	sub, err := submission.Get(context.Background(), db, id)
+	if err != nil {
+		t.Fatalf("get seeded submission: %v", err)
+	}
+	if err := alerting.Advance(context.Background(), db, sub); err != nil {
+		t.Fatalf("seed alert generation: %v", err)
 	}
 	return id
 }
@@ -395,6 +445,58 @@ func TestProcessOne_AdvancesEvaluatedSubmission_NoMatch_ZeroAlertsButAlerted(t *
 	}
 }
 
+// --- Evidence dispatch (Checkpoint 9): ProcessOne selects and dispatches
+// only -- the persistence and transaction behavior of the evidence stage
+// itself belongs to internal/evidence's own tests.
+
+func TestProcessOne_AdvancesOldestAlertedSubmission_WhenNothingElsePending(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	if err := detection.Load(context.Background(), db); err != nil {
+		t.Fatalf("detection.Load: %v", err)
+	}
+	id := seedAlertedWithCreatedAt(t, db, validEventJSON, time.Now())
+
+	if err := ProcessOne(context.Background(), db); err != nil {
+		t.Fatalf("ProcessOne: %v", err)
+	}
+
+	got, err := submission.Get(context.Background(), db, id)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status != submission.StatusEvidenced {
+		t.Errorf("status = %q, want %q", got.Status, submission.StatusEvidenced)
+	}
+}
+
+// TestProcessOne_AdvancesAlertedSubmission_ZeroAlerts_VacuouslyEvidenced
+// proves the locked Checkpoint 9 decision at the dispatch level too: a
+// submission with zero alerts has an empty evidence-inventory set, which
+// still verifies vacuously as a successfully completed stage.
+func TestProcessOne_AdvancesAlertedSubmission_ZeroAlerts_VacuouslyEvidenced(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	if err := detection.Load(context.Background(), db); err != nil {
+		t.Fatalf("detection.Load: %v", err)
+	}
+	id := seedAlertedWithCreatedAt(t, db, benignPodCreateEventJSON, time.Now())
+
+	if n := countAlerts(t, db, id); n != 0 {
+		t.Fatalf("precondition failed: alerts rows = %d, want 0", n)
+	}
+
+	if err := ProcessOne(context.Background(), db); err != nil {
+		t.Fatalf("ProcessOne: %v", err)
+	}
+
+	got, err := submission.Get(context.Background(), db, id)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status != submission.StatusEvidenced {
+		t.Errorf("status = %q, want %q (unconditional advance)", got.Status, submission.StatusEvidenced)
+	}
+}
+
 // --- Cross-tier scheduling fairness (Checkpoint 6/7): eligibility
 // ordering is genuinely age-based across all three claimable tiers, with
 // no tier given blanket priority over another.
@@ -537,6 +639,42 @@ func TestProcessOne_OldestEvaluated_IsNotStarvedByNewerAdmitted(t *testing.T) {
 	}
 	if gotOlder.Status != submission.StatusAlerted {
 		t.Errorf("older evaluated submission status = %q, want %q (must not be starved)", gotOlder.Status, submission.StatusAlerted)
+	}
+
+	gotNewer, err := submission.Get(context.Background(), db, newerAdmitted)
+	if err != nil {
+		t.Fatalf("get newer: %v", err)
+	}
+	if gotNewer.Status != submission.StatusAdmitted {
+		t.Errorf("newer admitted submission status = %q, want unchanged %q", gotNewer.Status, submission.StatusAdmitted)
+	}
+}
+
+// TestProcessOne_OldestAlerted_IsNotStarvedByNewerAdmitted extends the
+// no-starvation guarantee to the fifth tier added in Checkpoint 9: an
+// older alerted submission awaiting evidence verification must be claimed
+// ahead of a newer admitted one.
+func TestProcessOne_OldestAlerted_IsNotStarvedByNewerAdmitted(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	if err := detection.Load(context.Background(), db); err != nil {
+		t.Fatalf("detection.Load: %v", err)
+	}
+	older := time.Now().Add(-1 * time.Hour)
+	newer := time.Now()
+
+	olderAlerted := seedAlertedWithCreatedAt(t, db, validEventJSON, older)
+	newerAdmitted := seedAtStatusWithCreatedAt(t, db, submission.StatusAdmitted, validEventJSON, newer)
+
+	if err := ProcessOne(context.Background(), db); err != nil {
+		t.Fatalf("ProcessOne: %v", err)
+	}
+
+	gotOlder, err := submission.Get(context.Background(), db, olderAlerted)
+	if err != nil {
+		t.Fatalf("get older: %v", err)
+	}
+	if gotOlder.Status != submission.StatusEvidenced {
+		t.Errorf("older alerted submission status = %q, want %q (must not be starved)", gotOlder.Status, submission.StatusEvidenced)
 	}
 
 	gotNewer, err := submission.Get(context.Background(), db, newerAdmitted)

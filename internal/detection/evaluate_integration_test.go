@@ -4,6 +4,7 @@ package detection
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -35,11 +36,12 @@ func seedNormalized(t *testing.T, db *sql.DB, rawEvent string) *submission.Submi
 		t.Fatalf("marshal normalized content: %v", err)
 	}
 
+	digest := sha256.Sum256([]byte(rawEvent))
 	var id int64
 	err = db.QueryRowContext(context.Background(),
-		`INSERT INTO submissions (status, raw_event, audit_id, audit_stage, source_key)
-		 VALUES ('normalized', $1, 'a', 'ResponseComplete', $2) RETURNING id`,
-		rawEvent, testutil.UniqueKey(t),
+		`INSERT INTO submissions (status, raw_event, audit_id, audit_stage, source_key, raw_event_sha256)
+		 VALUES ('normalized', $1, 'a', 'ResponseComplete', $2, $3) RETURNING id`,
+		rawEvent, testutil.UniqueKey(t), digest[:],
 	).Scan(&id)
 	if err != nil {
 		t.Fatalf("seed normalized submission: %v", err)

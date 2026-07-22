@@ -4,6 +4,7 @@ package validation
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"errors"
 	"testing"
@@ -24,10 +25,11 @@ const unsupportedEventJSON = `{"kind":"Pod","apiVersion":"v1"}`
 
 func seedAdmitted(t *testing.T, db *sql.DB, rawEvent string) *submission.Submission {
 	t.Helper()
+	digest := sha256.Sum256([]byte(rawEvent))
 	var id int64
 	err := db.QueryRowContext(context.Background(),
-		`INSERT INTO submissions (raw_event, audit_id, audit_stage, source_key) VALUES ($1, 'a', 'ResponseComplete', $2) RETURNING id`,
-		rawEvent, testutil.UniqueKey(t),
+		`INSERT INTO submissions (raw_event, audit_id, audit_stage, source_key, raw_event_sha256) VALUES ($1, 'a', 'ResponseComplete', $2, $3) RETURNING id`,
+		rawEvent, testutil.UniqueKey(t), digest[:],
 	).Scan(&id)
 	if err != nil {
 		t.Fatalf("seed admitted submission: %v", err)
@@ -257,5 +259,39 @@ func TestAdvance_CancelledContext_NoPartialEffects(t *testing.T) {
 	}
 	if n := countValidationOutcomes(t, db, sub.ID); n != 0 {
 		t.Errorf("validation_outcomes rows = %d, want 0 (no partial effects)", n)
+	}
+}
+
+// --- Get (Checkpoint 9): the sanctioned read internal/evidence uses to
+// include the persisted validation outcome as one of the six
+// minimum-evidence-set artifacts.
+
+func TestGet_ReturnsPersistedOutcome(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	sub := seedAdmitted(t, db, validEventJSON)
+
+	if err := Advance(context.Background(), db, sub); err != nil {
+		t.Fatalf("Advance: %v", err)
+	}
+
+	got, err := Get(context.Background(), db, sub.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.SubmissionID != sub.ID {
+		t.Errorf("SubmissionID = %d, want %d", got.SubmissionID, sub.ID)
+	}
+	if got.Result.Outcome != OutcomeValid {
+		t.Errorf("Result.Outcome = %q, want %q", got.Result.Outcome, OutcomeValid)
+	}
+}
+
+func TestGet_NotFoundBeforeAdvance(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	sub := seedAdmitted(t, db, validEventJSON)
+
+	_, err := Get(context.Background(), db, sub.ID)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Get: expected ErrNotFound, got %v", err)
 	}
 }

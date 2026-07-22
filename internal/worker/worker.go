@@ -4,13 +4,15 @@
 // owns no table itself and contains no stage business logic of its own —
 // dispatch delegates entirely to each stage module's own Advance
 // function (internal/validation, internal/normalization,
-// internal/detection, internal/alerting), each of which owns every read
-// and write against its own artifact table. The read-only join in
-// oldestEligible is an orchestration-only exception to "no module reads
-// another module's table directly": it never writes any table and
-// contains no stage business logic, only the claim predicate needed to
-// select work. Stage handlers for evidence, and every other
-// workflow-stage module beyond alerting, are not implemented yet.
+// internal/detection, internal/alerting, internal/evidence), each of
+// which owns every read and write against its own artifact table (or, for
+// internal/evidence, no table of its own -- see its package doc). The
+// read-only join in oldestEligible is an orchestration-only exception to
+// "no module reads another module's table directly": it never writes any
+// table and contains no stage business logic, only the claim predicate
+// needed to select work. internal/evidence is the last workflow-stage
+// module; every other module beyond it (retrieval, diagnostics) is not
+// implemented yet.
 package worker
 
 import (
@@ -21,6 +23,7 @@ import (
 
 	"cnsdp/internal/alerting"
 	"cnsdp/internal/detection"
+	"cnsdp/internal/evidence"
 	"cnsdp/internal/normalization"
 	"cnsdp/internal/submission"
 	"cnsdp/internal/validation"
@@ -54,13 +57,15 @@ func ProcessOne(ctx context.Context, db *sql.DB) error {
 		return detection.Advance(ctx, db, sub)
 	case submission.StatusEvaluated:
 		return alerting.Advance(ctx, db, sub)
+	case submission.StatusAlerted:
+		return evidence.Advance(ctx, db, sub)
 	default:
 		return fmt.Errorf("worker: claimed submission %d has unexpected status %q", sub.ID, sub.Status)
 	}
 }
 
 // oldestEligible selects the single oldest submission this worker can
-// currently advance, across four eligibility conditions:
+// currently advance, across five eligibility conditions:
 //
 //   - status = admitted (every admitted submission needs validation),
 //   - status = validated with a recorded valid outcome (FR-014: only a
@@ -69,19 +74,25 @@ func ProcessOne(ctx context.Context, db *sql.DB) error {
 //     handler that ever claims them again),
 //   - status = normalized (every normalized submission needs detection
 //     evaluation; no outcome gate applies here since normalization
-//     unconditionally produces one normalized event per valid submission), or
+//     unconditionally produces one normalized event per valid submission),
 //   - status = evaluated (every evaluated submission needs alert
 //     generation; no outcome gate applies here either -- the
 //     evaluated -> alerted transition is unconditional, since a
 //     submission with zero matching detection results still completes
-//     alert-generation processing, just with zero alerts produced).
+//     alert-generation processing, just with zero alerts produced), or
+//   - status = alerted (every alerted submission needs evidence
+//     verification; no outcome gate applies here either -- the
+//     alerted -> evidenced transition is unconditional, since a
+//     submission with zero alerts has an empty evidence-inventory set,
+//     which still verifies vacuously as a successfully completed stage).
 //
 // Ordering is by submission creation order (created_at), with id as the
 // deterministic tie-breaker for rows created in the same instant. No
 // stage is given blanket priority over another: under sustained intake,
 // an "admitted always wins" policy would starve eligible validated,
-// normalized, or evaluated submissions indefinitely, so eligibility is
-// decided by age across all four conditions together, not by stage.
+// normalized, evaluated, or alerted submissions indefinitely, so
+// eligibility is decided by age across all five conditions together, not
+// by stage.
 //
 // This is a read-only join against validation_outcomes -- a table
 // internal/validation owns -- solely to evaluate the claim predicate
@@ -97,10 +108,11 @@ func oldestEligible(ctx context.Context, db *sql.DB) (*submission.Submission, er
 		    OR (s.status = $2 AND v.outcome = $3)
 		    OR s.status = $4
 		    OR s.status = $5
+		    OR s.status = $6
 		 ORDER BY s.created_at, s.id
 		 LIMIT 1`,
 		string(submission.StatusAdmitted), string(submission.StatusValidated), string(validation.OutcomeValid),
-		string(submission.StatusNormalized), string(submission.StatusEvaluated),
+		string(submission.StatusNormalized), string(submission.StatusEvaluated), string(submission.StatusAlerted),
 	)
 
 	var sub submission.Submission
