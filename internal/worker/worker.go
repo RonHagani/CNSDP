@@ -10,9 +10,9 @@
 // read-only join in oldestEligible is an orchestration-only exception to
 // "no module reads another module's table directly": it never writes any
 // table and contains no stage business logic, only the claim predicate
-// needed to select work. internal/evidence is the last workflow-stage
-// module; every other module beyond it (retrieval, diagnostics) is not
-// implemented yet.
+// needed to select work. All nine ARCH-01 §2 workflow modules are
+// implemented; worker is the orchestration layer that drives submissions
+// through them, not a stage module itself.
 //
 // Run (Checkpoint 11) is the continuous loop cmd/platform starts: it
 // calls ProcessOne's underlying claim-and-dispatch repeatedly until ctx is
