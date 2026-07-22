@@ -1,9 +1,10 @@
 // Command platform is the single deployable for the Cloud-Native Security
 // Telemetry and Detection Platform (ARCH-01). It connects to PostgreSQL,
 // applies migrations, loads the version-controlled detection definitions
-// (ADR-0004), serves the telemetry admission endpoint (module 1) and the
-// alert retrieval endpoint (module 8, ARCH-01 §2), and runs the durable
-// worker's continuous processing loop (module 1-6 orchestration,
+// (ADR-0004), serves the telemetry admission endpoint (module 1), the
+// alert retrieval endpoint (module 8), and the unauthenticated readiness
+// endpoint (module 9, ARCH-01 §2), and runs the durable worker's
+// continuous processing loop (module 1-6 orchestration,
 // internal/worker.Run) that drives admitted submissions through
 // validated -> normalized -> evaluated -> alerted -> evidenced
 // unattended -- completing ARCH-01 §8's walking skeleton end to end in
@@ -27,6 +28,7 @@ import (
 
 	"cnsdp/internal/db"
 	"cnsdp/internal/detection"
+	"cnsdp/internal/diagnostics"
 	"cnsdp/internal/intake"
 	"cnsdp/internal/retrieval"
 	"cnsdp/internal/worker"
@@ -88,6 +90,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle("POST /v1/audit-events", &intake.Handler{DB: conn, Token: token, MaxBodyBytes: maxBodyBytes})
 	mux.Handle("GET /v1/alerts/{id}", &retrieval.Handler{DB: conn, Token: token})
+	mux.Handle("GET /readyz", &diagnostics.Handler{DB: conn})
 
 	srv := &http.Server{
 		Addr:              addr,

@@ -20,6 +20,7 @@ import (
 	"cnsdp/internal/alerting"
 	"cnsdp/internal/auth"
 	"cnsdp/internal/detection"
+	"cnsdp/internal/diagnostics"
 	"cnsdp/internal/evidence"
 	"cnsdp/internal/normalization"
 )
@@ -37,6 +38,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !auth.Bearer(r.Header.Get("Authorization"), h.Token) {
+		diagnostics.LogAccessDenied(r)
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}

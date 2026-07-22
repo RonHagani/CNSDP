@@ -19,6 +19,7 @@ import (
 	auditv1 "k8s.io/apiserver/pkg/apis/audit/v1"
 
 	"cnsdp/internal/auth"
+	"cnsdp/internal/diagnostics"
 	"cnsdp/internal/submission"
 )
 
@@ -49,7 +50,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !auth.Bearer(r.Header.Get("Authorization"), h.Token) {
-		slog.Warn("intake: rejected unauthorized submission attempt", "remote_addr", r.RemoteAddr)
+		diagnostics.LogAccessDenied(r)
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
