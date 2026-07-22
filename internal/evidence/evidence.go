@@ -1,12 +1,22 @@
 // Package evidence implements the evidence inventory module (ARCH-01 §2
 // module 6): FR-031 through FR-035's per-alert account of the six
-// minimum-evidence-set artifacts, verified complete before a submission
-// may advance from alerted to evidenced. It owns no artifact table of its
-// own -- exactly like internal/traceability, every artifact it reads
-// comes through the owning module's sanctioned read API
-// (internal/submission, internal/validation, internal/normalization,
-// internal/detection, internal/alerting, internal/traceability), never by
-// querying another module's table directly.
+// minimum-evidence-set artifacts. It owns no artifact table of its own --
+// exactly like internal/traceability, every artifact it reads comes
+// through the owning module's sanctioned read API (internal/submission,
+// internal/validation, internal/normalization, internal/detection,
+// internal/alerting, internal/traceability), never by querying another
+// module's table directly.
+//
+// Two entry points build an Inventory, with deliberately different
+// contracts: Advance is fail-fast -- it gates the alerted -> evidenced
+// transition, so any missing artifact aborts the whole transaction and
+// leaves the submission at alerted. Compose is best-effort -- it serves
+// internal/retrieval's read-only presentation of an alert (FR-030,
+// FR-034), so a missing or unavailable artifact is marked unavailable and
+// composition continues, making the gap visible (FR-035) rather than
+// turning it into an error. Compose must never be used to weaken or
+// bypass Advance's gating contract, and Advance must never be relaxed to
+// match Compose's tolerance.
 package evidence
 
 import (
@@ -172,6 +182,108 @@ func assembleInventory(ctx context.Context, tx *sql.Tx, sub *submission.Submissi
 	chain, err := traceability.VerifyAlert(ctx, tx, alert.ID)
 	if err != nil {
 		return Inventory{}, fmt.Errorf("verify traceability chain for alert %d: %w", alert.ID, err)
+	}
+	inv.Chain = chain
+
+	return inv, nil
+}
+
+// ErrNotFound is returned by Compose when alertID does not resolve to an
+// existing alert -- the one gap Compose treats as absence of the whole
+// subject, not a partial result (internal/retrieval maps this to 404).
+var ErrNotFound = errors.New("evidence: alert not found")
+
+// Compose assembles the best-effort six-artifact Inventory for alertID,
+// for read-only presentation by internal/retrieval (FR-030, FR-034,
+// FR-035). Unlike Advance, Compose never opens a transaction, writes
+// nothing, and does not fail just because one artifact is missing or
+// unavailable: each of the six reads is attempted independently, and a
+// missing one is recorded as unavailable in the returned Inventory rather
+// than aborting composition -- so a genuine gap is reported visibly
+// (FR-035, UC-003's "insufficient or unavailable" alternative outcome)
+// instead of being hidden behind an error.
+//
+// Compose returns ErrNotFound only when alertID itself does not resolve
+// (internal/traceability.Locate finds no such alert) -- the one case
+// there is no subject to compose a partial Inventory for. Any other
+// non-nil error reflects a genuine read failure (context cancellation,
+// database connectivity, or similar), never a missing downstream
+// artifact.
+func Compose(ctx context.Context, db *sql.DB, alertID int64) (*Inventory, error) {
+	loc, err := traceability.Locate(ctx, db, alertID)
+	if errors.Is(err, traceability.ErrNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("evidence: compose alert %d: %w", alertID, err)
+	}
+
+	inv := &Inventory{AlertID: alertID}
+
+	sub, err := submission.Get(ctx, db, loc.SubmissionID)
+	switch {
+	case errors.Is(err, submission.ErrNotFound):
+	case err != nil:
+		return nil, fmt.Errorf("evidence: compose alert %d: get submission: %w", alertID, err)
+	default:
+		inv.RawEvent = sub.RawEvent
+		inv.SourceEventAvailable = len(sub.RawEvent) > 0
+	}
+
+	vr, err := validation.Get(ctx, db, loc.SubmissionID)
+	switch {
+	case errors.Is(err, validation.ErrNotFound):
+	case err != nil:
+		return nil, fmt.Errorf("evidence: compose alert %d: get validation outcome: %w", alertID, err)
+	default:
+		inv.ValidationOutcome = vr.Result
+		inv.ValidationOutcomeAvailable = true
+	}
+
+	rec, err := normalization.Get(ctx, db, loc.SubmissionID)
+	switch {
+	case errors.Is(err, normalization.ErrNotFound):
+	case err != nil:
+		return nil, fmt.Errorf("evidence: compose alert %d: get normalized event: %w", alertID, err)
+	default:
+		inv.NormalizedEvent = rec.Event
+		inv.NormalizedEventAvailable = true
+	}
+
+	result, err := detection.GetResult(ctx, db, loc.DetectionResultID)
+	switch {
+	case errors.Is(err, detection.ErrResultNotFound):
+	case err != nil:
+		return nil, fmt.Errorf("evidence: compose alert %d: get detection result: %w", alertID, err)
+	default:
+		inv.MatchReason = result.MatchReason
+		inv.DetectionResultAvailable = true
+
+		def, revision, err := detection.GetDefinition(ctx, db, result.DetectionDefinitionID)
+		switch {
+		case errors.Is(err, detection.ErrDefinitionNotFound):
+		case err != nil:
+			return nil, fmt.Errorf("evidence: compose alert %d: get detection definition: %w", alertID, err)
+		default:
+			inv.Definition = def
+			inv.DefinitionRevision = revision
+			inv.DefinitionAvailable = true
+		}
+	}
+
+	alert, err := alerting.Get(ctx, db, loc.DetectionResultID)
+	switch {
+	case errors.Is(err, alerting.ErrNotFound):
+	case err != nil:
+		return nil, fmt.Errorf("evidence: compose alert %d: get alert: %w", alertID, err)
+	default:
+		inv.AlertSummary = alert.Summary
+		inv.AlertAvailable = true
+	}
+
+	chain, err := traceability.VerifyAlert(ctx, db, alertID)
+	if err != nil {
+		return nil, fmt.Errorf("evidence: compose alert %d: verify traceability: %w", alertID, err)
 	}
 	inv.Chain = chain
 

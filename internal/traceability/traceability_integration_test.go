@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"errors"
 	"testing"
 
 	"cnsdp/internal/submission"
@@ -145,5 +146,41 @@ func TestVerifyAlert_AuditIdentityChangedWithoutSourceKeyUpdate(t *testing.T) {
 	}
 	if got.FailedLink != "source_key" {
 		t.Errorf("FailedLink = %q, want %q", got.FailedLink, "source_key")
+	}
+}
+
+// --- Locate (Checkpoint 10): the reverse-lookup internal/evidence.Compose
+// uses to resolve the ids it needs from an alert id, without reading
+// artifact content itself.
+
+func TestLocate_ResolvesChain(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	alertID, submissionID := seedChain(t, db, `{"a":1}`, "audit-1", "ResponseComplete")
+
+	var wantDetectionResultID int64
+	if err := db.QueryRowContext(context.Background(),
+		`SELECT detection_result_id FROM alerts WHERE id = $1`, alertID,
+	).Scan(&wantDetectionResultID); err != nil {
+		t.Fatalf("read expected detection_result_id: %v", err)
+	}
+
+	got, err := Locate(context.Background(), db, alertID)
+	if err != nil {
+		t.Fatalf("Locate: %v", err)
+	}
+	if got.DetectionResultID != wantDetectionResultID {
+		t.Errorf("DetectionResultID = %d, want %d", got.DetectionResultID, wantDetectionResultID)
+	}
+	if got.SubmissionID != submissionID {
+		t.Errorf("SubmissionID = %d, want %d", got.SubmissionID, submissionID)
+	}
+}
+
+func TestLocate_NonexistentAlert(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+
+	_, err := Locate(context.Background(), db, 999999)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Locate: expected ErrNotFound, got %v", err)
 	}
 }

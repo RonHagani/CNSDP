@@ -9,18 +9,16 @@ package intake
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
-	"strings"
 
 	auditv1 "k8s.io/apiserver/pkg/apis/audit/v1"
 
+	"cnsdp/internal/auth"
 	"cnsdp/internal/submission"
 )
 
@@ -50,7 +48,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !authorized(r.Header.Get("Authorization"), h.Token) {
+	if !auth.Bearer(r.Header.Get("Authorization"), h.Token) {
 		slog.Warn("intake: rejected unauthorized submission attempt", "remote_addr", r.RemoteAddr)
 		w.WriteHeader(http.StatusUnauthorized)
 		return
@@ -152,20 +150,4 @@ func extractIdentity(raw json.RawMessage) (auditID, stage string) {
 		return "", ""
 	}
 	return string(ev.AuditID), string(ev.Stage)
-}
-
-// authorized checks the shared bearer token, hashing both the supplied and
-// configured token to a fixed-length SHA-256 digest before
-// subtle.ConstantTimeCompare -- comparing variable-length slices directly
-// would return early on a length mismatch, leaking timing information
-// about how close a guess's length is (PC-P-008: the platform protects
-// itself).
-func authorized(header, token string) bool {
-	const prefix = "Bearer "
-	if !strings.HasPrefix(header, prefix) {
-		return false
-	}
-	supplied := sha256.Sum256([]byte(strings.TrimPrefix(header, prefix)))
-	want := sha256.Sum256([]byte(token))
-	return subtle.ConstantTimeCompare(supplied[:], want[:]) == 1
 }

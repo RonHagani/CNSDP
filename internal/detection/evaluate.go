@@ -346,3 +346,39 @@ func GetDefinition(ctx context.Context, db DB, id int64) (Definition, string, er
 	}
 	return def, revision, nil
 }
+
+// ErrResultNotFound is returned by GetResult when no detection_results row
+// exists for the given id.
+var ErrResultNotFound = errors.New("detection: detection result not found")
+
+// GetResult returns a single detection_results row by its own id, read
+// back exactly as persisted -- the reverse-lookup counterpart to
+// MatchedResults (which is keyed by normalized_event_id, the forward-flow
+// direction). This is the sanctioned way a downstream module reads one
+// specific detection result once it has resolved the id through
+// internal/traceability.Locate (internal/evidence, via
+// internal/retrieval).
+func GetResult(ctx context.Context, db DB, id int64) (MatchedResult, error) {
+	var (
+		definitionID int64
+		reason       []byte
+	)
+	err := db.QueryRowContext(ctx,
+		`SELECT detection_definition_id, match_reason FROM detection_results WHERE id = $1`,
+		id,
+	).Scan(&definitionID, &reason)
+	if errors.Is(err, sql.ErrNoRows) {
+		return MatchedResult{}, ErrResultNotFound
+	}
+	if err != nil {
+		return MatchedResult{}, fmt.Errorf("detection: get result %d: %w", id, err)
+	}
+
+	var mr MatchReason
+	if reason != nil {
+		if err := json.Unmarshal(reason, &mr); err != nil {
+			return MatchedResult{}, fmt.Errorf("detection: get result %d: unmarshal match reason: %w", id, err)
+		}
+	}
+	return MatchedResult{ID: id, DetectionDefinitionID: definitionID, MatchReason: mr}, nil
+}

@@ -107,3 +107,42 @@ func VerifyAlert(ctx context.Context, db DB, alertID int64) (Result, error) {
 
 	return Result{Intact: true}, nil
 }
+
+// ErrNotFound is returned by Locate when alertID does not resolve to an
+// existing alert.
+var ErrNotFound = errors.New("traceability: alert not found")
+
+// Locator resolves the ids internal/evidence needs to fetch each
+// artifact's content through its owning module's own sanctioned read.
+// Locate itself never reads artifact content -- only the links between
+// artifacts, which is exactly the cross-table join exception ARCH-01 §4
+// grants this module; content ownership and reading remain with each
+// artifact's own module (internal/detection, internal/alerting, etc.).
+type Locator struct {
+	DetectionResultID int64
+	SubmissionID      int64
+}
+
+// Locate resolves alertID's position in the traceability chain -- alerts
+// -> detection_results -> normalized_events -> submissions -- in one
+// join, the same cross-table read VerifyAlert performs. Returns
+// ErrNotFound if alertID does not exist.
+func Locate(ctx context.Context, db DB, alertID int64) (Locator, error) {
+	var loc Locator
+	err := db.QueryRowContext(ctx,
+		`SELECT r.id, s.id
+		 FROM alerts a
+		 JOIN detection_results r ON r.id = a.detection_result_id
+		 JOIN normalized_events n ON n.id = r.normalized_event_id
+		 JOIN submissions s ON s.id = n.submission_id
+		 WHERE a.id = $1`,
+		alertID,
+	).Scan(&loc.DetectionResultID, &loc.SubmissionID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Locator{}, ErrNotFound
+	}
+	if err != nil {
+		return Locator{}, fmt.Errorf("traceability: locate alert %d: %w", alertID, err)
+	}
+	return loc, nil
+}

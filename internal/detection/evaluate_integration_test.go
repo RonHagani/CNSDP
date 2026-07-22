@@ -368,3 +368,54 @@ func TestAdvance_MissingActiveDefinitions_ReturnsClearError(t *testing.T) {
 		t.Errorf("status = %q, want unchanged %q", got.Status, submission.StatusNormalized)
 	}
 }
+
+// --- GetResult (Checkpoint 10): the reverse-lookup counterpart to
+// MatchedResults, used by internal/evidence.Compose once
+// internal/traceability.Locate has resolved a detection_results id from
+// an alert id.
+
+func TestGetResult_ReturnsPersistedResult(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	if err := Load(context.Background(), db); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	sub := seedNormalized(t, db, validEventJSON)
+	if err := Advance(context.Background(), db, sub); err != nil {
+		t.Fatalf("Advance: %v", err)
+	}
+
+	rec, err := normalization.Get(context.Background(), db, sub.ID)
+	if err != nil {
+		t.Fatalf("normalization.Get: %v", err)
+	}
+	matches, err := MatchedResults(context.Background(), db, rec.ID)
+	if err != nil {
+		t.Fatalf("MatchedResults: %v", err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("precondition failed: %d matches, want 1", len(matches))
+	}
+
+	got, err := GetResult(context.Background(), db, matches[0].ID)
+	if err != nil {
+		t.Fatalf("GetResult: %v", err)
+	}
+	if got.ID != matches[0].ID {
+		t.Errorf("ID = %d, want %d", got.ID, matches[0].ID)
+	}
+	if got.DetectionDefinitionID != matches[0].DetectionDefinitionID {
+		t.Errorf("DetectionDefinitionID = %d, want %d", got.DetectionDefinitionID, matches[0].DetectionDefinitionID)
+	}
+	if got.MatchReason.Scenario != "scenario-1" {
+		t.Errorf("MatchReason.Scenario = %q, want scenario-1", got.MatchReason.Scenario)
+	}
+}
+
+func TestGetResult_NotFound(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+
+	_, err := GetResult(context.Background(), db, 999999)
+	if !errors.Is(err, ErrResultNotFound) {
+		t.Fatalf("GetResult: expected ErrResultNotFound, got %v", err)
+	}
+}

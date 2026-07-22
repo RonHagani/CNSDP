@@ -2,9 +2,8 @@
 // Telemetry and Detection Platform (ARCH-01). At this checkpoint it
 // connects to PostgreSQL, applies migrations, loads the version-controlled
 // detection definitions (ADR-0004), and serves the telemetry admission
-// endpoint (module 1, ARCH-01 §2) — the worker's stage handlers beyond
-// validate, and every other workflow-stage module, are not implemented
-// yet, and the worker's processing loop is not started here yet either.
+// endpoint (module 1) and the alert retrieval endpoint (module 8, ARCH-01
+// §2) — the worker's processing loop is not started here yet.
 package main
 
 import (
@@ -18,6 +17,7 @@ import (
 	"cnsdp/internal/db"
 	"cnsdp/internal/detection"
 	"cnsdp/internal/intake"
+	"cnsdp/internal/retrieval"
 )
 
 func main() {
@@ -62,6 +62,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("POST /v1/audit-events", &intake.Handler{DB: conn, Token: token, MaxBodyBytes: maxBodyBytes})
+	mux.Handle("GET /v1/alerts/{id}", &retrieval.Handler{DB: conn, Token: token})
 
 	srv := &http.Server{
 		Addr:              addr,

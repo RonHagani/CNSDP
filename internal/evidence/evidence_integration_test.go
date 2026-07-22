@@ -272,3 +272,126 @@ func TestAdvance_RetryAfterSuccess_ConflictSafe(t *testing.T) {
 		t.Errorf("status = %q, want unchanged %q", got.Status, submission.StatusEvidenced)
 	}
 }
+
+// --- Compose (Checkpoint 10): the best-effort read path internal/retrieval
+// uses, deliberately separate from Advance's fail-fast gating contract.
+
+func alertIDForSubmission(t *testing.T, db *sql.DB, submissionID int64) int64 {
+	t.Helper()
+	var alertID int64
+	err := db.QueryRowContext(context.Background(),
+		`SELECT a.id FROM alerts a
+		 JOIN detection_results r ON r.id = a.detection_result_id
+		 JOIN normalized_events n ON n.id = r.normalized_event_id
+		 WHERE n.submission_id = $1`, submissionID,
+	).Scan(&alertID)
+	if err != nil {
+		t.Fatalf("resolve alert id for submission %d: %v", submissionID, err)
+	}
+	return alertID
+}
+
+func TestCompose_MatchedAlert_ReturnsCompleteInventory(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	if err := detection.Load(context.Background(), db); err != nil {
+		t.Fatalf("detection.Load: %v", err)
+	}
+	sub := seedAlerted(t, db, validEventJSON, "34b75a57-e1c0-4659-a21f-2d39256f018c", "ResponseComplete")
+	alertID := alertIDForSubmission(t, db, sub.ID)
+
+	inv, err := Compose(context.Background(), db, alertID)
+	if err != nil {
+		t.Fatalf("Compose: %v", err)
+	}
+	if !inv.Complete() {
+		t.Fatalf("inventory not complete: %+v", inv)
+	}
+	if inv.AlertID != alertID {
+		t.Errorf("AlertID = %d, want %d", inv.AlertID, alertID)
+	}
+	if !inv.Chain.Intact {
+		t.Error("Chain.Intact = false, want true")
+	}
+}
+
+func TestCompose_NonexistentAlert_ReturnsErrNotFound(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+
+	_, err := Compose(context.Background(), db, 999999)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Compose: expected ErrNotFound, got %v", err)
+	}
+}
+
+// TestCompose_MissingValidationOutcome_StillComposesRestOfInventory is the
+// direct proof of the locked Checkpoint 10 decision: Compose is
+// best-effort, not fail-fast. A validation_outcomes row deleted out of
+// band (possible without violating any foreign key, since nothing
+// references it) must not abort composition of the other five artifacts.
+func TestCompose_MissingValidationOutcome_StillComposesRestOfInventory(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	if err := detection.Load(context.Background(), db); err != nil {
+		t.Fatalf("detection.Load: %v", err)
+	}
+	sub := seedAlerted(t, db, validEventJSON, "34b75a57-e1c0-4659-a21f-2d39256f018c", "ResponseComplete")
+	alertID := alertIDForSubmission(t, db, sub.ID)
+
+	if _, err := db.ExecContext(context.Background(),
+		`DELETE FROM validation_outcomes WHERE submission_id = $1`, sub.ID,
+	); err != nil {
+		t.Fatalf("delete validation outcome: %v", err)
+	}
+
+	inv, err := Compose(context.Background(), db, alertID)
+	if err != nil {
+		t.Fatalf("Compose: %v", err)
+	}
+	if inv.ValidationOutcomeAvailable {
+		t.Error("ValidationOutcomeAvailable = true, want false after out-of-band deletion")
+	}
+	if !inv.SourceEventAvailable || !inv.NormalizedEventAvailable || !inv.DefinitionAvailable ||
+		!inv.DetectionResultAvailable || !inv.AlertAvailable {
+		t.Errorf("expected every other artifact still available, got %+v", inv)
+	}
+	if inv.Complete() {
+		t.Error("Complete() = true, want false (validation outcome missing)")
+	}
+}
+
+// TestCompose_TamperedRawEvent_ReportsChainNotIntactButStillComposes
+// proves the same best-effort behavior for a failed traceability
+// verification: the gap is reported in Chain, not turned into an error
+// or allowed to suppress the rest of the inventory.
+func TestCompose_TamperedRawEvent_ReportsChainNotIntactButStillComposes(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	if err := detection.Load(context.Background(), db); err != nil {
+		t.Fatalf("detection.Load: %v", err)
+	}
+	sub := seedAlerted(t, db, validEventJSON, "34b75a57-e1c0-4659-a21f-2d39256f018c", "ResponseComplete")
+	alertID := alertIDForSubmission(t, db, sub.ID)
+
+	if _, err := db.ExecContext(context.Background(),
+		`UPDATE submissions SET raw_event = $1 WHERE id = $2`,
+		[]byte(`{"tampered":true}`), sub.ID,
+	); err != nil {
+		t.Fatalf("tamper raw_event: %v", err)
+	}
+
+	inv, err := Compose(context.Background(), db, alertID)
+	if err != nil {
+		t.Fatalf("Compose: %v", err)
+	}
+	if inv.Chain.Intact {
+		t.Error("Chain.Intact = true after raw_event tampering, want false")
+	}
+	if inv.Chain.FailedLink != "raw_event_sha256" {
+		t.Errorf("Chain.FailedLink = %q, want raw_event_sha256", inv.Chain.FailedLink)
+	}
+	if !inv.ValidationOutcomeAvailable || !inv.NormalizedEventAvailable || !inv.DefinitionAvailable ||
+		!inv.DetectionResultAvailable || !inv.AlertAvailable {
+		t.Errorf("expected the other five artifacts still available despite the chain failure, got %+v", inv)
+	}
+	if inv.Complete() {
+		t.Error("Complete() = true, want false (chain not intact)")
+	}
+}

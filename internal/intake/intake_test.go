@@ -94,28 +94,6 @@ func TestExtractIdentity_NonEventShapedItemReturnsEmpty(t *testing.T) {
 	}
 }
 
-func TestAuthorized(t *testing.T) {
-	const token = "secret-token"
-	cases := []struct {
-		name   string
-		header string
-		want   bool
-	}{
-		{"correct token", "Bearer secret-token", true},
-		{"incorrect token", "Bearer wrong-token", false},
-		{"missing header", "", false},
-		{"malformed prefix", "secret-token", false},
-		{"wrong scheme", "Basic secret-token", false},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if got := authorized(c.header, token); got != c.want {
-				t.Errorf("authorized(%q, ...) = %v, want %v", c.header, got, c.want)
-			}
-		})
-	}
-}
-
 type errorReader struct{ err error }
 
 func (r errorReader) Read(p []byte) (int, error) { return 0, r.err }
