@@ -1,0 +1,34 @@
+# Version control and CI-irrelevant metadata -- never belongs in a build
+# context or image.
+.git
+.gitignore
+.github
+
+# Secrets -- never sent to the Docker daemon or baked into a layer.
+.env
+
+# Local build output and coverage artifacts.
+/platform
+/platform.exe
+*.exe
+*.test
+coverage.out
+coverage.html
+tmp/
+
+# Editor and OS metadata.
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Claude Code local settings -- not part of the application.
+.claude/
+
+# Documentation and historical spikes: not imported by cmd/platform and
+# not referenced by any go:embed directive (only migrations/*.sql and
+# definitions/*.yaml are embedded, and both directories are preserved).
+docs/
+spikes/
+*.md
