@@ -26,6 +26,13 @@ const validEventJSON = `{"kind":"Event","apiVersion":"audit.k8s.io/v1","auditID"
 // prove the worker's claim behavior is outcome-agnostic.
 const unsupportedEventJSON = `{"kind":"Pod","apiVersion":"v1"}`
 
+// benignPodCreateEventJSON is a valid, scenario-2-shaped pod-creation
+// event whose Pod specification carries none of scenario-2's five
+// documented high-risk characteristics -- a legitimate non-match
+// (AC-013 branch (a)), used to prove the evaluated -> alerted dispatch is
+// outcome-agnostic just like every other tier.
+const benignPodCreateEventJSON = `{"kind":"Event","apiVersion":"audit.k8s.io/v1","auditID":"8f2b6a5e-1111-4c2d-9a3f-0000000000aa","stage":"ResponseComplete","requestURI":"/api/v1/namespaces/default/pods?fieldManager=kubectl-client-side-apply","verb":"create","user":{"username":"kubernetes-admin"},"objectRef":{"resource":"pods","namespace":"default","name":"benign-pod","apiVersion":"v1"},"responseStatus":{"code":201},"requestObject":{"kind":"Pod","apiVersion":"v1","metadata":{"name":"benign-pod","namespace":"default"},"spec":{"containers":[{"name":"benign-container","image":"busybox:1.36","command":["sleep","3600"]}]}},"requestReceivedTimestamp":"2026-07-21T15:23:33.525838Z"}`
+
 func seedAdmitted(t *testing.T, db *sql.DB, rawEvent string) int64 {
 	t.Helper()
 	var id int64
@@ -114,6 +121,26 @@ func seedNormalizedWithCreatedAt(t *testing.T, db *sql.DB, rawEvent string, crea
 	return id
 }
 
+// seedEvaluatedWithCreatedAt seeds a submission at evaluated status, with
+// explicit created_at, together with the normalized_events and
+// detection_results rows a real normalization.Advance + detection.Advance
+// run would have produced for it -- required for alert-generation
+// dispatch to have something to evaluate. detection.Load must already
+// have run against db before calling this.
+func seedEvaluatedWithCreatedAt(t *testing.T, db *sql.DB, rawEvent string, createdAt time.Time) int64 {
+	t.Helper()
+	id := seedNormalizedWithCreatedAt(t, db, rawEvent, createdAt)
+
+	sub, err := submission.Get(context.Background(), db, id)
+	if err != nil {
+		t.Fatalf("get seeded submission: %v", err)
+	}
+	if err := detection.Advance(context.Background(), db, sub); err != nil {
+		t.Fatalf("seed detection evaluation: %v", err)
+	}
+	return id
+}
+
 func countValidationOutcomes(t *testing.T, db *sql.DB, submissionID int64) int {
 	t.Helper()
 	var n int
@@ -145,6 +172,20 @@ func countDetectionResults(t *testing.T, db *sql.DB, submissionID int64) int {
 		 WHERE n.submission_id = $1`, submissionID,
 	).Scan(&n); err != nil {
 		t.Fatalf("count detection_results: %v", err)
+	}
+	return n
+}
+
+func countAlerts(t *testing.T, db *sql.DB, submissionID int64) int {
+	t.Helper()
+	var n int
+	if err := db.QueryRowContext(context.Background(),
+		`SELECT count(*) FROM alerts a
+		 JOIN detection_results r ON r.id = a.detection_result_id
+		 JOIN normalized_events n ON n.id = r.normalized_event_id
+		 WHERE n.submission_id = $1`, submissionID,
+	).Scan(&n); err != nil {
+		t.Fatalf("count alerts: %v", err)
 	}
 	return n
 }
@@ -299,6 +340,61 @@ func TestProcessOne_AdvancesOldestNormalizedSubmission_WhenNothingElsePending(t 
 	}
 }
 
+// --- Alerting dispatch (Checkpoint 8): ProcessOne selects and dispatches
+// only -- the persistence and transaction behavior of the alert-generation
+// stage itself belongs to internal/alerting's own tests.
+
+func TestProcessOne_AdvancesOldestEvaluatedSubmission_WhenNothingElsePending(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	if err := detection.Load(context.Background(), db); err != nil {
+		t.Fatalf("detection.Load: %v", err)
+	}
+	id := seedEvaluatedWithCreatedAt(t, db, validEventJSON, time.Now())
+
+	if err := ProcessOne(context.Background(), db); err != nil {
+		t.Fatalf("ProcessOne: %v", err)
+	}
+
+	got, err := submission.Get(context.Background(), db, id)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status != submission.StatusAlerted {
+		t.Errorf("status = %q, want %q", got.Status, submission.StatusAlerted)
+	}
+	if n := countAlerts(t, db, id); n != 1 {
+		t.Errorf("alerts rows = %d, want 1", n)
+	}
+}
+
+// TestProcessOne_AdvancesEvaluatedSubmission_NoMatch_ZeroAlertsButAlerted
+// proves the locked Checkpoint 8 decision at the dispatch level too: a
+// legitimate non-match still advances to alerted with zero alerts, since
+// the status marks completed alert-generation processing, not alert
+// existence.
+func TestProcessOne_AdvancesEvaluatedSubmission_NoMatch_ZeroAlertsButAlerted(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	if err := detection.Load(context.Background(), db); err != nil {
+		t.Fatalf("detection.Load: %v", err)
+	}
+	id := seedEvaluatedWithCreatedAt(t, db, benignPodCreateEventJSON, time.Now())
+
+	if err := ProcessOne(context.Background(), db); err != nil {
+		t.Fatalf("ProcessOne: %v", err)
+	}
+
+	got, err := submission.Get(context.Background(), db, id)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status != submission.StatusAlerted {
+		t.Errorf("status = %q, want %q (unconditional advance)", got.Status, submission.StatusAlerted)
+	}
+	if n := countAlerts(t, db, id); n != 0 {
+		t.Errorf("alerts rows = %d, want 0", n)
+	}
+}
+
 // --- Cross-tier scheduling fairness (Checkpoint 6/7): eligibility
 // ordering is genuinely age-based across all three claimable tiers, with
 // no tier given blanket priority over another.
@@ -405,6 +501,42 @@ func TestProcessOne_OldestNormalized_IsNotStarvedByNewerAdmitted(t *testing.T) {
 	}
 	if gotOlder.Status != submission.StatusEvaluated {
 		t.Errorf("older normalized submission status = %q, want %q (must not be starved)", gotOlder.Status, submission.StatusEvaluated)
+	}
+
+	gotNewer, err := submission.Get(context.Background(), db, newerAdmitted)
+	if err != nil {
+		t.Fatalf("get newer: %v", err)
+	}
+	if gotNewer.Status != submission.StatusAdmitted {
+		t.Errorf("newer admitted submission status = %q, want unchanged %q", gotNewer.Status, submission.StatusAdmitted)
+	}
+}
+
+// TestProcessOne_OldestEvaluated_IsNotStarvedByNewerAdmitted extends the
+// no-starvation guarantee to the fourth tier added in Checkpoint 8: an
+// older evaluated submission awaiting alert generation must be claimed
+// ahead of a newer admitted one.
+func TestProcessOne_OldestEvaluated_IsNotStarvedByNewerAdmitted(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	if err := detection.Load(context.Background(), db); err != nil {
+		t.Fatalf("detection.Load: %v", err)
+	}
+	older := time.Now().Add(-1 * time.Hour)
+	newer := time.Now()
+
+	olderEvaluated := seedEvaluatedWithCreatedAt(t, db, validEventJSON, older)
+	newerAdmitted := seedAtStatusWithCreatedAt(t, db, submission.StatusAdmitted, validEventJSON, newer)
+
+	if err := ProcessOne(context.Background(), db); err != nil {
+		t.Fatalf("ProcessOne: %v", err)
+	}
+
+	gotOlder, err := submission.Get(context.Background(), db, olderEvaluated)
+	if err != nil {
+		t.Fatalf("get older: %v", err)
+	}
+	if gotOlder.Status != submission.StatusAlerted {
+		t.Errorf("older evaluated submission status = %q, want %q (must not be starved)", gotOlder.Status, submission.StatusAlerted)
 	}
 
 	gotNewer, err := submission.Get(context.Background(), db, newerAdmitted)

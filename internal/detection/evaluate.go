@@ -245,3 +245,54 @@ func upsertResult(ctx context.Context, tx *sql.Tx, normalizedEventID, definition
 	}
 	return nil
 }
+
+// MatchedResult is one matched detection_results row as needed by
+// downstream alert generation (ARCH-01 §2 module 5): the result's own id
+// -- the value alerts.detection_result_id must reference -- and the
+// match reason exactly as it was persisted at evaluation time.
+type MatchedResult struct {
+	ID          int64
+	MatchReason MatchReason
+}
+
+// MatchedResults returns every matched detection_results row for the
+// given normalized event, ordered by id for determinism. This is the
+// sanctioned way a downstream module reads detection_results:
+// internal/detection owns every read and write against this table (see
+// package doc), so internal/alerting calls this rather than querying the
+// table directly. The match reason is returned exactly as persisted --
+// never re-derived from the currently active definition set, which could
+// disagree with an older persisted result after a definition change
+// (AC-014).
+func MatchedResults(ctx context.Context, db *sql.DB, normalizedEventID int64) ([]MatchedResult, error) {
+	rows, err := db.QueryContext(ctx,
+		`SELECT id, match_reason FROM detection_results
+		 WHERE normalized_event_id = $1 AND matched
+		 ORDER BY id`,
+		normalizedEventID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("detection: matched results for normalized event %d: %w", normalizedEventID, err)
+	}
+	defer rows.Close()
+
+	var out []MatchedResult
+	for rows.Next() {
+		var (
+			id     int64
+			reason []byte
+		)
+		if err := rows.Scan(&id, &reason); err != nil {
+			return nil, fmt.Errorf("detection: matched results for normalized event %d: scan: %w", normalizedEventID, err)
+		}
+		var mr MatchReason
+		if err := json.Unmarshal(reason, &mr); err != nil {
+			return nil, fmt.Errorf("detection: matched results for normalized event %d: unmarshal match reason for result %d: %w", normalizedEventID, id, err)
+		}
+		out = append(out, MatchedResult{ID: id, MatchReason: mr})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("detection: matched results for normalized event %d: %w", normalizedEventID, err)
+	}
+	return out, nil
+}
