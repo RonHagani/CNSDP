@@ -1,8 +1,10 @@
-// Package detection reads, strictly parses, validates, and loads the
-// three version-controlled detection-definition files (ADR-0004) into
-// immutable, revision-identified detection_definitions rows. It contains
-// no evaluation logic — matching a normalized event against these
-// definitions belongs to a later checkpoint.
+// Package detection implements the detection evaluation module (ARCH-01
+// §2 module 4). detection.go reads, strictly parses, validates, and loads
+// the three version-controlled detection-definition files (ADR-0004) into
+// immutable, revision-identified detection_definitions rows.
+// evaluate.go evaluates a normalized event against those definitions
+// (FR-023–FR-026, FR-028) and owns every read and write against
+// detection_results; the worker only selects and dispatches work.
 package detection
 
 import (
@@ -180,20 +182,23 @@ func insertDefinition(ctx context.Context, tx *sql.Tx, scenario, revision string
 }
 
 type loadedDefinition struct {
-	scenario  string
-	revision  string
-	canonical []byte
+	scenario   string
+	revision   string
+	canonical  []byte
+	definition Definition
 }
 
-// LoadFS reads every *.yaml file in fsys, parses and validates each one,
-// and confirms the resulting scenario set is exactly the three approved
-// scenarios -- all entirely in memory, before any database interaction.
-// Only once every file passes does it open one transaction and insert the
-// complete set. If anything fails at any point, nothing is written.
-func LoadFS(ctx context.Context, db *sql.DB, fsys fs.FS) error {
+// loadDefinitionsFromFS reads every *.yaml file in fsys, parses and
+// validates each one, and confirms the resulting scenario set is exactly
+// the three approved scenarios -- all entirely in memory, no database
+// interaction. Shared by LoadFS (which persists the result at startup)
+// and activeDefinitionsFromFS (which only needs to resolve current
+// scenario/revision identity for evaluation) so the two never risk
+// disagreeing about what "the embedded definitions" parse to.
+func loadDefinitionsFromFS(fsys fs.FS) ([]loadedDefinition, error) {
 	names, err := fs.Glob(fsys, "*.yaml")
 	if err != nil {
-		return fmt.Errorf("detection: list definition files: %w", err)
+		return nil, fmt.Errorf("detection: list definition files: %w", err)
 	}
 	slices.Sort(names) // deterministic processing order
 
@@ -203,36 +208,49 @@ func LoadFS(ctx context.Context, db *sql.DB, fsys fs.FS) error {
 	for _, name := range names {
 		raw, err := fs.ReadFile(fsys, name)
 		if err != nil {
-			return fmt.Errorf("detection: read %s: %w", name, err)
+			return nil, fmt.Errorf("detection: read %s: %w", name, err)
 		}
 
 		def, err := Parse(raw)
 		if err != nil {
-			return fmt.Errorf("detection: %s: %w", name, err)
+			return nil, fmt.Errorf("detection: %s: %w", name, err)
 		}
 		if err := def.Validate(); err != nil {
-			return fmt.Errorf("detection: %s: %w", name, err)
+			return nil, fmt.Errorf("detection: %s: %w", name, err)
 		}
 		if seenScenarios[def.Scenario] {
-			return fmt.Errorf("detection: %s: duplicate scenario %q across definition files", name, def.Scenario)
+			return nil, fmt.Errorf("detection: %s: duplicate scenario %q across definition files", name, def.Scenario)
 		}
 		seenScenarios[def.Scenario] = true
 
 		canonical, err := def.Canonical()
 		if err != nil {
-			return fmt.Errorf("detection: %s: canonicalize: %w", name, err)
+			return nil, fmt.Errorf("detection: %s: canonicalize: %w", name, err)
 		}
 		results = append(results, loadedDefinition{
-			scenario:  def.Scenario,
-			revision:  RevisionID(canonical),
-			canonical: canonical,
+			scenario:   def.Scenario,
+			revision:   RevisionID(canonical),
+			canonical:  canonical,
+			definition: def,
 		})
 	}
 
 	for scenario := range approvedScenarios {
 		if !seenScenarios[scenario] {
-			return fmt.Errorf("detection: missing required scenario %q", scenario)
+			return nil, fmt.Errorf("detection: missing required scenario %q", scenario)
 		}
+	}
+
+	return results, nil
+}
+
+// LoadFS parses and validates every definition in fsys (loadDefinitionsFromFS)
+// and, only once every file passes, opens one transaction and inserts the
+// complete set. If anything fails at any point, nothing is written.
+func LoadFS(ctx context.Context, db *sql.DB, fsys fs.FS) error {
+	results, err := loadDefinitionsFromFS(fsys)
+	if err != nil {
+		return err
 	}
 
 	tx, err := db.BeginTx(ctx, nil)
@@ -257,4 +275,51 @@ func LoadFS(ctx context.Context, db *sql.DB, fsys fs.FS) error {
 // definitions (ADR-0004), called once at application startup.
 func Load(ctx context.Context, db *sql.DB) error {
 	return LoadFS(ctx, db, definitions.FS)
+}
+
+// ActiveDefinition pairs a currently-embedded, version-controlled
+// detection definition (ADR-0004) with the detection_definitions row id
+// evaluation must reference as detection_results.detection_definition_id.
+type ActiveDefinition struct {
+	ID         int64
+	Definition Definition
+	Revision   string
+}
+
+// ActiveDefinitions resolves the three currently-embedded detection
+// definitions (definitions.FS) and looks up each one's existing
+// detection_definitions row by (scenario, revision). "Active" means
+// exactly what the currently deployed embedded files define -- never an
+// arbitrary latest-loaded_at historical row, which could disagree with
+// the running binary after a rollback or a same-content reload. A
+// missing row means Load has not yet run for this scenario/revision (an
+// operational fault, normally impossible once main.go's startup sequence
+// has completed) and is reported as an explicit error, not silently
+// skipped.
+func ActiveDefinitions(ctx context.Context, db *sql.DB) ([]ActiveDefinition, error) {
+	return activeDefinitionsFromFS(ctx, db, definitions.FS)
+}
+
+func activeDefinitionsFromFS(ctx context.Context, db *sql.DB, fsys fs.FS) ([]ActiveDefinition, error) {
+	loaded, err := loadDefinitionsFromFS(fsys)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]ActiveDefinition, 0, len(loaded))
+	for _, l := range loaded {
+		var id int64
+		err := db.QueryRowContext(ctx,
+			`SELECT id FROM detection_definitions WHERE scenario = $1 AND revision = $2`,
+			l.scenario, l.revision,
+		).Scan(&id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("detection: active definition %s/%s not found in detection_definitions -- Load must run before evaluation", l.scenario, l.revision)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("detection: look up active definition %s/%s: %w", l.scenario, l.revision, err)
+		}
+		out = append(out, ActiveDefinition{ID: id, Definition: l.definition, Revision: l.revision})
+	}
+	return out, nil
 }

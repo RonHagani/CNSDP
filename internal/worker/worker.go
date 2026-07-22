@@ -2,24 +2,24 @@
 // (ADR-0002): select the oldest eligible submission, dispatch it to
 // exactly the one stage module that owns its current status, repeat. It
 // owns no table itself and contains no stage business logic of its own —
-// validateStage delegates classification entirely to internal/validation,
-// and normalization dispatch delegates entirely to
-// internal/normalization.Advance, which owns every read and write against
-// normalized_events. The read-only join in oldestEligible is an
+// dispatch delegates entirely to each stage module's own Advance
+// function (internal/validation, internal/normalization,
+// internal/detection), each of which owns every read and write against
+// its own artifact table. The read-only join in oldestEligible is an
 // orchestration-only exception to "no module reads another module's table
-// directly": it never writes submissions or validation_outcomes and
-// contains no validation business logic, only the claim predicate needed
-// to select work. Stage handlers for evaluate, alert, and evidence, and
-// every other workflow-stage module, are not implemented yet.
+// directly": it never writes any table and contains no stage business
+// logic, only the claim predicate needed to select work. Stage handlers
+// for alert and evidence, and every other workflow-stage module, are not
+// implemented yet.
 package worker
 
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 
+	"cnsdp/internal/detection"
 	"cnsdp/internal/normalization"
 	"cnsdp/internal/submission"
 	"cnsdp/internal/validation"
@@ -46,35 +46,40 @@ func ProcessOne(ctx context.Context, db *sql.DB) error {
 
 	switch sub.Status {
 	case submission.StatusAdmitted:
-		return validateStage(ctx, db, sub.ID, sub.RawEvent)
+		return validation.Advance(ctx, db, sub)
 	case submission.StatusValidated:
 		return normalization.Advance(ctx, db, sub)
+	case submission.StatusNormalized:
+		return detection.Advance(ctx, db, sub)
 	default:
 		return fmt.Errorf("worker: claimed submission %d has unexpected status %q", sub.ID, sub.Status)
 	}
 }
 
 // oldestEligible selects the single oldest submission this worker can
-// currently advance, across two eligibility conditions:
+// currently advance, across three eligibility conditions:
 //
-//   - status = admitted (every admitted submission needs validation), or
+//   - status = admitted (every admitted submission needs validation),
 //   - status = validated with a recorded valid outcome (FR-014: only a
 //     valid submission proceeds to normalization; invalid, incomplete, and
 //     unsupported submissions are permanently parked at validated with no
-//     handler that ever claims them again).
+//     handler that ever claims them again), or
+//   - status = normalized (every normalized submission needs detection
+//     evaluation; no outcome gate applies here since normalization
+//     unconditionally produces one normalized event per valid submission).
 //
 // Ordering is by submission creation order (created_at), with id as the
-// deterministic tie-breaker for rows created in the same instant. Neither
-// stage is given blanket priority over the other: under sustained intake,
-// an "admitted always wins" policy would starve eligible validated
-// submissions indefinitely, so eligibility is decided by age across both
-// conditions together, not by stage.
+// deterministic tie-breaker for rows created in the same instant. No
+// stage is given blanket priority over another: under sustained intake,
+// an "admitted always wins" policy would starve eligible validated or
+// normalized submissions indefinitely, so eligibility is decided by age
+// across all three conditions together, not by stage.
 //
-// This is a read-only join against validation_outcomes -- the table
+// This is a read-only join against validation_outcomes -- a table
 // internal/validation owns -- solely to evaluate the claim predicate
-// above; it never writes either table and contains no validation
-// business logic beyond referencing the outcome vocabulary
-// internal/validation already exports.
+// above; it never writes any table and contains no stage business logic
+// beyond referencing the outcome vocabulary internal/validation already
+// exports.
 func oldestEligible(ctx context.Context, db *sql.DB) (*submission.Submission, error) {
 	row := db.QueryRowContext(ctx,
 		`SELECT s.id, s.status, s.raw_event, s.audit_id, s.audit_stage, s.created_at
@@ -82,9 +87,11 @@ func oldestEligible(ctx context.Context, db *sql.DB) (*submission.Submission, er
 		 LEFT JOIN validation_outcomes v ON v.submission_id = s.id
 		 WHERE s.status = $1
 		    OR (s.status = $2 AND v.outcome = $3)
+		    OR s.status = $4
 		 ORDER BY s.created_at, s.id
 		 LIMIT 1`,
 		string(submission.StatusAdmitted), string(submission.StatusValidated), string(validation.OutcomeValid),
+		string(submission.StatusNormalized),
 	)
 
 	var sub submission.Submission
@@ -97,44 +104,4 @@ func oldestEligible(ctx context.Context, db *sql.DB) (*submission.Submission, er
 	}
 	sub.Status = submission.Status(status)
 	return &sub, nil
-}
-
-// validateStage implements the validation and classification module's
-// worker-facing side (FR-004–FR-014): it classifies rawEvent, records the
-// classification as a validation_outcomes row, and advances the submission
-// from admitted to validated — unconditionally, regardless of which of the
-// four outcomes was recorded. "validated" represents workflow progress
-// through this stage, not a successful validation result (FR-014): a
-// non-valid outcome still advances here and then stays parked at validated,
-// since no later stage handler ever claims it. The insert and the status
-// advance occur in one transaction (ADR-0002).
-func validateStage(ctx context.Context, db *sql.DB, id int64, rawEvent json.RawMessage) error {
-	result := validation.Classify(rawEvent)
-
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("worker: begin validate stage tx for submission %d: %w", id, err)
-	}
-	defer tx.Rollback()
-
-	var reason sql.NullString
-	if result.Reason != "" {
-		reason = sql.NullString{String: result.Reason, Valid: true}
-	}
-	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO validation_outcomes (submission_id, outcome, reason) VALUES ($1, $2, $3)
-		 ON CONFLICT (submission_id) DO NOTHING`,
-		id, string(result.Outcome), reason,
-	); err != nil {
-		return fmt.Errorf("worker: insert validation outcome for submission %d: %w", id, err)
-	}
-
-	if err := submission.Advance(ctx, tx, id, submission.StatusAdmitted, submission.StatusValidated); err != nil {
-		return fmt.Errorf("worker: advance submission %d to validated: %w", id, err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("worker: commit validate stage for submission %d: %w", id, err)
-	}
-	return nil
 }

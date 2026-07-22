@@ -1,0 +1,247 @@
+package detection
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+
+	"cnsdp/internal/normalization"
+	"cnsdp/internal/submission"
+)
+
+// characteristicSet builds the flat, ID-keyed set of named
+// characteristics known to be true for event. This is the only
+// scenario-specific mapping in this file: it translates normalized Event
+// fields into the vocabulary the three definitions' requires_any /
+// requires_all lists reference by id. The matching algorithm below
+// (evaluate, operationMatches, outcomeSatisfied) never branches on
+// scenario -- it only ever asks "is this characteristic id present in the
+// set", so a fourth scenario's definition would need a new entry here,
+// never a new evaluator.
+func characteristicSet(event normalization.Event) map[string]bool {
+	set := make(map[string]bool)
+	if event.Exec != nil {
+		set["stdin_streaming"] = event.Exec.Stdin
+		set["tty_allocation"] = event.Exec.TTY
+	}
+	if event.PodCreation != nil {
+		set["privileged_container"] = event.PodCreation.Privileged
+		set["host_network"] = event.PodCreation.HostNetwork
+		set["host_pid"] = event.PodCreation.HostPID
+		set["host_ipc"] = event.PodCreation.HostIPC
+		set["host_path_volume"] = event.PodCreation.HostPathVolume
+	}
+	if event.ClusterRoleBinding != nil {
+		set["role_ref_cluster_admin"] = event.ClusterRoleBinding.RoleRef.Kind == "ClusterRole" &&
+			event.ClusterRoleBinding.RoleRef.Name == "cluster-admin"
+	}
+	return set
+}
+
+// operationMatches checks a definition's declared operation against the
+// event's target and verb. Resource and verb are wildcards when left
+// empty in the definition; subresource is always matched exactly
+// (including empty), since an empty subresource is itself a meaningful,
+// deliberate constraint -- it is what distinguishes scenario 2's plain
+// Pod creation from scenario 1's pods/exec subresource, both of which
+// declare resource: pods.
+func operationMatches(op Operation, event normalization.Event) bool {
+	if op.Resource != "" && op.Resource != event.Target.Resource {
+		return false
+	}
+	if op.Subresource != event.Target.Subresource {
+		return false
+	}
+	if op.Verb != "" && op.Verb != event.Operation.Verb {
+		return false
+	}
+	return true
+}
+
+// outcomeSatisfied checks a definition's requires_outcome constraint. An
+// empty constraint means the definition matches regardless of outcome
+// (scenario 1, FR-024). "success" is defined as an HTTP response code in
+// the inclusive range 200-299. Any other declared value is a definition
+// authoring error that Validate does not currently reject; treated here
+// as never satisfied rather than an error, so an unrecognized constraint
+// fails closed (no match) instead of failing open.
+func outcomeSatisfied(requiresOutcome string, event normalization.Event) bool {
+	switch requiresOutcome {
+	case "":
+		return true
+	case "success":
+		return event.Outcome.Code >= 200 && event.Outcome.Code < 300
+	default:
+		return false
+	}
+}
+
+// satisfiedFrom returns the subset of list whose characteristic id is
+// present (true) in set, preserving list's declared order.
+func satisfiedFrom(list []Characteristic, set map[string]bool) []Characteristic {
+	var out []Characteristic
+	for _, c := range list {
+		if set[c.ID] {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// evaluate is the generic, definition-driven matching algorithm (FR-023):
+// it interprets def's declared operation, requires_outcome, requires_any,
+// and requires_all fields against event, with no per-scenario branching.
+// matched is true only if the operation matches, the outcome constraint
+// (if any) is satisfied, every requires_all characteristic is present,
+// and -- if requires_any is non-empty -- at least one requires_any
+// characteristic is present. satisfied lists every documented
+// characteristic actually present in the event, from both lists
+// combined (FR-024: "every documented characteristic present in the
+// request shall be recorded"), and is nil when matched is false.
+func evaluate(event normalization.Event, def Definition) (matched bool, satisfied []Characteristic) {
+	if !operationMatches(def.Conditions.Operation, event) {
+		return false, nil
+	}
+	if !outcomeSatisfied(def.Conditions.RequiresOutcome, event) {
+		return false, nil
+	}
+
+	set := characteristicSet(event)
+
+	anyMatched := satisfiedFrom(def.Conditions.RequiresAny, set)
+	if len(def.Conditions.RequiresAny) > 0 && len(anyMatched) == 0 {
+		return false, nil
+	}
+
+	allMatched := satisfiedFrom(def.Conditions.RequiresAll, set)
+	if len(allMatched) != len(def.Conditions.RequiresAll) {
+		return false, nil
+	}
+
+	satisfied = append(satisfied, anyMatched...)
+	satisfied = append(satisfied, allMatched...)
+	return true, satisfied
+}
+
+// MatchReason is the persisted content of a matching detection_results
+// row (FR-028): the detection definition that matched, identified by
+// scenario/name/revision, and the documented conditions that were
+// satisfied. The full normalized event -- the event information that
+// satisfied them -- remains separately available via its own artifact
+// (normalized_events, reachable through the same normalized_event_id this
+// row references), consistent with the minimum evidence set (FR-031)
+// treating each artifact as a distinct, individually inspectable item
+// rather than duplicating content across them.
+type MatchReason struct {
+	Scenario                 string           `json:"scenario"`
+	DefinitionName           string           `json:"definitionName"`
+	DefinitionRevision       string           `json:"definitionRevision"`
+	SatisfiedCharacteristics []Characteristic `json:"satisfiedCharacteristics"`
+}
+
+// ErrResultConflict is returned by Advance when a detection_results row
+// already exists for a (normalized event, detection definition) pair
+// with a different matched or match_reason value than what this
+// evaluation just computed -- a genuine disagreement between the newly
+// computed result and the one already on record. It is never silently
+// resolved by overwriting the previously persisted artifact (NFR-006,
+// NFR-017): the submission is left at normalized and the caller must
+// investigate.
+var ErrResultConflict = errors.New("detection: existing detection result has different content")
+
+// Advance evaluates sub's normalized event against every active
+// detection definition (FR-023), persists one detection_results row per
+// definition -- matched or not -- and advances the submission from
+// normalized to evaluated -- all in one transaction (ADR-0002).
+// internal/detection owns every read and write against detection_results;
+// the worker only selects and dispatches work, and never writes this
+// table itself. The normalized event is read exclusively through
+// normalization.Get, never through direct SQL against normalized_events.
+//
+// Retry safety: a repeated call for the same submission_id is accepted as
+// a safe no-op retry only when, for every definition, the newly computed
+// matched and match_reason exactly match what is already persisted --
+// detected by one race-safe INSERT ... ON CONFLICT ... DO UPDATE ...
+// WHERE statement per definition, the same idempotent-insert pattern
+// internal/submission.Admit, internal/normalization.Advance, and
+// internal/validation.Advance already use. A mismatch on any one
+// definition returns ErrResultConflict and aborts the whole transaction
+// before any status change; no row is ever silently overwritten, and no
+// submission is ever left with only some of its three results persisted.
+func Advance(ctx context.Context, db *sql.DB, sub *submission.Submission) error {
+	rec, err := normalization.Get(ctx, db, sub.ID)
+	if err != nil {
+		return fmt.Errorf("detection: advance submission %d: %w", sub.ID, err)
+	}
+
+	defs, err := ActiveDefinitions(ctx, db)
+	if err != nil {
+		return fmt.Errorf("detection: advance submission %d: %w", sub.ID, err)
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("detection: begin advance tx for submission %d: %w", sub.ID, err)
+	}
+	defer tx.Rollback()
+
+	for _, def := range defs {
+		matched, satisfied := evaluate(rec.Event, def.Definition)
+
+		var reason []byte
+		if matched {
+			reason, err = json.Marshal(MatchReason{
+				Scenario:                 def.Definition.Scenario,
+				DefinitionName:           def.Definition.Name,
+				DefinitionRevision:       def.Revision,
+				SatisfiedCharacteristics: satisfied,
+			})
+			if err != nil {
+				return fmt.Errorf("detection: advance submission %d: marshal match reason for %s: %w", sub.ID, def.Definition.Scenario, err)
+			}
+		}
+
+		if err := upsertResult(ctx, tx, rec.ID, def.ID, matched, reason); err != nil {
+			return fmt.Errorf("detection: advance submission %d: %w", sub.ID, err)
+		}
+	}
+
+	if err := submission.Advance(ctx, tx, sub.ID, submission.StatusNormalized, submission.StatusEvaluated); err != nil {
+		return fmt.Errorf("detection: advance submission %d to evaluated: %w", sub.ID, err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("detection: commit advance for submission %d: %w", sub.ID, err)
+	}
+	return nil
+}
+
+// upsertResult performs one race-safe, conflict-aware insert of a single
+// (normalized event, definition) evaluation result.
+func upsertResult(ctx context.Context, tx *sql.Tx, normalizedEventID, definitionID int64, matched bool, matchReason []byte) error {
+	var reasonParam any
+	if matched {
+		reasonParam = matchReason
+	}
+
+	var id int64
+	err := tx.QueryRowContext(ctx,
+		`INSERT INTO detection_results (normalized_event_id, detection_definition_id, matched, match_reason)
+		 VALUES ($1, $2, $3, $4)
+		 ON CONFLICT (normalized_event_id, detection_definition_id) DO UPDATE
+		 SET matched = EXCLUDED.matched
+		 WHERE detection_results.matched = EXCLUDED.matched
+		   AND detection_results.match_reason IS NOT DISTINCT FROM EXCLUDED.match_reason
+		 RETURNING id`,
+		normalizedEventID, definitionID, matched, reasonParam,
+	).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("%w: normalized_event %d, definition %d", ErrResultConflict, normalizedEventID, definitionID)
+	}
+	if err != nil {
+		return fmt.Errorf("insert detection result for normalized_event %d, definition %d: %w", normalizedEventID, definitionID, err)
+	}
+	return nil
+}

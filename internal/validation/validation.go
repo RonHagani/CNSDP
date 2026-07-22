@@ -7,15 +7,24 @@
 // or detection-evaluation logic: it checks only that a scenario-relevant
 // submission carries enough structural content for a later checkpoint to
 // evaluate it, never whether any documented characteristic actually holds
-// (FR-023 remains a later checkpoint's responsibility).
+// (FR-023 remains a later checkpoint's responsibility). It owns every
+// read and write against validation_outcomes (ADR-0002); no other
+// package writes this table -- the worker only selects and dispatches
+// work via Advance, the same ownership pattern internal/normalization
+// and internal/detection follow for their own stages.
 package validation
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	rbacv1 "k8s.io/api/rbac/v1"
 	auditv1 "k8s.io/apiserver/pkg/apis/audit/v1"
+
+	"cnsdp/internal/submission"
 )
 
 // Outcome is one of the four mutually exclusive validation outcomes
@@ -207,4 +216,78 @@ func missingScenarioField(ev auditv1.Event) (reason string, missing bool) {
 	default:
 		return "", false
 	}
+}
+
+// ErrOutcomeConflict is returned by Advance when a validation_outcomes row
+// already exists for the submission with a different outcome or reason
+// than what this call just computed -- a genuine disagreement between the
+// newly derived classification and the one already on record. It is
+// never silently resolved by overwriting the previously persisted
+// artifact (NFR-006, NFR-017): the submission is left at admitted and the
+// caller must investigate.
+var ErrOutcomeConflict = errors.New("validation: existing validation outcome has different content")
+
+// Advance classifies sub's raw source event, persists it as this
+// submission's validation_outcomes artifact, and advances the submission
+// from admitted to validated -- all in one transaction (ADR-0002),
+// unconditionally, regardless of which of the four outcomes was recorded.
+// "validated" represents workflow progress through this stage, not a
+// successful validation result (FR-014): a non-valid outcome still
+// advances here and then stays parked at validated, since no later stage
+// handler ever claims it. internal/validation owns every read and write
+// against validation_outcomes; the worker only selects and dispatches
+// work, and never writes this table itself.
+//
+// Retry safety: a repeated call for the same submission_id is accepted as
+// a safe no-op retry only when the newly computed outcome and reason
+// exactly match what is already persisted -- detected by one race-safe
+// INSERT ... ON CONFLICT ... DO UPDATE ... WHERE statement, the same
+// idempotent-insert pattern internal/submission.Admit and
+// internal/normalization.Advance already use. A mismatch returns
+// ErrOutcomeConflict and leaves the submission at admitted; the existing
+// artifact is never overwritten. Once persisted, the guarded
+// submission.Advance call behaves exactly as it does for every other
+// stage: a submission no longer at admitted (e.g. a true retry after a
+// prior fully-committed call) yields ErrStatusConflict, not a silent
+// reapplication.
+func Advance(ctx context.Context, db *sql.DB, sub *submission.Submission) error {
+	result := Classify(sub.RawEvent)
+
+	var reason sql.NullString
+	if result.Reason != "" {
+		reason = sql.NullString{String: result.Reason, Valid: true}
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("validation: begin advance tx for submission %d: %w", sub.ID, err)
+	}
+	defer tx.Rollback()
+
+	var outcomeID int64
+	err = tx.QueryRowContext(ctx,
+		`INSERT INTO validation_outcomes (submission_id, outcome, reason)
+		 VALUES ($1, $2, $3)
+		 ON CONFLICT (submission_id) DO UPDATE
+		 SET outcome = EXCLUDED.outcome
+		 WHERE validation_outcomes.outcome = EXCLUDED.outcome
+		   AND validation_outcomes.reason IS NOT DISTINCT FROM EXCLUDED.reason
+		 RETURNING id`,
+		sub.ID, string(result.Outcome), reason,
+	).Scan(&outcomeID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("%w: submission %d", ErrOutcomeConflict, sub.ID)
+	}
+	if err != nil {
+		return fmt.Errorf("validation: insert validation outcome for submission %d: %w", sub.ID, err)
+	}
+
+	if err := submission.Advance(ctx, tx, sub.ID, submission.StatusAdmitted, submission.StatusValidated); err != nil {
+		return fmt.Errorf("validation: advance submission %d to validated: %w", sub.ID, err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("validation: commit advance for submission %d: %w", sub.ID, err)
+	}
+	return nil
 }

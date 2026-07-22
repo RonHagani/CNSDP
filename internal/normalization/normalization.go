@@ -381,3 +381,48 @@ func Advance(ctx context.Context, db *sql.DB, sub *submission.Submission) error 
 	}
 	return nil
 }
+
+// ErrNotFound is returned by Get when no normalized event has been
+// persisted for the given submission id.
+var ErrNotFound = errors.New("normalization: normalized event not found")
+
+// Record is one persisted normalized_events row: its own id (the value a
+// downstream stage's foreign key, e.g. detection_results.normalized_event_id,
+// must reference), the submission it was produced from, and its
+// normalized content.
+type Record struct {
+	ID           int64
+	SubmissionID int64
+	Event        Event
+}
+
+// Get retrieves the normalized event already persisted for submissionID.
+// It is the sanctioned way a downstream module reads normalized_events:
+// internal/normalization owns every read and write against this table
+// (see package doc), so a stage that needs the normalized representation
+// -- currently detection evaluation -- calls Get rather than querying the
+// table directly. Returns ErrNotFound if no normalized event has been
+// persisted for this submission yet.
+func Get(ctx context.Context, db *sql.DB, submissionID int64) (*Record, error) {
+	var (
+		id      int64
+		content []byte
+	)
+	err := db.QueryRowContext(ctx,
+		`SELECT id, content FROM normalized_events WHERE submission_id = $1`,
+		submissionID,
+	).Scan(&id, &content)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("normalization: get normalized event for submission %d: %w", submissionID, err)
+	}
+
+	var event Event
+	if err := json.Unmarshal(content, &event); err != nil {
+		return nil, fmt.Errorf("normalization: get normalized event for submission %d: unmarshal content: %w", submissionID, err)
+	}
+
+	return &Record{ID: id, SubmissionID: submissionID, Event: event}, nil
+}

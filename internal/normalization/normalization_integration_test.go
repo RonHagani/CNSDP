@@ -226,6 +226,51 @@ func TestAdvance_ConflictingExistingArtifact_ReturnsErrorAndLeavesValidated(t *t
 	}
 }
 
+// TestGet_ReturnsPersistedRecord proves Get is a faithful read of what
+// Advance persisted -- the access path detection (and any future
+// downstream module) must use instead of querying normalized_events
+// directly.
+func TestGet_ReturnsPersistedRecord(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	sub := seedValidated(t, db, validEventJSON)
+
+	if err := Advance(context.Background(), db, sub); err != nil {
+		t.Fatalf("Advance: %v", err)
+	}
+
+	want, err := Normalize([]byte(validEventJSON))
+	if err != nil {
+		t.Fatalf("Normalize: %v", err)
+	}
+
+	got, err := Get(context.Background(), db, sub.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.SubmissionID != sub.ID {
+		t.Errorf("SubmissionID = %d, want %d", got.SubmissionID, sub.ID)
+	}
+	if got.ID <= 0 {
+		t.Errorf("ID = %d, want a positive normalized_events primary key", got.ID)
+	}
+	if !reflect.DeepEqual(got.Event, want) {
+		t.Errorf("Event = %+v, want %+v", got.Event, want)
+	}
+}
+
+// TestGet_NotFoundBeforeAdvance proves Get distinguishes "not yet
+// normalized" from a platform fault via a dedicated sentinel, rather than
+// leaking a raw sql.ErrNoRows to callers.
+func TestGet_NotFoundBeforeAdvance(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	sub := seedValidated(t, db, validEventJSON)
+
+	_, err := Get(context.Background(), db, sub.ID)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Get: expected ErrNotFound, got %v", err)
+	}
+}
+
 // TestAdvance_CancelledContext_NoPartialEffects proves atomicity: any
 // failure inside Advance's single transaction -- here, a context
 // cancelled before the transaction can complete -- leaves neither the

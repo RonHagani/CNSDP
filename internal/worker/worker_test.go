@@ -5,10 +5,13 @@ package worker
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
 
+	"cnsdp/internal/detection"
+	"cnsdp/internal/normalization"
 	"cnsdp/internal/submission"
 	"cnsdp/internal/testutil"
 )
@@ -20,7 +23,7 @@ const validEventJSON = `{"kind":"Event","apiVersion":"audit.k8s.io/v1","auditID"
 
 // unsupportedEventJSON is not attributable to the supported audit.k8s.io/v1
 // Event form (FR-010) -- a stand-in for "some non-valid outcome", used to
-// prove the worker's transaction and claim behavior is outcome-agnostic.
+// prove the worker's claim behavior is outcome-agnostic.
 const unsupportedEventJSON = `{"kind":"Pod","apiVersion":"v1"}`
 
 func seedAdmitted(t *testing.T, db *sql.DB, rawEvent string) int64 {
@@ -67,8 +70,8 @@ func seedAtStatusWithCreatedAt(t *testing.T, db *sql.DB, status submission.Statu
 }
 
 // seedValidatedWithOutcome seeds a submission at validated status together
-// with the validation_outcomes row a real validateStage run would have
-// produced for it -- required for the new outcome-aware eligibility join
+// with the validation_outcomes row a real validation.Advance run would
+// have produced for it -- required for the outcome-aware eligibility join
 // (oldestEligible) to classify the row correctly.
 func seedValidatedWithOutcome(t *testing.T, db *sql.DB, outcome, rawEvent string) int64 {
 	t.Helper()
@@ -82,6 +85,31 @@ func seedValidatedWithOutcome(t *testing.T, db *sql.DB, outcome, rawEvent string
 		id, outcome, reason,
 	); err != nil {
 		t.Fatalf("seed validation outcome %s: %v", outcome, err)
+	}
+	return id
+}
+
+// seedNormalizedWithCreatedAt seeds a submission at normalized status,
+// with explicit created_at, together with the normalized_events row a
+// real normalization.Advance run would have produced for it -- required
+// for detection dispatch to have something to evaluate.
+func seedNormalizedWithCreatedAt(t *testing.T, db *sql.DB, rawEvent string, createdAt time.Time) int64 {
+	t.Helper()
+	id := seedAtStatusWithCreatedAt(t, db, submission.StatusNormalized, rawEvent, createdAt)
+
+	event, err := normalization.Normalize([]byte(rawEvent))
+	if err != nil {
+		t.Fatalf("normalize fixture: %v", err)
+	}
+	content, err := json.Marshal(event)
+	if err != nil {
+		t.Fatalf("marshal normalized content: %v", err)
+	}
+	if _, err := db.ExecContext(context.Background(),
+		`INSERT INTO normalized_events (submission_id, content, representation_revision) VALUES ($1, $2, $3)`,
+		id, content, normalization.RepresentationRevision,
+	); err != nil {
+		t.Fatalf("seed normalized_events row: %v", err)
 	}
 	return id
 }
@@ -108,116 +136,22 @@ func countNormalizedEvents(t *testing.T, db *sql.DB, submissionID int64) int {
 	return n
 }
 
-func TestValidateStage_RecordsValidOutcomeAndAdvances(t *testing.T) {
-	db := testutil.MigratedPostgres(t)
-	id := seedAdmitted(t, db, validEventJSON)
-
-	if err := validateStage(context.Background(), db, id, []byte(validEventJSON)); err != nil {
-		t.Fatalf("validateStage: %v", err)
-	}
-
-	got, err := submission.Get(context.Background(), db, id)
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	if got.Status != submission.StatusValidated {
-		t.Errorf("status = %q, want %q", got.Status, submission.StatusValidated)
-	}
-	if n := countValidationOutcomes(t, db, id); n != 1 {
-		t.Errorf("validation_outcomes rows = %d, want 1", n)
-	}
-
-	var outcome string
-	var reason sql.NullString
+func countDetectionResults(t *testing.T, db *sql.DB, submissionID int64) int {
+	t.Helper()
+	var n int
 	if err := db.QueryRowContext(context.Background(),
-		`SELECT outcome, reason FROM validation_outcomes WHERE submission_id = $1`, id,
-	).Scan(&outcome, &reason); err != nil {
-		t.Fatalf("read validation outcome: %v", err)
+		`SELECT count(*) FROM detection_results r
+		 JOIN normalized_events n ON n.id = r.normalized_event_id
+		 WHERE n.submission_id = $1`, submissionID,
+	).Scan(&n); err != nil {
+		t.Fatalf("count detection_results: %v", err)
 	}
-	if outcome != "valid" {
-		t.Errorf("outcome = %q, want %q", outcome, "valid")
-	}
-	if reason.Valid {
-		t.Errorf("reason = %q, want NULL for a valid outcome", reason.String)
-	}
+	return n
 }
 
-// TestValidateStage_RecordsNonValidOutcomeButStillAdvances is the direct
-// proof of the locked Checkpoint 5 decision: "validated" represents
-// workflow progress, not a successful validation result. A non-valid
-// classification still advances admitted -> validated; only the recorded
-// outcome distinguishes it, and it is never reclaimed afterward (FR-014).
-func TestValidateStage_RecordsNonValidOutcomeButStillAdvances(t *testing.T) {
-	db := testutil.MigratedPostgres(t)
-	id := seedAdmitted(t, db, unsupportedEventJSON)
-
-	if err := validateStage(context.Background(), db, id, []byte(unsupportedEventJSON)); err != nil {
-		t.Fatalf("validateStage: %v", err)
-	}
-
-	got, err := submission.Get(context.Background(), db, id)
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	if got.Status != submission.StatusValidated {
-		t.Errorf("status = %q, want %q (advances regardless of outcome)", got.Status, submission.StatusValidated)
-	}
-
-	var outcome string
-	var reason sql.NullString
-	if err := db.QueryRowContext(context.Background(),
-		`SELECT outcome, reason FROM validation_outcomes WHERE submission_id = $1`, id,
-	).Scan(&outcome, &reason); err != nil {
-		t.Fatalf("read validation outcome: %v", err)
-	}
-	if outcome != "unsupported" {
-		t.Errorf("outcome = %q, want %q", outcome, "unsupported")
-	}
-	if !reason.Valid || reason.String == "" {
-		t.Errorf("reason = %v, want a stated reason for a non-valid outcome (FR-012)", reason)
-	}
-}
-
-// TestValidateStage_NoDownstreamArtifactForNonValidOutcome guards FR-014:
-// a non-valid submission must never produce a normalized event.
-func TestValidateStage_NoDownstreamArtifactForNonValidOutcome(t *testing.T) {
-	db := testutil.MigratedPostgres(t)
-	id := seedAdmitted(t, db, unsupportedEventJSON)
-
-	if err := validateStage(context.Background(), db, id, []byte(unsupportedEventJSON)); err != nil {
-		t.Fatalf("validateStage: %v", err)
-	}
-
-	if n := countNormalizedEvents(t, db, id); n != 0 {
-		t.Errorf("normalized_events rows = %d, want 0 for a non-valid outcome", n)
-	}
-}
-
-func TestValidateStage_RetryAfterSuccessDoesNotDuplicate(t *testing.T) {
-	db := testutil.MigratedPostgres(t)
-	id := seedAdmitted(t, db, validEventJSON)
-
-	if err := validateStage(context.Background(), db, id, []byte(validEventJSON)); err != nil {
-		t.Fatalf("first validateStage: %v", err)
-	}
-
-	// Simulate a retry against the same, now already-validated submission.
-	err := validateStage(context.Background(), db, id, []byte(validEventJSON))
-	if !errors.Is(err, submission.ErrStatusConflict) {
-		t.Fatalf("expected retry to fail with ErrStatusConflict, got %v", err)
-	}
-
-	if n := countValidationOutcomes(t, db, id); n != 1 {
-		t.Errorf("validation_outcomes rows after retry = %d, want still 1 (no duplicate)", n)
-	}
-	got, err := submission.Get(context.Background(), db, id)
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	if got.Status != submission.StatusValidated {
-		t.Errorf("status = %q, want %q (unchanged by the rejected retry)", got.Status, submission.StatusValidated)
-	}
-}
+// --- Validate dispatch (Checkpoint 7): ProcessOne selects and dispatches
+// only -- the persistence and transaction behavior of the validate stage
+// itself belongs to internal/validation's own tests.
 
 func TestProcessOne_AdvancesOldestAdmittedSubmission(t *testing.T) {
 	db := testutil.MigratedPostgres(t)
@@ -234,17 +168,19 @@ func TestProcessOne_AdvancesOldestAdmittedSubmission(t *testing.T) {
 	if got.Status != submission.StatusValidated {
 		t.Errorf("status = %q, want %q", got.Status, submission.StatusValidated)
 	}
+	if n := countValidationOutcomes(t, db, id); n != 1 {
+		t.Errorf("validation_outcomes rows = %d, want 1", n)
+	}
 }
 
 // TestProcessOne_ClaimsOnlyAdmitted_SkipsParkedValidatedRow is the
-// worker-level proof of the locked claim-behavior decision: ProcessOne must
-// process only submissions currently in admitted status. A submission
-// already parked at validated (from a prior non-valid classification) is
-// older but must never be reclaimed -- reclaiming it would hit "no stage
-// handler" every time and starve every admitted submission behind it.
+// worker-level proof of the locked claim-behavior decision: a submission
+// already parked at validated with no recorded valid outcome (from a
+// prior non-valid classification) is older but must never be reclaimed --
+// reclaiming it would starve every eligible submission behind it.
 func TestProcessOne_ClaimsOnlyAdmitted_SkipsParkedValidatedRow(t *testing.T) {
 	db := testutil.MigratedPostgres(t)
-	parked := seedAtStatus(t, db, submission.StatusValidated, unsupportedEventJSON) // older, must not be touched
+	parked := seedAtStatus(t, db, submission.StatusValidated, unsupportedEventJSON) // older, no outcome row, must not be touched
 	admitted := seedAdmitted(t, db, validEventJSON)
 
 	if err := ProcessOne(context.Background(), db); err != nil {
@@ -268,9 +204,6 @@ func TestProcessOne_ClaimsOnlyAdmitted_SkipsParkedValidatedRow(t *testing.T) {
 	}
 }
 
-// TestProcessOne_NoWorkWhenOnlyParkedValidatedRowsExist confirms ProcessOne
-// reports ErrNoWork -- not an error about a missing stage handler -- when
-// every existing submission is already past admitted.
 func TestProcessOne_NoWorkWhenOnlyParkedValidatedRowsExist(t *testing.T) {
 	db := testutil.MigratedPostgres(t)
 	seedAtStatus(t, db, submission.StatusValidated, unsupportedEventJSON)
@@ -287,47 +220,6 @@ func TestProcessOne_NoWorkWhenNothingPending(t *testing.T) {
 	err := ProcessOne(context.Background(), db)
 	if !errors.Is(err, ErrNoWork) {
 		t.Fatalf("expected ErrNoWork, got %v", err)
-	}
-}
-
-// TestValidateStage_FailureBetweenInsertAndAdvanceRollsBackTransaction
-// forces a real failure (a cancelled context) between the artifact insert
-// and the status advance — the same atomicity property Spike 2 proved via
-// real process crashes — and confirms neither effect persisted.
-func TestValidateStage_FailureBetweenInsertAndAdvanceRollsBackTransaction(t *testing.T) {
-	db := testutil.MigratedPostgres(t)
-	id := seedAdmitted(t, db, validEventJSON)
-
-	tx, err := db.BeginTx(context.Background(), nil)
-	if err != nil {
-		t.Fatalf("begin tx: %v", err)
-	}
-
-	if _, err := tx.ExecContext(context.Background(),
-		`INSERT INTO validation_outcomes (submission_id, outcome, reason) VALUES ($1, 'valid', NULL)`,
-		id,
-	); err != nil {
-		t.Fatalf("insert artifact: %v", err)
-	}
-
-	cancelledCtx, cancel := context.WithCancel(context.Background())
-	cancel() // force failure exactly between the insert and the status advance
-
-	err = submission.Advance(cancelledCtx, tx, id, submission.StatusAdmitted, submission.StatusValidated)
-	if err == nil {
-		t.Fatal("expected the status advance to fail against a cancelled context")
-	}
-	_ = tx.Rollback() // mirrors validateStage's own deferred rollback
-
-	got, getErr := submission.Get(context.Background(), db, id)
-	if getErr != nil {
-		t.Fatalf("get: %v", getErr)
-	}
-	if got.Status != submission.StatusAdmitted {
-		t.Errorf("status = %q after a rolled-back transaction, want unchanged %q", got.Status, submission.StatusAdmitted)
-	}
-	if n := countValidationOutcomes(t, db, id); n != 0 {
-		t.Errorf("validation_outcomes rows after rollback = %d, want 0", n)
 	}
 }
 
@@ -356,10 +248,9 @@ func TestProcessOne_AdvancesValidatedValidSubmission_WhenNoAdmittedPending(t *te
 }
 
 // TestProcessOne_SkipsValidatedNonValidOutcome_NeverNormalizes extends the
-// Checkpoint 5 parked-row guarantee to the new normalize dispatch: a
-// validated submission whose recorded outcome is not valid (FR-014) must
-// never be claimed for normalization, regardless of how long it has been
-// waiting.
+// Checkpoint 5 parked-row guarantee to the normalize dispatch: a validated
+// submission whose recorded outcome is not valid (FR-014) must never be
+// claimed for normalization, regardless of how long it has been waiting.
 func TestProcessOne_SkipsValidatedNonValidOutcome_NeverNormalizes(t *testing.T) {
 	db := testutil.MigratedPostgres(t)
 	id := seedValidatedWithOutcome(t, db, "unsupported", unsupportedEventJSON)
@@ -380,6 +271,37 @@ func TestProcessOne_SkipsValidatedNonValidOutcome_NeverNormalizes(t *testing.T) 
 		t.Errorf("normalized_events rows = %d, want 0", n)
 	}
 }
+
+// --- Detection dispatch (Checkpoint 7): ProcessOne selects and dispatches
+// only -- the persistence and transaction behavior of the evaluate stage
+// itself belongs to internal/detection's own tests.
+
+func TestProcessOne_AdvancesOldestNormalizedSubmission_WhenNothingElsePending(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	if err := detection.Load(context.Background(), db); err != nil {
+		t.Fatalf("detection.Load: %v", err)
+	}
+	id := seedNormalizedWithCreatedAt(t, db, validEventJSON, time.Now())
+
+	if err := ProcessOne(context.Background(), db); err != nil {
+		t.Fatalf("ProcessOne: %v", err)
+	}
+
+	got, err := submission.Get(context.Background(), db, id)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status != submission.StatusEvaluated {
+		t.Errorf("status = %q, want %q", got.Status, submission.StatusEvaluated)
+	}
+	if n := countDetectionResults(t, db, id); n != 3 {
+		t.Errorf("detection_results rows = %d, want 3", n)
+	}
+}
+
+// --- Cross-tier scheduling fairness (Checkpoint 6/7): eligibility
+// ordering is genuinely age-based across all three claimable tiers, with
+// no tier given blanket priority over another.
 
 // TestProcessOne_OldestValidatedValid_IsNotStarvedByNewerAdmitted is the
 // direct proof of the locked Checkpoint 6 scheduling decision: an
@@ -455,6 +377,42 @@ func TestProcessOne_OlderAdmitted_IsClaimedBeforeNewerValidatedValid(t *testing.
 	}
 	if gotNewer.Status != submission.StatusValidated {
 		t.Errorf("newer validated submission status = %q, want unchanged %q", gotNewer.Status, submission.StatusValidated)
+	}
+}
+
+// TestProcessOne_OldestNormalized_IsNotStarvedByNewerAdmitted extends the
+// no-starvation guarantee to the third tier added in Checkpoint 7: an
+// older normalized submission awaiting detection evaluation must be
+// claimed ahead of a newer admitted one.
+func TestProcessOne_OldestNormalized_IsNotStarvedByNewerAdmitted(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	if err := detection.Load(context.Background(), db); err != nil {
+		t.Fatalf("detection.Load: %v", err)
+	}
+	older := time.Now().Add(-1 * time.Hour)
+	newer := time.Now()
+
+	olderNormalized := seedNormalizedWithCreatedAt(t, db, validEventJSON, older)
+	newerAdmitted := seedAtStatusWithCreatedAt(t, db, submission.StatusAdmitted, validEventJSON, newer)
+
+	if err := ProcessOne(context.Background(), db); err != nil {
+		t.Fatalf("ProcessOne: %v", err)
+	}
+
+	gotOlder, err := submission.Get(context.Background(), db, olderNormalized)
+	if err != nil {
+		t.Fatalf("get older: %v", err)
+	}
+	if gotOlder.Status != submission.StatusEvaluated {
+		t.Errorf("older normalized submission status = %q, want %q (must not be starved)", gotOlder.Status, submission.StatusEvaluated)
+	}
+
+	gotNewer, err := submission.Get(context.Background(), db, newerAdmitted)
+	if err != nil {
+		t.Fatalf("get newer: %v", err)
+	}
+	if gotNewer.Status != submission.StatusAdmitted {
+		t.Errorf("newer admitted submission status = %q, want unchanged %q", gotNewer.Status, submission.StatusAdmitted)
 	}
 }
 
