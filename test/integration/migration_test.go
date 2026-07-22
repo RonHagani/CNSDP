@@ -5,8 +5,10 @@ package integration
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"testing"
 
+	"cnsdp/internal/db"
 	"cnsdp/internal/testutil"
 )
 
@@ -61,6 +63,159 @@ func TestMigrations_ApplyExpectedSchema(t *testing.T) {
 	if detectionResultsHasSubmissionID {
 		t.Error("detection_results.submission_id must not exist: it duplicated normalized_events.submission_id and could disagree with it")
 	}
+
+	// raw_event must be BYTEA (exact source bytes), not JSONB
+	// (semantically-canonicalizing) -- migration 0002.
+	var rawEventType string
+	if err := conn.QueryRowContext(ctx,
+		`SELECT data_type FROM information_schema.columns WHERE table_schema='public' AND table_name='submissions' AND column_name='raw_event'`,
+	).Scan(&rawEventType); err != nil {
+		t.Fatalf("check submissions.raw_event type: %v", err)
+	}
+	if rawEventType != "bytea" {
+		t.Errorf("submissions.raw_event data_type = %q, want bytea", rawEventType)
+	}
+
+	// source_key must exist, be NOT NULL, and be UNIQUE -- migration 0002.
+	var sourceKeyNullable string
+	if err := conn.QueryRowContext(ctx,
+		`SELECT is_nullable FROM information_schema.columns WHERE table_schema='public' AND table_name='submissions' AND column_name='source_key'`,
+	).Scan(&sourceKeyNullable); err != nil {
+		t.Fatalf("check submissions.source_key existence/nullability: %v", err)
+	}
+	if sourceKeyNullable != "NO" {
+		t.Errorf("submissions.source_key is_nullable = %q, want NO", sourceKeyNullable)
+	}
+
+	definitionID := insertDefinition(t, conn, "scenario-1", "rev-schema-check")
+	submissionID, _, _, _ := seedChain(t, conn, definitionID)
+	var existingKey string
+	if err := conn.QueryRowContext(ctx, `SELECT source_key FROM submissions WHERE id = $1`, submissionID).Scan(&existingKey); err != nil {
+		t.Fatalf("read seeded source_key: %v", err)
+	}
+	if _, err := conn.ExecContext(ctx,
+		`INSERT INTO submissions (raw_event, audit_id, audit_stage, source_key) VALUES ('{}', 'b', 'ResponseComplete', $1)`,
+		existingKey,
+	); err == nil {
+		t.Error("expected a duplicate submissions.source_key to be rejected by the UNIQUE constraint")
+	}
+}
+
+// TestMigration0002_DownPreservesJSONSemanticsAndUpRestoresBytea drives
+// migration 0002's down/up reversibility directly, rather than only
+// asserting the end-state schema: it seeds a row with deliberately
+// non-canonically-formatted JSON, steps down across 0002, confirms the
+// column reverted to JSONB with the same JSON content (not the same
+// bytes -- JSONB canonicalizes on storage, so byte-for-byte preservation
+// across this lossy rollback is not claimed), steps back up, and confirms
+// raw_event is BYTEA again and source_key still exists, is NOT NULL, and
+// is UNIQUE.
+func TestMigration0002_DownPreservesJSONSemanticsAndUpRestoresBytea(t *testing.T) {
+	conn := testutil.MigratedPostgres(t)
+	ctx := context.Background()
+
+	const original = `{"b": 2, "a": 1}` // unsorted keys, internal spacing
+	var id int64
+	if err := conn.QueryRowContext(ctx,
+		`INSERT INTO submissions (raw_event, audit_id, audit_stage, source_key) VALUES ($1, 'a', 'ResponseComplete', $2) RETURNING id`,
+		[]byte(original), testutil.UniqueKey(t),
+	).Scan(&id); err != nil {
+		t.Fatalf("seed row: %v", err)
+	}
+
+	m, err := db.NewMigrator(conn)
+	if err != nil {
+		t.Fatalf("construct migrator: %v", err)
+	}
+
+	if err := m.Steps(-1); err != nil {
+		t.Fatalf("migrate down across 0002: %v", err)
+	}
+
+	dataType := columnDataType(t, conn, "submissions", "raw_event")
+	if dataType != "jsonb" {
+		t.Errorf("raw_event data_type after down = %q, want jsonb", dataType)
+	}
+
+	var storedAfterDown string
+	if err := conn.QueryRowContext(ctx,
+		`SELECT raw_event::text FROM submissions WHERE id = $1`, id,
+	).Scan(&storedAfterDown); err != nil {
+		t.Fatalf("read raw_event after down: %v", err)
+	}
+	assertSameJSONContent(t, "after down", storedAfterDown, original)
+
+	if err := m.Steps(1); err != nil {
+		t.Fatalf("migrate up across 0002 again: %v", err)
+	}
+
+	dataType = columnDataType(t, conn, "submissions", "raw_event")
+	if dataType != "bytea" {
+		t.Errorf("raw_event data_type after re-up = %q, want bytea", dataType)
+	}
+
+	var storedAfterUp []byte
+	if err := conn.QueryRowContext(ctx,
+		`SELECT raw_event FROM submissions WHERE id = $1`, id,
+	).Scan(&storedAfterUp); err != nil {
+		t.Fatalf("read raw_event after re-up: %v", err)
+	}
+	assertSameJSONContent(t, "after re-up", string(storedAfterUp), original)
+
+	var sourceKeyNullable string
+	if err := conn.QueryRowContext(ctx,
+		`SELECT is_nullable FROM information_schema.columns WHERE table_schema='public' AND table_name='submissions' AND column_name='source_key'`,
+	).Scan(&sourceKeyNullable); err != nil {
+		t.Fatalf("check source_key existence/nullability after re-migration: %v", err)
+	}
+	if sourceKeyNullable != "NO" {
+		t.Errorf("source_key is_nullable after re-migration = %q, want NO", sourceKeyNullable)
+	}
+
+	var existingKey string
+	if err := conn.QueryRowContext(ctx, `SELECT source_key FROM submissions WHERE id = $1`, id).Scan(&existingKey); err != nil {
+		t.Fatalf("read existing source_key: %v", err)
+	}
+	if _, err := conn.ExecContext(ctx,
+		`INSERT INTO submissions (raw_event, audit_id, audit_stage, source_key) VALUES ('{}', 'b', 'ResponseComplete', $1)`,
+		existingKey,
+	); err == nil {
+		t.Error("expected a duplicate source_key to still be rejected by the UNIQUE constraint after the down/up round trip")
+	}
+}
+
+func columnDataType(t *testing.T, conn *sql.DB, table, column string) string {
+	t.Helper()
+	var dataType string
+	if err := conn.QueryRowContext(context.Background(),
+		`SELECT data_type FROM information_schema.columns WHERE table_schema='public' AND table_name=$1 AND column_name=$2`,
+		table, column,
+	).Scan(&dataType); err != nil {
+		t.Fatalf("check %s.%s type: %v", table, column, err)
+	}
+	return dataType
+}
+
+// assertSameJSONContent asserts got is valid JSON with the same key/value
+// content as want -- structural/semantic equivalence only, never
+// byte-for-byte, since JSONB canonicalizes whitespace and key order.
+func assertSameJSONContent(t *testing.T, label, got, want string) {
+	t.Helper()
+	var gotVal, wantVal map[string]any
+	if err := json.Unmarshal([]byte(got), &gotVal); err != nil {
+		t.Fatalf("%s: raw_event is not valid JSON: %v (%s)", label, err, got)
+	}
+	if err := json.Unmarshal([]byte(want), &wantVal); err != nil {
+		t.Fatalf("%s: test's own expected JSON is invalid: %v", label, err)
+	}
+	if len(gotVal) != len(wantVal) {
+		t.Fatalf("%s: raw_event = %v, want the same content as %v", label, gotVal, wantVal)
+	}
+	for k, wv := range wantVal {
+		if gv, ok := gotVal[k]; !ok || gv != wv {
+			t.Errorf("%s: raw_event[%q] = %v, want %v", label, k, gv, wv)
+		}
+	}
 }
 
 func TestMigrations_StatusCheckConstraintRejectsInvalidValue(t *testing.T) {
@@ -68,15 +223,15 @@ func TestMigrations_StatusCheckConstraintRejectsInvalidValue(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := conn.ExecContext(ctx,
-		`INSERT INTO submissions (status, raw_event, audit_id, audit_stage) VALUES ($1, '{}', 'a', 'ResponseComplete')`,
-		"not-a-real-status")
+		`INSERT INTO submissions (status, raw_event, audit_id, audit_stage, source_key) VALUES ($1, '{}', 'a', 'ResponseComplete', $2)`,
+		"not-a-real-status", testutil.UniqueKey(t))
 	if err == nil {
 		t.Fatal("expected the status CHECK constraint to reject an invalid value, got no error")
 	}
 
 	_, err = conn.ExecContext(ctx,
-		`INSERT INTO submissions (status, raw_event, audit_id, audit_stage) VALUES ($1, '{}', 'a', 'ResponseComplete')`,
-		"admitted")
+		`INSERT INTO submissions (status, raw_event, audit_id, audit_stage, source_key) VALUES ($1, '{}', 'a', 'ResponseComplete', $2)`,
+		"admitted", testutil.UniqueKey(t))
 	if err != nil {
 		t.Fatalf("expected a valid status value to be accepted, got: %v", err)
 	}
@@ -90,7 +245,8 @@ func seedChain(t *testing.T, conn *sql.DB, definitionID int64) (submissionID, no
 	ctx := context.Background()
 
 	if err := conn.QueryRowContext(ctx,
-		`INSERT INTO submissions (raw_event, audit_id, audit_stage) VALUES ('{}', 'a', 'ResponseComplete') RETURNING id`,
+		`INSERT INTO submissions (raw_event, audit_id, audit_stage, source_key) VALUES ('{}', 'a', 'ResponseComplete', $1) RETURNING id`,
+		testutil.UniqueKey(t),
 	).Scan(&submissionID); err != nil {
 		t.Fatalf("insert submission: %v", err)
 	}

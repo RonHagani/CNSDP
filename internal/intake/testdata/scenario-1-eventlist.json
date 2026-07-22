@@ -1,0 +1,7 @@
+{
+  "kind": "EventList",
+  "apiVersion": "audit.k8s.io/v1",
+  "items": [
+    {"kind":"Event","apiVersion":"audit.k8s.io/v1","level":"RequestResponse","auditID":"34b75a57-e1c0-4659-a21f-2d39256f018c","stage":"ResponseComplete","requestURI":"/api/v1/namespaces/default/pods/high-risk-pod/exec?command=C%3A%2FProgram+Files%2FGit%2Fusr%2Fbin%2Fsh.exe&command=-c&command=echo+interactive-exec-marker&container=high-risk-container&stdin=true&stdout=true&tty=true","verb":"get","user":{"username":"kubernetes-admin","groups":["kubeadm:cluster-admins","system:authenticated"],"extra":{"authentication.kubernetes.io/credential-id":["X509SHA256=9a4a60dc1b9f9da18482a661944357f22913875d97fd8808e3c19936537749b2"]}},"sourceIPs":["172.19.0.1"],"userAgent":"kubectl.exe/v1.34.1 (windows/amd64) kubernetes/93248f9","objectRef":{"resource":"pods","namespace":"default","name":"high-risk-pod","apiVersion":"v1","subresource":"exec"},"responseStatus":{"metadata":{},"code":101},"requestReceivedTimestamp":"2026-07-21T15:25:11.901891Z","stageTimestamp":"2026-07-21T15:25:11.959819Z","annotations":{"authorization.k8s.io/decision":"allow","authorization.k8s.io/reason":"RBAC: allowed by ClusterRoleBinding \"kubeadm:cluster-admins\" of ClusterRole \"cluster-admin\" to Group \"kubeadm:cluster-admins\""}}
+  ]
+}

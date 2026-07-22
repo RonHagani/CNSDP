@@ -9,6 +9,8 @@ package testutil
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"sync/atomic"
 	"testing"
 
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -54,4 +56,16 @@ func MigratedPostgres(t *testing.T) *sql.DB {
 	}
 
 	return conn
+}
+
+var uniqueKeyCounter atomic.Int64
+
+// UniqueKey returns a deterministic, collision-free string for tests that
+// need a synthetic unique value (e.g. a seed row's source_key) and don't
+// care about its content -- just that repeated calls never collide within
+// a test run. Each test already runs against its own fresh ephemeral
+// database, so a random UUID isn't needed for this.
+func UniqueKey(t *testing.T) string {
+	t.Helper()
+	return fmt.Sprintf("test:%s:%d", t.Name(), uniqueKeyCounter.Add(1))
 }

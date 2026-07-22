@@ -5,7 +5,9 @@ package submission
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,8 +31,12 @@ const (
 
 // Submission is the durable record for one telemetry submission.
 type Submission struct {
-	ID         int64
-	Status     Status
+	ID     int64
+	Status Status
+	// RawEvent is the exact bytes of the received EventList item, stored
+	// as BYTEA -- byte-for-byte, not a JSON-canonicalized re-serialization.
+	// A queryable/semantic JSONB representation belongs later, in
+	// normalized_events.content, not here.
 	RawEvent   json.RawMessage
 	AuditID    string
 	AuditStage string
@@ -51,6 +57,13 @@ var (
 	// ErrNoWork is returned by OldestNonTerminal when every submission
 	// has already reached the terminal (evidenced) status.
 	ErrNoWork = errors.New("submission: no non-terminal submission available")
+
+	// ErrSourceConflict is returned by Admit when a submission with the
+	// same derived source_key already exists but its persisted content
+	// (raw_event, audit_id, audit_stage) does not match this call's
+	// arguments -- so this is not a safe retry of the same event, and
+	// neither updating the existing row nor inserting a new one is safe.
+	ErrSourceConflict = errors.New("submission: source conflict")
 )
 
 // DB is the minimal subset of *sql.DB / *sql.Tx this package needs, so a
@@ -141,4 +154,62 @@ func Advance(ctx context.Context, db DB, id int64, from, to Status) error {
 		return fmt.Errorf("submission: advance %d: determine conflict cause: %w", id, getErr)
 	}
 	return fmt.Errorf("%w: submission %d expected status %q, found %q", ErrStatusConflict, id, from, current.Status)
+}
+
+// Admit durably records a newly received telemetry submission at the
+// defined intake (FR-001, FR-003) in its initial admitted status (the
+// column default). Every syntactically-identifiable item is admitted
+// regardless of content shape -- FR-005's four-way classification is the
+// validation checkpoint's responsibility, not this one's.
+//
+// Admission is retry-safe: sourceKey derives a deterministic key from
+// auditID+auditStage when both are available, or from a hash of rawEvent
+// otherwise. A repeat delivery of the same source event -- same key, same
+// raw_event, audit_id, and audit_stage -- resolves to the existing row's
+// id rather than inserting a duplicate. If the same key arrives with any
+// different content, the existing row is left unchanged and
+// ErrSourceConflict is returned; this is a single race-safe statement, not
+// a separate check-then-act (concurrent admissions of the same key are
+// serialized by Postgres's own row lock on the conflicting row).
+func Admit(ctx context.Context, db DB, rawEvent json.RawMessage, auditID, auditStage string) (int64, error) {
+	key := sourceKey(rawEvent, auditID, auditStage)
+	var id int64
+	err := db.QueryRowContext(ctx,
+		`INSERT INTO submissions (raw_event, audit_id, audit_stage, source_key)
+		 VALUES ($1, $2, $3, $4)
+		 ON CONFLICT (source_key) DO UPDATE
+		 SET raw_event = EXCLUDED.raw_event
+		 WHERE submissions.raw_event = EXCLUDED.raw_event
+		   AND submissions.audit_id = EXCLUDED.audit_id
+		   AND submissions.audit_stage = EXCLUDED.audit_stage
+		 RETURNING id`,
+		[]byte(rawEvent), auditID, auditStage, key,
+	).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		// The conflicting row exists but its content doesn't match --
+		// Postgres left it untouched (the WHERE predicate failed) and
+		// RETURNING produced nothing.
+		return 0, fmt.Errorf("%w: source key %s already used by a submission with different content", ErrSourceConflict, key)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("submission: admit: %w", err)
+	}
+	return id, nil
+}
+
+// sourceKey derives Admit's deterministic dedup key. The "id:"/"raw:"
+// prefixes keep the two derivation schemes disjoint. The identity-based
+// scheme canonically JSON-encodes the (auditID, auditStage) pair before
+// hashing -- not a delimited concatenation -- because auditID/auditStage
+// come from unconditionally-admitted, possibly-malformed items and cannot
+// be assumed not to contain whatever separator a naive concatenation would
+// pick; JSON's string escaping makes the encoding of the pair injective.
+func sourceKey(rawEvent json.RawMessage, auditID, auditStage string) string {
+	if auditID != "" && auditStage != "" {
+		canonical, _ := json.Marshal([2]string{auditID, auditStage}) // marshaling a fixed-size []string cannot fail
+		sum := sha256.Sum256(canonical)
+		return "id:" + hex.EncodeToString(sum[:])
+	}
+	sum := sha256.Sum256(rawEvent)
+	return "raw:" + hex.EncodeToString(sum[:])
 }

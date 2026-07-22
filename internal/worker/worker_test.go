@@ -16,7 +16,8 @@ func seedAdmitted(t *testing.T, db *sql.DB) int64 {
 	t.Helper()
 	var id int64
 	err := db.QueryRowContext(context.Background(),
-		`INSERT INTO submissions (raw_event, audit_id, audit_stage) VALUES ('{}', 'a', 'ResponseComplete') RETURNING id`,
+		`INSERT INTO submissions (raw_event, audit_id, audit_stage, source_key) VALUES ('{}', 'a', 'ResponseComplete', $1) RETURNING id`,
+		testutil.UniqueKey(t),
 	).Scan(&id)
 	if err != nil {
 		t.Fatalf("seed admitted submission: %v", err)

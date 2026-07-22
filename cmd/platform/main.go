@@ -1,24 +1,45 @@
 // Command platform is the single deployable for the Cloud-Native Security
 // Telemetry and Detection Platform (ARCH-01). At this checkpoint it
-// connects to PostgreSQL, applies migrations, and loads the
-// version-controlled detection definitions (ADR-0004) — intake, the
-// worker's stage handlers beyond validate, and every other
-// workflow-stage module are not implemented yet.
+// connects to PostgreSQL, applies migrations, loads the version-controlled
+// detection definitions (ADR-0004), and serves the telemetry admission
+// endpoint (module 1, ARCH-01 §2) — the worker's stage handlers beyond
+// validate, and every other workflow-stage module, are not implemented
+// yet, and the worker's processing loop is not started here yet either.
 package main
 
 import (
 	"context"
 	"log"
+	"net/http"
 	"os"
+	"strconv"
+	"time"
 
 	"cnsdp/internal/db"
 	"cnsdp/internal/detection"
+	"cnsdp/internal/intake"
 )
 
 func main() {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		log.Fatal("DATABASE_URL is required")
+	}
+	token := os.Getenv("API_TOKEN")
+	if token == "" {
+		log.Fatal("API_TOKEN is required")
+	}
+	addr := os.Getenv("HTTP_ADDR")
+	if addr == "" {
+		addr = ":8080"
+	}
+	maxBodyBytes := int64(intake.DefaultMaxBodyBytes)
+	if v := os.Getenv("MAX_BODY_BYTES"); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || n <= 0 {
+			log.Fatalf("MAX_BODY_BYTES must be a positive integer, got %q", v)
+		}
+		maxBodyBytes = n
 	}
 
 	ctx := context.Background()
@@ -38,4 +59,16 @@ func main() {
 	}
 
 	log.Println("database connected, migrations applied, detection definitions loaded")
+
+	mux := http.NewServeMux()
+	mux.Handle("POST /v1/audit-events", &intake.Handler{DB: conn, Token: token, MaxBodyBytes: maxBodyBytes})
+
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+	log.Printf("listening on %s", addr)
+	log.Fatal(srv.ListenAndServe())
 }
