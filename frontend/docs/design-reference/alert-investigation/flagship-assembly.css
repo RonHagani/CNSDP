@@ -1,0 +1,425 @@
+/*
+  Flagship Alert Investigation composition — one indivisible desktop
+  assembly (1600x1000). Built from three locked studies:
+    - Title System A (Docket Index Line), sans-serif title treatment.
+    - Lineage Instrument A (Decoder Strip), as the dominant central object.
+    - Evidence Study C (Archival Manifest), rhythm strengthened.
+  Grayscale ground; one restrained desaturated accent reserved for the
+  active lineage path inside the decoder strip only.
+*/
+
+* { box-sizing: border-box; }
+
+:root {
+  --bg: #141416;
+  --line: #2c2c30;
+  --line-soft: #232326;
+  --text-primary: #f1efe6;
+  --text-secondary: #9b9b9d;
+  --text-muted: #6d6d70;
+  --text-dim: #55555a;
+  --accent: #7fa0ac;
+}
+
+html, body { margin: 0; padding: 0; background: #0a0a0b; }
+body { display: flex; }
+
+.page {
+  position: relative;
+  width: 1600px;
+  height: 1000px;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: "Segoe UI", Arial, sans-serif;
+  padding: 50px 64px 40px;
+}
+
+/* ================================================================
+   Case identity docket
+   ================================================================ */
+
+.docket {
+  display: flex;
+  align-items: stretch;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 32px;
+}
+
+.docket-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-right: 48px;
+}
+
+.d-citation {
+  font-family: Consolas, monospace;
+  font-size: 11.5px;
+  letter-spacing: 0.05em;
+  color: #8c8a84;
+}
+.d-citation b { color: #c3c0b6; font-weight: 600; }
+
+.d-title {
+  margin-top: 13px;
+  font-family: "Bahnschrift", "Segoe UI Semibold", "Segoe UI", Arial, sans-serif;
+  font-weight: 600;
+  font-size: 36px;
+  letter-spacing: -0.004em;
+  line-height: 1.12;
+  color: var(--text-primary);
+}
+
+.d-meta {
+  margin-top: 13px;
+  font-family: "Segoe UI", Arial, sans-serif;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.d-meta b { color: #cfccc2; font-weight: 600; }
+.d-meta .sep { color: var(--text-dim); margin: 0 10px; }
+
+.docket-trace {
+  flex: 0 0 186px;
+  padding-left: 26px;
+  border-left: 1px solid var(--line);
+  padding-top: 2px;
+}
+.dt-label {
+  font-family: Consolas, monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.dt-value {
+  margin-top: 9px;
+  font-family: Consolas, monospace;
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: 0.04em;
+  color: #d6d3c9;
+}
+.dt-sub {
+  margin-top: 6px;
+  font-family: Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  max-width: 150px;
+}
+
+/* ================================================================
+   Custody Verification Rail — a page-level device, not a section.
+   Lives in the right margin gutter (content ends at x=1536, page ends
+   at x=1600) so it never crosses the Decoder Strip, rails or manifest
+   content; it only registers alongside them. Top anchors to the
+   traceability stub, bottom docks into the proof line. Exact top/notch
+   positions are measured against rendered layout, not estimated.
+   ================================================================ */
+
+.custody-rail {
+  position: absolute;
+  left: 1560px;
+  top: 147px;
+  bottom: 153px;
+  width: 1px;
+}
+
+.cr-line {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 1px;
+  background: var(--line);
+}
+
+.cr-notch {
+  position: absolute;
+  left: -4px;
+  width: 9px;
+  height: 1px;
+  background: var(--text-dim);
+}
+.cr-notch.cr-strong {
+  left: -6px;
+  width: 13px;
+  height: 1px;
+  background: var(--text-muted);
+}
+
+/* Top values are each record's measured vertical center, relative to
+   the rail's own top (147px). */
+.cr-n1 { top: 387px; }
+.cr-n2 { top: 435px; }
+.cr-n3 { top: 483px; }
+.cr-n4 { top: 531px; }
+.cr-n5 { top: 579px; }
+.cr-n6 { top: 627px; }
+
+/* ================================================================
+   Decoder Strip instrument — dominant object
+   ================================================================ */
+
+.instrument { margin-bottom: 34px; }
+
+.rail {
+  font-family: Consolas, monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.015em;
+  color: var(--text-muted);
+}
+.rail b {
+  display: inline-block;
+  margin-right: 12px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #86858a;
+}
+.rail.raw { margin-bottom: 12px; }
+.rail.norm { margin-top: 14px; }
+
+.strip {
+  position: relative;
+  height: 190px;
+  margin-top: 10px;
+}
+
+/* Three semantic stages — text only, no panels. Separation comes from
+   position, alignment and typography; all three sit on one datum line. */
+.stage { position: absolute; top: 0; white-space: nowrap; }
+.stage-origin { left: 0; text-align: left; }
+.stage-parse { left: 50%; transform: translateX(-50%); text-align: center; }
+.stage-dest { right: 0; text-align: right; }
+
+.stage .tag {
+  font-family: Consolas, monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.stage .idx {
+  margin-top: 15px;
+  font-family: Consolas, monospace;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #6a6a6c;
+}
+
+.stage .lbl {
+  margin-top: 6px;
+  font-family: Consolas, monospace;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #8f8d86;
+}
+.stage-parse .lbl { color: #d6d3c9; }
+
+.stage .content {
+  margin-top: 22px;
+  font-family: Consolas, monospace;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.55;
+}
+.stage-parse .content { font-size: 19.5px; }
+
+/* Read Head assembly — fused directly to the parse value by a short
+   leader, so label, value, head and datum read as one mechanism. */
+.op-leader {
+  width: 1px;
+  height: 8px;
+  margin: 6px auto 0;
+  background: var(--text-dim);
+}
+.stage-parse .rh-tag {
+  margin-top: 4px;
+  text-align: center;
+  font-family: Consolas, monospace;
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.rh-leader {
+  width: 1px;
+  height: 6px;
+  margin: 4px auto 0;
+  background: var(--text-dim);
+}
+.gate {
+  position: relative;
+  width: 40px;
+  height: 14px;
+  margin: 0 auto;
+}
+.rh-jaws {
+  position: absolute;
+  inset: 0;
+  border-top: 1px solid var(--accent);
+  border-bottom: 1px solid var(--accent);
+}
+
+/* The datum line — one continuous path, source to normalized, interrupted
+   only at the gate where normalization happens. Top values are measured
+   to match the Read Head's true rendered center. */
+.datum-seg {
+  position: absolute;
+  top: 143px;
+  height: 1px;
+  background: #4a4a4e;
+}
+.datum-seg.left { left: 0; width: calc(50% - 20px); }
+.datum-seg.right { left: calc(50% + 20px); right: 0; }
+
+.datum-arrow {
+  position: absolute;
+  top: 138px;
+  right: 14px;
+  width: 0;
+  height: 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 6px solid #4a4a4e;
+}
+
+/* Field-path annotations, attached to the line by short leaders rather
+   than boxed or ruled off. */
+.anchor { position: absolute; top: 150px; white-space: nowrap; }
+.anchor .leader {
+  width: 1px;
+  height: 10px;
+  background: var(--line);
+}
+.anchor .note {
+  margin-top: 6px;
+  font-family: Consolas, monospace;
+  font-size: 10.5px;
+  color: #77767a;
+}
+
+.anchor-origin { left: 0; }
+.anchor-parse { left: 50%; transform: translateX(-50%); text-align: center; }
+.anchor-parse .leader { margin: 0 auto; }
+.anchor-dest { right: 0; text-align: right; }
+.anchor-dest .leader { margin-left: auto; }
+
+/* ================================================================
+   Archival Manifest
+   ================================================================ */
+
+.manifest { margin-bottom: 24px; }
+
+.m-eyebrow {
+  margin-bottom: 18px;
+  font-family: Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Ledger — a bound archival register, not a table. A single continuous
+   spine (built from contiguous per-record borders) carries the accession
+   index; each record reads as one ruled line, name run into its record
+   text, availability trailing quietly rather than columned. */
+.ledger { position: relative; }
+
+.rec {
+  position: relative;
+  padding: 13px 0 13px 88px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.rec:last-child { border-bottom: none; }
+
+.rec-acc {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 18px;
+  border-right: 1px solid var(--line);
+  font-family: Consolas, monospace;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: #6a6a6c;
+}
+.rec-acc .total {
+  margin-left: 2px;
+  font-size: 9px;
+  color: var(--text-dim);
+}
+
+.rec-name {
+  font-family: "Segoe UI", Arial, sans-serif;
+  font-weight: 600;
+  font-size: 14px;
+  color: #cfccc2;
+}
+.rec-name::after {
+  content: " \2014 ";
+  font-family: Consolas, monospace;
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.rec-fact {
+  font-family: Consolas, monospace;
+  font-size: 12.5px;
+  color: #9b988f;
+}
+
+.rec-avail {
+  margin-left: 12px;
+  font-family: Consolas, monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+.rec-avail::before { content: "\00b7 "; }
+
+.rec.emph .rec-acc { color: #a9a69c; border-right-color: #6d6d70; }
+.rec.emph .rec-name { color: var(--text-primary); }
+.rec.emph .rec-fact { color: #b4b1a8; }
+
+/* ================================================================
+   Traceability proof footer
+   ================================================================ */
+
+.proof {
+  display: flex;
+  align-items: baseline;
+  margin-right: -24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+  font-family: Consolas, monospace;
+  font-size: 11.5px;
+  letter-spacing: 0.015em;
+  color: var(--text-muted);
+}
+.proof b { color: #9b988f; font-weight: 600; }
+.proof .arrow { color: var(--text-dim); margin: 0 2px; }
+
+.proof-text { flex: 0 1 auto; }
+.proof-terminus { color: #b4b1a8; }
+
+.proof-dock {
+  flex: 1 1 auto;
+  align-self: center;
+  height: 1px;
+  min-width: 14px;
+  margin-left: 14px;
+  background: var(--line);
+}

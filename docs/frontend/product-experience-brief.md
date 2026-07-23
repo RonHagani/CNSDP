@@ -3,10 +3,12 @@
 | Field | Value |
 | --- | --- |
 | Document | Security Investigation Experience — Product Experience Brief |
-| Status | Draft — Phase 1.5, pending review |
+| Status | **Superseded** — see notice below. Retained for historical reference only; must not guide implementation. |
 | Phase | Phase 1.5 — Security Investigation Experience |
 | Identifier | Not assigned. This document is deliberately outside the closed PC-015 identifier namespace (PC-###, PD-###, PER-###, UC-###, FR-###, NFR-###, AC-### are not reopened or extended by this document) and is referenced by path only: `docs/frontend/product-experience-brief.md`. |
 | Relationship to baseline | Extends, and must not contradict, the approved Phase 0 product baseline (`../product.md` and its companions) and the approved Phase 1 architecture baseline (`../architecture.md`, ARCH-01). Defines no new product scope, functional requirement, non-functional requirement, or acceptance criterion. Where this document proposes a backend capability, that capability requires its own separate architecture and implementation approval before any code is written (see §11). |
+
+> **SUPERSEDED.** This document's visual and interaction direction — "The Signal Path" creative direction (§4), the flagship screen specification (§5), the information architecture (§6, as it pertains to the Alert Investigation route), the design system (§7), and the motion system (§8) — is superseded by [`docs/frontend/alert-investigation-ux-spec.md`](./alert-investigation-ux-spec.md). This document is retained only as historical design exploration and **must not guide implementation**. Its backend-capability audit (§2) and backend-capability plan (§11) remain accurate reference material and are restated, for self-containment, in the superseding specification's §2 and §15. No content below this notice has been rewritten or removed.
 
 ## Purpose and scope
 

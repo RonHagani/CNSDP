@@ -1,0 +1,184 @@
+.ribbon {
+  position: relative;
+  padding: var(--cnsdp-space-8) var(--cnsdp-space-9) var(--cnsdp-space-9) 17rem;
+  border-top: 1px solid var(--cnsdp-border-subtle);
+}
+
+.head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--cnsdp-space-4);
+  margin-bottom: var(--cnsdp-space-8);
+}
+
+.eyebrow {
+  margin: 0 0 var(--cnsdp-space-1);
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-2xs);
+  letter-spacing: var(--cnsdp-tracking-label);
+  text-transform: uppercase;
+  color: var(--cnsdp-text-tertiary);
+}
+
+.title {
+  margin: 0;
+  font-family: var(--cnsdp-font-display);
+  font-weight: 600;
+  font-size: var(--cnsdp-display-sm);
+  color: var(--cnsdp-text-primary);
+}
+
+.count {
+  margin: 0;
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-xs);
+  color: var(--cnsdp-text-secondary);
+}
+
+.countDivider {
+  color: var(--cnsdp-border-strong);
+}
+
+/* The rack rail — a glowing structural beam the exhibits are mounted to,
+   not a plain divider line between cards. */
+.rail {
+  position: absolute;
+  left: 17rem;
+  right: var(--cnsdp-space-9);
+  top: 12.5rem;
+  height: 2px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--cnsdp-conduit-idle) 4%,
+    var(--cnsdp-conduit-idle) 96%,
+    transparent
+  );
+  box-shadow: 0 0 12px 0 rgba(79, 214, 232, 0.12);
+}
+
+.exhibits {
+  position: relative;
+  margin: 0;
+  padding: 0 0 var(--cnsdp-space-6);
+  list-style: none;
+  display: flex;
+  gap: var(--cnsdp-space-6);
+  overflow-x: auto;
+  overflow-y: visible;
+  scrollbar-width: thin;
+  scrollbar-color: var(--cnsdp-border-strong) transparent;
+}
+
+.slot {
+  flex: 0 0 10.5rem;
+  display: flex;
+}
+
+.slot[data-parity="even"] {
+  transform: translateY(-0.5rem) rotate(-1.2deg);
+}
+
+.slot[data-parity="odd"] {
+  transform: translateY(0.75rem) rotate(1.2deg);
+}
+
+/* A sculpted, angled-corner badge — not a plain rounded rectangle. Two
+   corners are cut, evoking a security exhibit tag or cassette faceplate. */
+.exhibitCard {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--cnsdp-space-1);
+  padding: var(--cnsdp-space-4) var(--cnsdp-space-3);
+  background: linear-gradient(155deg, var(--cnsdp-surface-2), var(--cnsdp-void) 70%);
+  box-shadow: var(--cnsdp-relief-lift);
+  clip-path: polygon(10% 0%, 100% 0%, 100% 88%, 90% 100%, 0% 100%, 0% 12%);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    box-shadow var(--cnsdp-duration-normal) var(--cnsdp-ease-standard),
+    transform var(--cnsdp-duration-normal) var(--cnsdp-ease-standard);
+}
+
+.exhibitCard:hover {
+  box-shadow: var(--cnsdp-relief-lift), var(--cnsdp-glow-signal);
+}
+
+.exhibitCard[data-available="false"] {
+  box-shadow: var(--cnsdp-relief-inset);
+  opacity: 0.6;
+}
+
+.exhibitIcon {
+  color: var(--cnsdp-text-tertiary);
+  margin-bottom: var(--cnsdp-space-1);
+}
+
+.exhibitIcon[data-available="true"] {
+  color: var(--cnsdp-signal);
+}
+
+.exhibitIndex {
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-2xs);
+  color: var(--cnsdp-text-disabled);
+}
+
+.exhibitName {
+  font-family: var(--cnsdp-font-sans);
+  font-size: var(--cnsdp-text-sm);
+  font-weight: 600;
+  color: var(--cnsdp-text-primary);
+  line-height: 1.25;
+}
+
+.exhibitCaption {
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-2xs);
+  color: var(--cnsdp-text-tertiary);
+  overflow-wrap: anywhere;
+}
+
+.exhibitStatus {
+  margin-top: var(--cnsdp-space-2);
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-2xs);
+  letter-spacing: var(--cnsdp-tracking-label);
+  text-transform: uppercase;
+}
+
+.exhibitStatus[data-available="true"] {
+  color: var(--cnsdp-signal);
+}
+
+.exhibitStatus[data-available="false"] {
+  color: var(--cnsdp-severed);
+}
+
+@media (max-width: 1023px) {
+  .rail {
+    top: 11rem;
+  }
+
+  .slot[data-parity="even"],
+  .slot[data-parity="odd"] {
+    transform: none;
+  }
+}
+
+/* The ConduitField background spine hides below 768px — content keeps its
+   conduit clearance down to that point, then both the section padding and
+   the rack rail's own left offset drop together. */
+@media (max-width: 767px) {
+  .ribbon {
+    padding: var(--cnsdp-space-7) var(--cnsdp-space-5);
+  }
+
+  .rail {
+    left: var(--cnsdp-space-5);
+    right: var(--cnsdp-space-5);
+  }
+}

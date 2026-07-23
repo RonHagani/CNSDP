@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>CNSDP — Flagship Assembly</title>
+<link rel="stylesheet" href="flagship-assembly.css" />
+</head>
+<body>
+
+<div class="page">
+
+  <!-- ============ Case identity docket ============ -->
+  <div class="docket">
+    <div class="docket-main">
+      <div class="d-citation">ALERT NO. <b>000001</b> &middot; SCENARIO-1 &middot; REV. <b>A393A897&hellip;C6AA84A2</b></div>
+      <div class="d-title">Interactive container exec request</div>
+      <div class="d-meta"><b>kubernetes-admin</b><span class="sep">&mdash;</span><b>GET</b><span class="sep">&mdash;</span>pods/high-risk-pod (default&middot;exec)<span class="sep">&mdash;</span>source 34b75a57&hellip;6f018c</div>
+    </div>
+    <div class="docket-trace">
+      <div class="dt-label">Traceability</div>
+      <div class="dt-value">Intact</div>
+      <div class="dt-sub">alert &#8596; evidence chain verified</div>
+    </div>
+  </div>
+
+  <!-- ============ Custody Verification Rail ============ -->
+  <div class="custody-rail">
+    <div class="cr-line"></div>
+    <div class="cr-notch cr-n1"></div>
+    <div class="cr-notch cr-n2"></div>
+    <div class="cr-notch cr-n3 cr-strong"></div>
+    <div class="cr-notch cr-n4"></div>
+    <div class="cr-notch cr-n5 cr-strong"></div>
+    <div class="cr-notch cr-n6"></div>
+  </div>
+
+  <!-- ============ Decoder Strip instrument ============ -->
+  <div class="instrument">
+
+    <div class="rail raw">
+      <span><b>Raw source event</b>GET pods/high-risk-pod (default&middot;exec) &middot; requestURI query, 7 parameters &middot; auditID 34b75a57&hellip;6f018c</span>
+    </div>
+
+    <div class="strip">
+
+      <div class="stage stage-origin">
+        <div class="tag">Origin</div>
+        <div class="idx">01</div>
+        <div class="lbl">Extract query parameters</div>
+        <div class="content">stdin=true &middot; tty=true</div>
+      </div>
+
+      <div class="stage stage-parse">
+        <div class="idx">02</div>
+        <div class="lbl">Parse &amp; preserve booleans</div>
+        <div class="content">"true" &#8594; true &times;2</div>
+        <div class="op-leader"></div>
+        <div class="rh-tag">Read Head</div>
+        <div class="rh-leader"></div>
+        <div class="gate"><div class="rh-jaws"></div></div>
+      </div>
+
+      <div class="stage stage-dest">
+        <div class="tag right">Destination</div>
+        <div class="idx">03</div>
+        <div class="lbl">Emit normalized facts</div>
+        <div class="content">exec.stdin=true<br />exec.tty=true</div>
+      </div>
+
+      <div class="datum">
+        <div class="datum-seg left"></div>
+        <div class="datum-seg right"></div>
+        <div class="datum-arrow"></div>
+      </div>
+
+      <div class="anchor anchor-origin">
+        <div class="leader"></div>
+        <div class="note">query.stdin, query.tty &middot; 2 of 7 relevant</div>
+      </div>
+
+      <div class="anchor anchor-parse">
+        <div class="leader"></div>
+        <div class="note">string &#8594; bool &middot; Normalize(), single-pass</div>
+      </div>
+
+      <div class="anchor anchor-dest">
+        <div class="leader"></div>
+        <div class="note">event.exec.stdin, event.exec.tty</div>
+      </div>
+
+    </div>
+
+    <div class="rail norm">
+      <span><b>Normalized event</b>subject kubernetes-admin &middot; target pods/high-risk-pod (default&middot;exec) &middot; outcome 101 &middot; requestTime 15:25:11.901891Z</span>
+    </div>
+
+  </div>
+
+  <!-- ============ Archival manifest ============ -->
+  <div class="manifest">
+    <div class="m-eyebrow">Evidence Manifest &middot; 6 artifacts &middot; Alert 000001</div>
+
+    <div class="ledger">
+      <div class="rec">
+        <div class="rec-acc">001<span class="total">/006</span></div>
+        <div class="rec-body">
+          <span class="rec-name">Source Event</span>
+          <span class="rec-fact">kubernetes-admin &#8594; pods/high-risk-pod, GET</span>
+          <span class="rec-avail">available</span>
+        </div>
+      </div>
+      <div class="rec">
+        <div class="rec-acc">002<span class="total">/006</span></div>
+        <div class="rec-body">
+          <span class="rec-name">Validation Outcome</span>
+          <span class="rec-fact">outcome: valid</span>
+          <span class="rec-avail">available</span>
+        </div>
+      </div>
+      <div class="rec emph">
+        <div class="rec-acc">003<span class="total">/006</span></div>
+        <div class="rec-body">
+          <span class="rec-name">Normalized Event</span>
+          <span class="rec-fact">exec.stdin=true, exec.tty=true &middot; 6 fields extracted</span>
+          <span class="rec-avail">available</span>
+        </div>
+      </div>
+      <div class="rec">
+        <div class="rec-acc">004<span class="total">/006</span></div>
+        <div class="rec-body">
+          <span class="rec-name">Detection Definition</span>
+          <span class="rec-fact">scenario-1 &middot; rev a393a897&hellip;c6aa84a2</span>
+          <span class="rec-avail">available</span>
+        </div>
+      </div>
+      <div class="rec emph">
+        <div class="rec-acc">005<span class="total">/006</span></div>
+        <div class="rec-body">
+          <span class="rec-name">Detection Result</span>
+          <span class="rec-fact">stdin_streaming + tty_allocation matched</span>
+          <span class="rec-avail">available</span>
+        </div>
+      </div>
+      <div class="rec">
+        <div class="rec-acc">006<span class="total">/006</span></div>
+        <div class="rec-body">
+          <span class="rec-name">Alert</span>
+          <span class="rec-fact">id 000001 generated &middot; evaluated &#8594; alerted</span>
+          <span class="rec-avail">available</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ Traceability proof footer ============ -->
+  <div class="proof">
+    <span class="proof-text">PROOF &mdash; <b>alert 000001</b> <span class="arrow">&#8594;</span> detection result <b>scenario-1</b> <span class="arrow">&#8594;</span> normalized event <b>exec.stdin/tty</b> <span class="arrow">&#8594;</span> submission <b>34b75a57&hellip;6f018c</b> <span class="arrow">&mdash;</span> <span class="proof-terminus">chain intact</span></span>
+    <span class="proof-dock"></span>
+  </div>
+
+</div>
+
+</body>
+</html>

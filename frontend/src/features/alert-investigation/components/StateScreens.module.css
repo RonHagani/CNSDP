@@ -1,0 +1,71 @@
+.screen {
+  min-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: var(--cnsdp-space-4);
+  padding: var(--cnsdp-space-9);
+  max-width: 48rem;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--cnsdp-font-display);
+  font-style: italic;
+  font-weight: 600;
+  font-size: var(--cnsdp-display-sm);
+  color: var(--cnsdp-text-primary);
+}
+
+.message {
+  margin: 0;
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-sm);
+  color: var(--cnsdp-text-secondary);
+  line-height: var(--cnsdp-line-height-normal);
+}
+
+.action {
+  margin-top: var(--cnsdp-space-2);
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-xs);
+  color: var(--cnsdp-signal);
+  border: 1px solid var(--cnsdp-signal-dim);
+  border-radius: var(--cnsdp-radius-sm);
+  padding: var(--cnsdp-space-2) var(--cnsdp-space-4);
+  cursor: pointer;
+  transition: background var(--cnsdp-duration-fast) var(--cnsdp-ease-standard);
+}
+
+.action:hover {
+  background: var(--cnsdp-signal-surface);
+}
+
+.loading {
+  min-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--cnsdp-space-4);
+}
+
+.loadingRail {
+  display: flex;
+  gap: var(--cnsdp-space-3);
+}
+
+.loadingDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--cnsdp-border-strong);
+}
+
+.loadingLabel {
+  margin: 0;
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-xs);
+  color: var(--cnsdp-text-tertiary);
+}

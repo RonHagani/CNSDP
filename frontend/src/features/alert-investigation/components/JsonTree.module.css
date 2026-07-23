@@ -1,0 +1,83 @@
+.list {
+  margin: 0;
+  padding-left: var(--cnsdp-space-4);
+  border-left: 1px solid var(--cnsdp-border-subtle);
+  display: grid;
+  /* minmax(0, ...) on both tracks, not a bare `max-content` — without it a
+     long key (e.g. "authentication.kubernetes.io/credential-id") forces
+     its column to its full unbroken width in a CSS grid, starving the
+     value column down to near-zero and forcing values like a long hash to
+     wrap one character per line. */
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+  column-gap: var(--cnsdp-space-3);
+  row-gap: 2px;
+}
+
+.list .list {
+  grid-column: 1 / -1;
+}
+
+.key {
+  color: var(--cnsdp-text-tertiary);
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-xs);
+  max-width: 11rem;
+  overflow-wrap: break-word;
+}
+
+.value {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.scalarValue,
+.nullValue,
+.emptyValue {
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-xs);
+  color: var(--cnsdp-text-primary);
+  transition: opacity var(--cnsdp-duration-fast) var(--cnsdp-ease-standard);
+}
+
+.nullValue,
+.emptyValue {
+  color: var(--cnsdp-text-disabled);
+}
+
+.scalarValue[data-dimmed] {
+  opacity: 0.35;
+}
+
+.linkableValue {
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-xs);
+  color: var(--cnsdp-signal);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--cnsdp-radius-sm);
+  padding: 0 3px;
+  margin: -1px -3px;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    opacity var(--cnsdp-duration-fast) var(--cnsdp-ease-standard),
+    background var(--cnsdp-duration-fast) var(--cnsdp-ease-standard),
+    border-color var(--cnsdp-duration-fast) var(--cnsdp-ease-standard);
+}
+
+.linkableValue:hover {
+  background: var(--cnsdp-signal-surface);
+  border-color: var(--cnsdp-signal-dim);
+}
+
+.linkableValue[data-highlighted] {
+  background: var(--cnsdp-signal-surface);
+  border-color: var(--cnsdp-signal);
+  color: var(--cnsdp-signal);
+  font-weight: 600;
+}
+
+.linkableValue[data-dimmed] {
+  opacity: 0.35;
+}

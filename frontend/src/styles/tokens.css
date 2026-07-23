@@ -1,0 +1,151 @@
+/**
+ * CNSDP Signal Path design tokens.
+ *
+ * A deliberate, single committed theme — an instrument-panel dark surface,
+ * not a light/dark toggle. Exactly three semantic status hues are defined
+ * (signal / branch / severed); nothing else in this file may be reused to
+ * mean "status" (product-experience-brief.md §7). Status is never carried
+ * by color alone — every status token is paired with a required icon/label
+ * convention enforced at the component level, not here.
+ */
+
+:root {
+  /* ---- Surface ---- */
+  --cnsdp-surface-0: #0a0e14; /* page background */
+  --cnsdp-surface-1: #0f151d; /* panel background */
+  --cnsdp-surface-2: #141b25; /* raised panel / active inspector */
+  --cnsdp-surface-3: #1b2430; /* hover / pressed surface */
+  --cnsdp-surface-overlay: rgba(6, 9, 14, 0.72);
+
+  /* ---- Borders & connectors ---- */
+  --cnsdp-border-subtle: #232d3b;
+  --cnsdp-border-default: #2e3a4a;
+  --cnsdp-border-strong: #3e4f63;
+  --cnsdp-connector-idle: #2e3a4a;
+  --cnsdp-connector-active: var(--cnsdp-signal);
+  --cnsdp-connector-width: 2px;
+
+  /* ---- Text ---- */
+  --cnsdp-text-primary: #eaf1f7;
+  --cnsdp-text-secondary: #9fb0c2;
+  --cnsdp-text-tertiary: #6b7c90;
+  --cnsdp-text-disabled: #48586b;
+  --cnsdp-text-on-accent: #04141c;
+
+  /* ---- Semantic status hues (exactly three; never decorative) ---- */
+  --cnsdp-signal: #4fd6e8; /* intact / normal / active */
+  --cnsdp-signal-dim: #1f5b66;
+  --cnsdp-signal-surface: rgba(79, 214, 232, 0.1);
+  --cnsdp-branch: #e8b84f; /* genuine classification branch point */
+  --cnsdp-branch-dim: #6b5321;
+  --cnsdp-branch-surface: rgba(232, 184, 79, 0.1);
+  --cnsdp-severed: #f2545b; /* broken connector / unavailable required artifact */
+  --cnsdp-severed-dim: #6b2226;
+  --cnsdp-severed-surface: rgba(242, 84, 91, 0.12);
+
+  /* ---- Typography ----
+     Two working families plus one signature display face. The display
+     serif (Fraunces, self-hosted via @fontsource — no runtime CDN
+     dependency) exists for exactly one job: the case headline and section
+     openers that give this screen an editorial, authored identity instead
+     of a dashboard's uniform UI type. It is never used for data or status
+     text — those stay in the mono/sans working pair, unchanged. */
+  --cnsdp-font-mono:
+    "JetBrains Mono", "Cascadia Code", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --cnsdp-font-sans: "Inter", "Segoe UI", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --cnsdp-font-display: "Fraunces", "Iowan Old Style", "Georgia", serif;
+
+  --cnsdp-text-2xs: 0.6875rem;
+  --cnsdp-text-xs: 0.75rem;
+  --cnsdp-text-sm: 0.8125rem;
+  --cnsdp-text-base: 0.9375rem;
+  --cnsdp-text-md: 1.0625rem;
+  --cnsdp-text-lg: 1.25rem;
+  --cnsdp-text-xl: 1.5rem;
+
+  /* Display scale — the headline register. Deliberately dramatic jumps
+     (not a uniform 1.2x ramp) so the hero headline reads as a masthead,
+     not an oversized UI label. */
+  --cnsdp-display-sm: 2rem;
+  --cnsdp-display-md: 3rem;
+  --cnsdp-display-lg: 4.5rem;
+  --cnsdp-display-xl: 6.5rem;
+
+  --cnsdp-line-height-tight: 1.25;
+  --cnsdp-line-height-normal: 1.5;
+  --cnsdp-line-height-display: 0.98;
+
+  --cnsdp-tracking-label: 0.06em;
+  --cnsdp-tracking-display: -0.02em;
+
+  /* ---- Spacing scale (schematic module grid) ---- */
+  --cnsdp-space-1: 0.25rem;
+  --cnsdp-space-2: 0.5rem;
+  --cnsdp-space-3: 0.75rem;
+  --cnsdp-space-4: 1rem;
+  --cnsdp-space-5: 1.5rem;
+  --cnsdp-space-6: 2rem;
+  --cnsdp-space-7: 2.5rem;
+  --cnsdp-space-8: 3rem;
+  --cnsdp-space-9: 4rem;
+  --cnsdp-space-10: 6rem;
+  --cnsdp-space-11: 8rem;
+
+  /* ---- Radius: minimal, structural, never "soft SaaS" rounding ---- */
+  --cnsdp-radius-sm: 2px;
+  --cnsdp-radius-md: 3px;
+  --cnsdp-radius-pill: 999px;
+
+  /* ---- Elevation: exactly one step, for the active inspector only ---- */
+  --cnsdp-elevation-active: 0 1px 0 0 var(--cnsdp-border-strong) inset;
+
+  /* ---- Seal / medallion motif (traceability verdict) ---- */
+  --cnsdp-seal-size: 12rem;
+  --cnsdp-seal-size-sm: 7rem;
+
+  /* ---- Material system: matte forensic hardware ----
+     Sculpted relief is built from a paired light-catch (top-left) and
+     cast-shadow (bottom-right) — an "embossed" look — never a single flat
+     drop-shadow. Used by the medallion, evidence tiles, and conduit
+     junction nodes; nothing else may reach for these. */
+  --cnsdp-relief-lift:
+    -1px -1px 0 0 rgba(255, 255, 255, 0.04) inset, 1px 1px 2px 0 rgba(0, 0, 0, 0.6) inset,
+    0 6px 16px -4px rgba(0, 0, 0, 0.7);
+  --cnsdp-relief-inset:
+    1px 1px 2px 0 rgba(0, 0, 0, 0.7) inset, -1px -1px 0 0 rgba(255, 255, 255, 0.03) inset;
+  --cnsdp-glow-signal: 0 0 24px 2px rgba(79, 214, 232, 0.35);
+  --cnsdp-glow-severed: 0 0 24px 2px rgba(242, 84, 91, 0.35);
+  --cnsdp-void: #050709; /* deeper than surface-0 — the theater's backdrop */
+
+  /* ---- Conduit — the spatial spine's own hues, distinct from status ---- */
+  --cnsdp-conduit-idle: #253040;
+  --cnsdp-conduit-active: var(--cnsdp-signal);
+
+  /* ---- Motion ---- */
+  --cnsdp-duration-instant: 0ms;
+  --cnsdp-duration-fast: 120ms;
+  --cnsdp-duration-normal: 220ms;
+  --cnsdp-duration-slow: 420ms;
+  --cnsdp-ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --cnsdp-ease-emphasis: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* ---- Focus ---- */
+  --cnsdp-focus-ring: 0 0 0 2px var(--cnsdp-surface-0), 0 0 0 4px var(--cnsdp-signal);
+
+  /* ---- Z-index ---- */
+  --cnsdp-z-conduit: 0;
+  --cnsdp-z-content: 10;
+  --cnsdp-z-spotlight: 90;
+  --cnsdp-z-overlay: 100;
+  --cnsdp-z-palette: 200;
+
+  color-scheme: dark;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --cnsdp-duration-fast: 0ms;
+    --cnsdp-duration-normal: 0ms;
+    --cnsdp-duration-slow: 0ms;
+  }
+}

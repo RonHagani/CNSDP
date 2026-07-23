@@ -1,0 +1,104 @@
+.strip {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .strip {
+    display: block;
+    padding: var(--cnsdp-space-4) var(--cnsdp-space-5) var(--cnsdp-space-3);
+    background: var(--cnsdp-void);
+    border-bottom: 1px solid var(--cnsdp-border-subtle);
+  }
+}
+
+.readout {
+  display: flex;
+  align-items: baseline;
+  gap: var(--cnsdp-space-2);
+  margin: 0 0 var(--cnsdp-space-3);
+  font-family: var(--cnsdp-font-display);
+  font-style: italic;
+  font-weight: 600;
+  font-size: var(--cnsdp-text-lg);
+  color: var(--cnsdp-text-primary);
+}
+
+.readoutIndex {
+  font-family: var(--cnsdp-font-mono);
+  font-style: normal;
+  font-size: var(--cnsdp-text-2xs);
+  color: var(--cnsdp-signal);
+  letter-spacing: var(--cnsdp-tracking-label);
+}
+
+.rail {
+  position: relative;
+  padding: var(--cnsdp-space-2) 0;
+}
+
+.railLine {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--cnsdp-border-strong) 4%,
+    var(--cnsdp-border-strong) 96%,
+    transparent
+  );
+}
+
+.dots {
+  position: relative;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+}
+
+.dot {
+  position: relative;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--cnsdp-void);
+  box-shadow: var(--cnsdp-relief-lift);
+  cursor: pointer;
+}
+
+.dotIndex {
+  font-family: var(--cnsdp-font-mono);
+  font-size: 0.6rem;
+  color: var(--cnsdp-text-disabled);
+}
+
+.dot[data-tone="signal"] {
+  box-shadow: var(--cnsdp-relief-lift), var(--cnsdp-glow-signal);
+}
+
+.dot[data-tone="signal"] .dotIndex {
+  color: var(--cnsdp-signal);
+}
+
+.dot[data-tone="branch"] .dotIndex {
+  color: var(--cnsdp-branch);
+}
+
+.dot[data-tone="severed"] {
+  box-shadow: var(--cnsdp-relief-lift), var(--cnsdp-glow-severed);
+}
+
+.dot[data-tone="severed"] .dotIndex {
+  color: var(--cnsdp-severed);
+}
+
+.dot[data-active] {
+  transform: scale(1.25);
+}

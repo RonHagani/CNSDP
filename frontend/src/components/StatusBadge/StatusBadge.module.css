@@ -1,0 +1,43 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cnsdp-space-1);
+  padding: 0.15rem var(--cnsdp-space-2);
+  border-radius: var(--cnsdp-radius-pill);
+  border: 1px solid var(--cnsdp-border-default);
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-2xs);
+  letter-spacing: var(--cnsdp-tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.glyph {
+  font-size: 0.7rem;
+  line-height: 1;
+}
+
+.badge[data-tone="signal"] {
+  color: var(--cnsdp-signal);
+  border-color: var(--cnsdp-signal-dim);
+  background: var(--cnsdp-signal-surface);
+}
+
+.badge[data-tone="branch"] {
+  color: var(--cnsdp-branch);
+  border-color: var(--cnsdp-branch-dim);
+  background: var(--cnsdp-branch-surface);
+}
+
+.badge[data-tone="severed"] {
+  color: var(--cnsdp-severed);
+  border-color: var(--cnsdp-severed-dim);
+  background: var(--cnsdp-severed-surface);
+}
+
+.badge[data-tone="neutral"] {
+  color: var(--cnsdp-text-tertiary);
+  border-color: var(--cnsdp-border-default);
+  background: transparent;
+}
