@@ -55,6 +55,65 @@
  *     contract documented in internal/evidence/evidence.go's `Compose`,
  *     which independently marks each of the six artifacts unavailable
  *     rather than aborting the whole response (FR-035).
+ *
+ * Provenance for the scenario-2 (id: 4) and scenario-3 (id: 5) fixtures,
+ * added to exercise the second and third approved detection scenarios
+ * (Alert Investigation UX Specification v0.1 §5.2, §5.3):
+ *
+ *   - Raw source events: byte-identical to the single item in
+ *     internal/validation/testdata/scenario2-valid.json and
+ *     scenario3-valid.json respectively -- real, committed backend fixture
+ *     data already used by the Go backend's own validation tests.
+ *   - Normalized events: hand-derived by applying the documented
+ *     normalization rules (internal/normalization/normalization.go
+ *     `Normalize`, `podCreationCharacteristics`, `clusterRoleBindingCharacteristics`)
+ *     to those raw events. Scenario 2's five podCreation booleans are read
+ *     directly off the real requestObject's Pod spec (privileged from
+ *     containers[].securityContext.privileged; hostNetwork/hostPID/hostIPC
+ *     from the top-level spec booleans; hostPathVolume from the presence of
+ *     a volumes[].hostPath entry) -- this fixture's raw event happens to
+ *     satisfy all five. Scenario 3's clusterRoleBinding fields are read
+ *     directly off the real requestObject's roleRef/subjects/metadata.name
+ *     (objectRef.name takes precedence per the documented fallback rule).
+ *   - Detection definitions: byte-identical in content to
+ *     definitions/scenario-2.yaml and definitions/scenario-3.yaml.
+ *   - Detection-definition revisions: sha256 hex digests computed the same
+ *     way as id 1's illustrative revision (ADR-0004's documented scheme --
+ *     internal/detection `Definition.Canonical` / `RevisionID`): a
+ *     best-effort reconstruction of the canonical definition JSON, not
+ *     verified against a live backend instance, and not authoritative.
+ *   - A confirmed, deliberate ordering asymmetry, reproduced faithfully
+ *     rather than smoothed over: `detectionDefinition.definition.conditions
+ *     .requires_any` / `.requires_all` reflect `Canonical()`'s
+ *     characteristic-ID sort (internal/detection/detection.go
+ *     `sortedByID`), because `internal/evidence.Compose` reads the
+ *     detection definition back via `detection.GetDefinition`, which
+ *     unmarshals the *persisted* canonical content
+ *     (internal/detection/detection.go `loadDefinitionsFromFS` /
+ *     `insertDefinition`) -- while `detectionResult.matchReason
+ *     .satisfiedCharacteristics` preserves the YAML file's original
+ *     declared order, because match evaluation
+ *     (internal/detection/evaluate.go `Advance`) reads the active
+ *     definition via `ActiveDefinitions`, which re-parses the YAML fresh
+ *     and never sorts it. Scenario 2's five-characteristic list is the
+ *     first fixture where these two orders actually visibly differ.
+ *   - Match reasons and alert summaries: derived directly from the above,
+ *     matching internal/detection/evaluate.go's `evaluate` /
+ *     `characteristicSet` / `satisfiedFrom` and
+ *     internal/alerting/alerting.go's `buildSummary` construction rules.
+ *   - alertId: 4 and 5, the next sequential ids after the three existing
+ *     scenario-1 fixtures; the scenario is distinguished by content and by
+ *     fixture naming, not by a reserved id range (id 2 is likewise a
+ *     scenario-1 variant, not a distinct scenario).
+ *   - Field-level raw-to-normalized provenance for these two fixtures is
+ *     deliberately NOT modeled here or in lib/lineage.ts: podCreation and
+ *     clusterRoleBinding characteristics derive from requestObject, which
+ *     the frontend contract types as `unknown` (contract.ts), so no
+ *     structurally verified raw path exists for them yet (UX spec §15 item
+ *     6). lib/lineage.ts is intentionally left unchanged by these fixtures
+ *     -- it correctly produces no link for these fields, which is what
+ *     leaves them in the UX specification's Partial provenance state
+ *     (§3.5) rather than manufacturing an unverified one.
  */
 
 import type { AlertInvestigationResponse, RawAuditEvent } from "@/types/contract";
@@ -209,8 +268,314 @@ export const fixtureBrokenTraceability: AlertInvestigationResponse = {
   traceability: { intact: false, failedLink: "raw_event_sha256" },
 };
 
+// --- Scenario 2: successful high-risk Pod creation --------------------
+
+const scenario2RawEvent: RawAuditEvent = {
+  kind: "Event",
+  apiVersion: "audit.k8s.io/v1",
+  level: "RequestResponse",
+  auditID: "96fe2eaf-085e-48e6-943a-b33e1e0d6c4f",
+  stage: "ResponseComplete",
+  requestURI:
+    "/api/v1/namespaces/default/pods?fieldManager=kubectl-client-side-apply&fieldValidation=Strict",
+  verb: "create",
+  user: {
+    username: "kubernetes-admin",
+    groups: ["kubeadm:cluster-admins", "system:authenticated"],
+    extra: {
+      "authentication.kubernetes.io/credential-id": [
+        "X509SHA256=9a4a60dc1b9f9da18482a661944357f22913875d97fd8808e3c19936537749b2",
+      ],
+    },
+  },
+  sourceIPs: ["172.19.0.1"],
+  userAgent: "kubectl.exe/v1.34.1 (windows/amd64) kubernetes/93248f9",
+  objectRef: {
+    resource: "pods",
+    namespace: "default",
+    name: "high-risk-pod",
+    apiVersion: "v1",
+  },
+  responseStatus: { code: 201 },
+  requestObject: {
+    kind: "Pod",
+    apiVersion: "v1",
+    metadata: { name: "high-risk-pod", namespace: "default", labels: { spike: "audit-intake" } },
+    spec: {
+      volumes: [{ name: "host-root", hostPath: { path: "/", type: "Directory" } }],
+      containers: [
+        {
+          name: "high-risk-container",
+          image: "busybox:1.36",
+          command: ["sleep", "3600"],
+          securityContext: { privileged: true },
+        },
+      ],
+      hostNetwork: true,
+      hostPID: true,
+      hostIPC: true,
+    },
+    status: {},
+  },
+  requestReceivedTimestamp: "2026-07-21T15:23:33.525838Z",
+  stageTimestamp: "2026-07-21T15:23:33.531528Z",
+};
+
+/** Illustrative revision hash — see file-level provenance note above. */
+const scenario2Revision = "a25131f3e9210ea15e3b24a4a990a180fc75440efb2f3850632f356edc16c47d";
+
+/**
+ * requires_any below is in characteristic-ID sorted order
+ * (host_ipc, host_network, host_path_volume, host_pid, privileged_container)
+ * — the persisted-content order — deliberately not the YAML file's
+ * declared order. See the file-level provenance note above.
+ */
+const scenario2Definition: AlertInvestigationResponse["detectionDefinition"] = {
+  available: true,
+  revision: scenario2Revision,
+  definition: {
+    scenario: "scenario-2",
+    name: "High-risk Pod creation",
+    description:
+      "Detection of the creation of a Pod whose specification includes at least one documented high-risk privilege or host-access characteristic.\n",
+    conditions: {
+      operation: { resource: "pods", verb: "create" },
+      requires_outcome: "success",
+      requires_any: [
+        {
+          id: "host_ipc",
+          description: "The Pod uses the host inter-process-communication (IPC) namespace.",
+        },
+        { id: "host_network", description: "The Pod uses the host network." },
+        {
+          id: "host_path_volume",
+          description: "The Pod mounts a volume backed by a host filesystem path.",
+        },
+        {
+          id: "host_pid",
+          description: "The Pod uses the host process-identifier (PID) namespace.",
+        },
+        {
+          id: "privileged_container",
+          description: "A container in the Pod requests privileged mode.",
+        },
+      ],
+    },
+  },
+};
+
+/**
+ * satisfiedCharacteristics below is in the definition's YAML-declared
+ * order (privileged_container, host_network, host_pid, host_ipc,
+ * host_path_volume) — the order match evaluation actually produces — not
+ * the sorted order above. See the file-level provenance note above. All
+ * five are present because this fixture's raw event (real backend
+ * testdata) genuinely sets every one of the five documented conditions.
+ */
+const scenario2MatchReason: AlertInvestigationResponse["detectionResult"] = {
+  available: true,
+  matchReason: {
+    scenario: "scenario-2",
+    definitionName: "High-risk Pod creation",
+    definitionRevision: scenario2Revision,
+    satisfiedCharacteristics: [
+      { id: "privileged_container", description: "A container in the Pod requests privileged mode." },
+      { id: "host_network", description: "The Pod uses the host network." },
+      {
+        id: "host_pid",
+        description: "The Pod uses the host process-identifier (PID) namespace.",
+      },
+      {
+        id: "host_ipc",
+        description: "The Pod uses the host inter-process-communication (IPC) namespace.",
+      },
+      {
+        id: "host_path_volume",
+        description: "The Pod mounts a volume backed by a host filesystem path.",
+      },
+    ],
+  },
+};
+
+const scenario2NormalizedEvent: AlertInvestigationResponse["normalizedEvent"] = {
+  available: true,
+  event: {
+    subject: { username: "kubernetes-admin" },
+    operation: { verb: "create", requestURI: scenario2RawEvent.requestURI },
+    target: {
+      resource: "pods",
+      name: "high-risk-pod",
+      namespace: "default",
+    },
+    outcome: { code: 201 },
+    requestTime: "2026-07-21T15:23:33.525838Z",
+    podCreation: {
+      privileged: true,
+      hostNetwork: true,
+      hostPID: true,
+      hostIPC: true,
+      hostPathVolume: true,
+    },
+  },
+};
+
+const scenario2AlertSummary: AlertInvestigationResponse["alert"] = {
+  available: true,
+  summary: {
+    matchReason: scenario2MatchReason.matchReason!,
+    subject: { username: "kubernetes-admin" },
+    operation: { verb: "create", requestURI: scenario2RawEvent.requestURI },
+    target: {
+      resource: "pods",
+      name: "high-risk-pod",
+      namespace: "default",
+    },
+    outcome: { code: 201 },
+    requestTime: "2026-07-21T15:23:33.525838Z",
+  },
+};
+
+/** id: 4 — Scenario 2, successful high-risk Pod creation. All six artifacts available; traceability intact. */
+export const fixtureScenario2Intact: AlertInvestigationResponse = {
+  alertId: 4,
+  sourceEvent: { available: true, rawEvent: scenario2RawEvent },
+  validationOutcome: { available: true, outcome: "valid" },
+  normalizedEvent: scenario2NormalizedEvent,
+  detectionDefinition: scenario2Definition,
+  detectionResult: scenario2MatchReason,
+  alert: scenario2AlertSummary,
+  traceability: { intact: true },
+};
+
+// --- Scenario 3: successful cluster-admin ClusterRoleBinding creation --
+
+const scenario3RawEvent: RawAuditEvent = {
+  kind: "Event",
+  apiVersion: "audit.k8s.io/v1",
+  level: "RequestResponse",
+  auditID: "5eceafdc-699c-4ae8-83b9-c3feb1e28cd5",
+  stage: "ResponseComplete",
+  requestURI:
+    "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings?fieldManager=kubectl-client-side-apply&fieldValidation=Strict",
+  verb: "create",
+  user: {
+    username: "kubernetes-admin",
+    groups: ["kubeadm:cluster-admins", "system:authenticated"],
+    extra: {
+      "authentication.kubernetes.io/credential-id": [
+        "X509SHA256=9a4a60dc1b9f9da18482a661944357f22913875d97fd8808e3c19936537749b2",
+      ],
+    },
+  },
+  sourceIPs: ["172.19.0.1"],
+  userAgent: "kubectl.exe/v1.34.1 (windows/amd64) kubernetes/93248f9",
+  objectRef: {
+    resource: "clusterrolebindings",
+    name: "spike-crb-jsonpatch",
+    apiGroup: "rbac.authorization.k8s.io",
+    apiVersion: "v1",
+  },
+  responseStatus: { code: 201 },
+  requestObject: {
+    kind: "ClusterRoleBinding",
+    apiVersion: "rbac.authorization.k8s.io/v1",
+    metadata: { name: "spike-crb-jsonpatch" },
+    subjects: [{ kind: "User", apiGroup: "rbac.authorization.k8s.io", name: "alice@example.com" }],
+    roleRef: { apiGroup: "rbac.authorization.k8s.io", kind: "ClusterRole", name: "cluster-admin" },
+  },
+  requestReceivedTimestamp: "2026-07-21T15:26:24.599870Z",
+  stageTimestamp: "2026-07-21T15:26:24.601990Z",
+};
+
+/** Illustrative revision hash — see file-level provenance note above. */
+const scenario3Revision = "9961d2356b15d5a2936520071f59d8ae66e0da591f528dfa355f7c71c39e71e5";
+
+const scenario3Definition: AlertInvestigationResponse["detectionDefinition"] = {
+  available: true,
+  revision: scenario3Revision,
+  definition: {
+    scenario: "scenario-3",
+    name: "Cluster-admin ClusterRoleBinding grant",
+    description:
+      "Detection of the creation of a ClusterRoleBinding that references the cluster-admin ClusterRole. Modification of an existing binding, including a subject addition, is not evaluated by this scenario in v0.1.\n",
+    conditions: {
+      operation: { resource: "clusterrolebindings", verb: "create" },
+      requires_outcome: "success",
+      requires_all: [
+        {
+          id: "role_ref_cluster_admin",
+          description: "The ClusterRoleBinding's role reference is the cluster-admin ClusterRole.",
+        },
+      ],
+    },
+  },
+};
+
+const scenario3MatchReason: AlertInvestigationResponse["detectionResult"] = {
+  available: true,
+  matchReason: {
+    scenario: "scenario-3",
+    definitionName: "Cluster-admin ClusterRoleBinding grant",
+    definitionRevision: scenario3Revision,
+    satisfiedCharacteristics: [
+      {
+        id: "role_ref_cluster_admin",
+        description: "The ClusterRoleBinding's role reference is the cluster-admin ClusterRole.",
+      },
+    ],
+  },
+};
+
+const scenario3NormalizedEvent: AlertInvestigationResponse["normalizedEvent"] = {
+  available: true,
+  event: {
+    subject: { username: "kubernetes-admin" },
+    operation: { verb: "create", requestURI: scenario3RawEvent.requestURI },
+    target: {
+      resource: "clusterrolebindings",
+      name: "spike-crb-jsonpatch",
+    },
+    outcome: { code: 201 },
+    requestTime: "2026-07-21T15:26:24.599870Z",
+    clusterRoleBinding: {
+      bindingName: "spike-crb-jsonpatch",
+      roleRef: { apiGroup: "rbac.authorization.k8s.io", kind: "ClusterRole", name: "cluster-admin" },
+      subjects: [{ kind: "User", apiGroup: "rbac.authorization.k8s.io", name: "alice@example.com" }],
+    },
+  },
+};
+
+const scenario3AlertSummary: AlertInvestigationResponse["alert"] = {
+  available: true,
+  summary: {
+    matchReason: scenario3MatchReason.matchReason!,
+    subject: { username: "kubernetes-admin" },
+    operation: { verb: "create", requestURI: scenario3RawEvent.requestURI },
+    target: {
+      resource: "clusterrolebindings",
+      name: "spike-crb-jsonpatch",
+    },
+    outcome: { code: 201 },
+    requestTime: "2026-07-21T15:26:24.599870Z",
+  },
+};
+
+/** id: 5 — Scenario 3, successful cluster-admin ClusterRoleBinding creation. All six artifacts available; traceability intact. */
+export const fixtureScenario3Intact: AlertInvestigationResponse = {
+  alertId: 5,
+  sourceEvent: { available: true, rawEvent: scenario3RawEvent },
+  validationOutcome: { available: true, outcome: "valid" },
+  normalizedEvent: scenario3NormalizedEvent,
+  detectionDefinition: scenario3Definition,
+  detectionResult: scenario3MatchReason,
+  alert: scenario3AlertSummary,
+  traceability: { intact: true },
+};
+
 export const fixturesById: Record<string, AlertInvestigationResponse> = {
   "1": fixtureIntact,
   "2": fixturePartial,
   "3": fixtureBrokenTraceability,
+  "4": fixtureScenario2Intact,
+  "5": fixtureScenario3Intact,
 };
