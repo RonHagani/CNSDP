@@ -28,6 +28,10 @@ class MockResizeObserver implements ResizeObserver {
 }
 vi.stubGlobal("ResizeObserver", MockResizeObserver);
 
+// jsdom does not implement Element.scrollIntoView either, used by the
+// command palette's focus-and-scroll commands (useInvestigationCommands).
+Element.prototype.scrollIntoView = vi.fn();
+
 // vitest.config.ts runs with `globals: false`, so @testing-library/react's
 // automatic afterEach cleanup (which detects a global test API) never
 // registers on its own — without this, DOM from one test leaks into the

@@ -1,86 +1,62 @@
-import type { ReactNode } from "react";
-import type { ConcordanceRow } from "@/features/alert-investigation/lib/concordance";
+import type { CharacteristicConcordanceRow } from "@/features/alert-investigation/lib/concordance";
 import type { ProvenanceState } from "@/features/alert-investigation/lib/provenance";
+import { ProvenanceRecord } from "./ProvenanceRecord";
 import styles from "./dossier.module.css";
 
 /**
- * One Evidence Concordance row (UX spec §3.3), structured around
- * DOCUMENTED CONDITION → OBSERVED FACT → SOURCE EVIDENCE. A single
- * reusable component handles all four row kinds (operation, outcome,
- * requires_any, requires_all) — the `kind` discriminant already produced
- * by Step 1 decides layout, this component invents no new classification.
+ * One EVIDENTIARY CLAUSE (Composition Reset §3): a matched characteristic
+ * read as a single causal statement — DECLARED CHARACTERISTIC satisfied
+ * by OBSERVED FACT, supported or limited by SOURCE PROVENANCE — rather
+ * than a repeated label/value/description/label/value/source-statement
+ * block. The clause's own grammar ("`id` was satisfied by `path` =
+ * `value`.") carries the declared/observed relationship; nothing here
+ * repeats "Documented condition" / "Observed fact" / "Source evidence"
+ * captions per row.
  *
- * Only characteristic rows (requires_any / requires_all) carry a
- * `ProvenanceState` and are selectable — the operation and outcome rows
- * are structural facts about what this definition requires, not
- * characteristics with their own documented-condition identity, so they
- * render as plain, non-interactive content (UX spec §3.3 row-level detail
- * 1–2). This mirrors Step 1's `concordance.ts`, which likewise attaches
- * provenance only to characteristic rows.
+ * The accession mark (`c01`, `c02`, …) is a CSS counter on the enclosing
+ * list, not a rendered prop — this component never invents its own index.
+ * Selecting the clause expands its `ProvenanceRecord` directly inside the
+ * clause (Composition Reset §5), not in an unrelated details region
+ * elsewhere on the page.
  */
 export function ConcordanceConditionRow({
   row,
   selected,
   onSelect,
 }: {
-  row: ConcordanceRow;
+  row: CharacteristicConcordanceRow;
   selected?: boolean;
   onSelect?: (conditionKey: string) => void;
 }) {
-  if (row.kind === "operation") {
-    const target = [row.resource, row.subresource].filter(Boolean).join("/");
-    return (
-      <li className={styles.ruledRow}>
-        <div className={`${styles.conditionRow} ${styles.conditionRowTwoTier}`}>
-          <Tier label="Documented condition">
-            <p className={styles.prose}>Operation match</p>
-          </Tier>
-          <Tier label="Observed fact">
-            <p className={`${styles.technical} ${styles.wrapLongValue}`}>
-              {row.verb ? `${row.verb} ` : ""}
-              {target || "(any resource)"}
-            </p>
-          </Tier>
-        </div>
-      </li>
-    );
-  }
-
-  if (row.kind === "outcome") {
-    return (
-      <li className={styles.ruledRow}>
-        <div className={`${styles.conditionRow} ${styles.conditionRowTwoTier}`}>
-          <Tier label="Documented condition">
-            <p className={styles.prose}>Required outcome: {row.requiredOutcome}</p>
-          </Tier>
-          <Tier label="Observed fact">
-            <p className={`${styles.technical} ${styles.wrapLongValue}`}>
-              {row.recordedOutcomeCode !== undefined ? `code ${row.recordedOutcomeCode}` : "—"}
-            </p>
-          </Tier>
-        </div>
-      </li>
-    );
-  }
-
-  // requires_any / requires_all characteristic row — the only selectable kind.
   const content = (
-    <div className={styles.conditionRow}>
-      <Tier label="Documented condition">
-        <p className={`${styles.technical} ${styles.wrapLongValue}`}>{row.id}</p>
-        <p className={styles.proseSecondary}>{row.description}</p>
-      </Tier>
-      <Tier label="Observed fact">
-        <ObservedFact provenance={row.provenance} />
-      </Tier>
-      <Tier label="Source evidence">
+    <div className={styles.folioSplit}>
+      <div>
+        <p className={`${styles.prose} ${styles.clauseSentence}`}>
+          <span className={`${styles.technical} ${styles.characteristicId} ${styles.wrapLongValue}`}>
+            {row.id}
+          </span>{" "}
+          was satisfied by <ObservedFactInline provenance={row.provenance} />
+        </p>
+        <p className={`${styles.proseSecondary} ${styles.clauseDescription}`}>{row.description}</p>
+
+        {selected && (
+          <div className={styles.clauseExpansion}>
+            <ProvenanceRecord provenance={row.provenance} />
+          </div>
+        )}
+      </div>
+
+      <div>
         <SourceEvidenceSummary provenance={row.provenance} />
-      </Tier>
+      </div>
     </div>
   );
 
   return (
-    <li className={`${styles.ruledRow} ${selected ? styles.selected : ""}`}>
+    <li
+      className={`${styles.evidentiaryClause} ${selected ? styles.selected : ""}`}
+      data-kind={row.kind}
+    >
       {onSelect ? (
         <button
           type="button"
@@ -97,23 +73,16 @@ export function ConcordanceConditionRow({
   );
 }
 
-function Tier({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className={styles.conditionTier}>
-      <p className={styles.eyebrow}>{label}</p>
-      {children}
-    </div>
-  );
-}
-
-function ObservedFact({ provenance }: { provenance: ProvenanceState }) {
+function ObservedFactInline({ provenance }: { provenance: ProvenanceState }) {
   if (provenance.kind === "unavailable") {
-    return <p className={styles.proseSecondary}>{provenance.explanation}</p>;
+    return <span className={styles.proseSecondary}>{provenance.explanation}</span>;
   }
   return (
-    <p className={`${styles.technical} ${styles.wrapLongValue}`}>
-      {provenance.normalizedPath} = {provenance.normalizedValue}
-    </p>
+    <>
+      <code className={styles.recordValue}>{provenance.normalizedPath}</code>
+      {" = "}
+      <code className={styles.recordValue}>{provenance.normalizedValue}</code>.
+    </>
   );
 }
 
@@ -121,17 +90,30 @@ function ObservedFact({ provenance }: { provenance: ProvenanceState }) {
  * A concise provenance-state indicator — text only (no icon, checkmark,
  * badge, or colored block), and always the real text Step 1 already
  * computed (`behavior` / `limitation` / `explanation`), never a new
- * interpretation invented at this layer. The full detailed record is
- * `ProvenanceRecord`, reached separately once a row is selected — this is
- * deliberately not that.
+ * interpretation invented at this layer. The full detailed record is the
+ * inline `ProvenanceRecord` expansion above, reached separately once the
+ * clause is selected — this is deliberately not that.
+ *
+ * Partial provenance's limitation sentence is identical across every
+ * characteristic that shares it (scenario 2's five clauses all cite the
+ * same `requestObject`-typing gap) — quieted a shade further than
+ * Verified/Unavailable so a repeated caveat doesn't compete for attention
+ * with the one real, varying fact per clause. This is a weight change
+ * within the same neutral text scale, not a new semantic color —
+ * Verified/Partial/Unavailable remain distinguished by wording, never by
+ * hue.
  */
 function SourceEvidenceSummary({ provenance }: { provenance: ProvenanceState }) {
   switch (provenance.kind) {
     case "verified":
-      return <p className={styles.proseSecondary}>Verified — {provenance.behavior}</p>;
+      return <p className={styles.sourceEvidence}>Verified — {provenance.behavior}</p>;
     case "partial":
-      return <p className={styles.proseSecondary}>Partial — {provenance.limitation}</p>;
+      return (
+        <p className={`${styles.sourceEvidence} ${styles.sourceEvidenceQuiet}`}>
+          Partial — {provenance.limitation}
+        </p>
+      );
     case "unavailable":
-      return <p className={styles.proseSecondary}>Unavailable — {provenance.explanation}</p>;
+      return <p className={styles.sourceEvidence}>Unavailable — {provenance.explanation}</p>;
   }
 }

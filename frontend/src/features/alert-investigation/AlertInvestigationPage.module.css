@@ -1,81 +1,54 @@
+/*
+ * Page-level shell styling only — every other structural rule lives in
+ * the shared dossier stylesheet (components/dossier/dossier.module.css),
+ * whose custom properties this file reads directly (the page root also
+ * carries `dossier.module.css`'s `.dossierRoot` class, so those
+ * properties are in scope here). No legacy token (`--cnsdp-*`) is
+ * referenced anywhere in this file — the live route no longer depends on
+ * the token set the rejected visual direction owned.
+ */
+
 .page {
   min-height: 100vh;
-  background: var(--cnsdp-void);
+  background: var(--dossier-canvas);
+  color: var(--dossier-text);
 }
 
 .skipLink {
   position: absolute;
   left: -9999px;
   top: 0;
-  z-index: var(--cnsdp-z-palette);
-  background: var(--cnsdp-signal);
-  color: var(--cnsdp-text-on-accent);
-  padding: var(--cnsdp-space-2) var(--cnsdp-space-4);
-  font-family: var(--cnsdp-font-mono);
-  font-size: var(--cnsdp-text-sm);
+  z-index: 10;
+  background: var(--dossier-text);
+  color: var(--dossier-canvas);
+  padding: var(--dossier-space-2) var(--dossier-space-4);
+  font-family: var(--dossier-font-mono);
+  font-size: 0.85rem;
 }
 
 .skipLink:focus {
-  left: var(--cnsdp-space-3);
-  top: var(--cnsdp-space-3);
-}
-
-/* The stage floor: one continuous relative-positioned surface the
-   ConduitField (position: absolute, full height) threads through behind
-   everything else — not a sidebar-plus-content flex split. */
-.stageFloor {
-  position: relative;
-}
-
-.content {
-  position: relative;
-  z-index: var(--cnsdp-z-content);
+  left: var(--dossier-space-3);
+  top: var(--dossier-space-3);
 }
 
 .utilityBar {
   display: flex;
   align-items: baseline;
-  gap: var(--cnsdp-space-2);
-  padding: var(--cnsdp-space-4) var(--cnsdp-space-5);
-  border-bottom: 1px solid var(--cnsdp-border-subtle);
+  gap: var(--dossier-space-2);
+  padding: var(--dossier-space-4) var(--dossier-space-5);
+  border-bottom: 1px solid var(--dossier-rule-strong);
 }
 
 .wordmark {
-  font-family: var(--cnsdp-font-mono);
-  font-size: var(--cnsdp-text-xs);
+  font-family: var(--dossier-font-mono);
+  font-size: 0.75rem;
   font-weight: 700;
-  letter-spacing: 0.16em;
-  color: var(--cnsdp-text-tertiary);
+  letter-spacing: 0.12em;
+  color: var(--dossier-text-tertiary);
 }
 
 .wordmarkSub {
-  font-family: var(--cnsdp-font-mono);
-  font-size: var(--cnsdp-text-2xs);
-  color: var(--cnsdp-text-disabled);
-}
-
-/* Spotlight mode: selecting a lineage field dims every other object on
-   the stage (conduit, masthead, evidence ribbon, proof chain) so the
-   provenance bridge in LineageInteraction is the only thing lit — see
-   LineageInteraction.module.css `[data-spotlight]` for its own side of
-   this. Interactivity is preserved (no pointer-events change): dimmed
-   objects remain reachable, just visually receded. */
-.stageFloor[data-spotlight="true"] [data-role="conduit-field"],
-.stageFloor[data-spotlight="true"] [data-role="hero"],
-.stageFloor[data-spotlight="true"] [data-role="evidence-ribbon"],
-.stageFloor[data-spotlight="true"] [data-role="proof-chain"] {
-  opacity: 0.4;
-  filter: blur(0.5px) saturate(0.5);
-  transition:
-    opacity var(--cnsdp-duration-slow) var(--cnsdp-ease-standard),
-    filter var(--cnsdp-duration-slow) var(--cnsdp-ease-standard);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .stageFloor[data-spotlight="true"] [data-role="conduit-field"],
-  .stageFloor[data-spotlight="true"] [data-role="hero"],
-  .stageFloor[data-spotlight="true"] [data-role="evidence-ribbon"],
-  .stageFloor[data-spotlight="true"] [data-role="proof-chain"] {
-    transition: none;
-  }
+  font-family: var(--dossier-font-mono);
+  font-size: 0.7rem;
+  color: var(--dossier-text-tertiary);
 }

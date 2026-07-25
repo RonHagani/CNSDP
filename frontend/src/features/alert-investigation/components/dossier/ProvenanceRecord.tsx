@@ -3,54 +3,75 @@ import styles from "./dossier.module.css";
 
 /**
  * Renders the detailed provenance record for one selected matched
- * condition (UX spec §3.5b). Exactly one of the three states is ever
+ * condition (UX spec §3.5b; recomposed as a deeper evidentiary annotation
+ * in visual-authorship pass 2). Exactly one of the three states is ever
  * shown; nothing here computes or reinterprets which state applies — that
  * decision was already made by `provenance.ts` (Step 1). Provenance state
  * is field-level inspection state, not traceability state — this
  * component never renders anything about `traceability.intact`/
  * `failedLink`.
+ *
+ * Reads as continuous annotation prose attached to the selected condition
+ * (the caller already labels it "Selected condition provenance"), not a
+ * repeated label/value form — each state states only what it actually
+ * knows: Verified carries the full normalized→raw chain, Partial stops at
+ * the normalized fact plus its named limitation (no "Raw path" field is
+ * ever rendered here — nothing is fabricated), Unavailable names the
+ * missing artifact plainly. The technical values that are independently
+ * inspectable (paths/values) each stay in their own inline element.
  */
 export function ProvenanceRecord({ provenance }: { provenance: ProvenanceState }) {
   return (
-    <div className={styles.record} role="group" aria-label="Provenance record">
-      <Field label="Documented condition" value={provenance.condition} />
+    <div
+      className={`${styles.record} ${styles.provenanceRecord}`}
+      role="group"
+      aria-label="Provenance record"
+    >
+      <p className={`${styles.prose} ${styles.wrapLongValue} ${styles.annotationCondition}`}>
+        {provenance.condition}
+      </p>
 
       {provenance.kind === "verified" && (
         <>
-          <Field label="Normalized path" value={provenance.normalizedPath} mono />
-          <Field label="Normalized value" value={provenance.normalizedValue} mono />
-          <Field label="Transformation or preservation behavior" value={provenance.behavior} />
-          <Field label="Raw path" value={provenance.rawPath} mono />
-          <Field label="Raw value" value={provenance.rawValue} mono />
+          <p className={`${styles.prose} ${styles.wrapLongValue} ${styles.annotationLine}`}>
+            Normalized as <code className={styles.recordValue}>{provenance.normalizedPath}</code>
+            {" = "}
+            <code className={styles.recordValue}>{provenance.normalizedValue}</code>. {provenance.behavior}
+          </p>
+          <p
+            className={`${styles.prose} ${styles.wrapLongValue} ${styles.annotationLine} ${styles.annotationRaw}`}
+          >
+            Raw origin <code className={styles.recordValue}>{provenance.rawPath}</code>:{" "}
+            <code className={styles.recordValue}>{provenance.rawValue}</code>
+          </p>
         </>
       )}
 
       {provenance.kind === "partial" && (
         <>
-          <Field label="Normalized path" value={provenance.normalizedPath} mono />
-          <Field label="Normalized value" value={provenance.normalizedValue} mono />
-          <Field label="Source field" value={provenance.limitation} />
+          <p className={`${styles.prose} ${styles.wrapLongValue} ${styles.annotationLine}`}>
+            Normalized as <code className={styles.recordValue}>{provenance.normalizedPath}</code>
+            {" = "}
+            <code className={styles.recordValue}>{provenance.normalizedValue}</code>.
+          </p>
+          <p
+            className={`${styles.proseSecondary} ${styles.wrapLongValue} ${styles.annotationLine} ${styles.annotationLimitation}`}
+          >
+            {provenance.limitation}
+          </p>
         </>
       )}
 
       {provenance.kind === "unavailable" && (
-        <>
-          <Field
-            label="Unavailable artifact"
-            value={provenance.missingArtifact === "source-event" ? "Source event" : "Normalized event"}
-          />
-          <Field label="Explanation" value={provenance.explanation} />
-        </>
+        <p
+          className={`${styles.proseSecondary} ${styles.wrapLongValue} ${styles.annotationLine} ${styles.annotationLimitation}`}
+        >
+          <span className={styles.technical}>
+            {provenance.missingArtifact === "source-event" ? "Source event" : "Normalized event"}
+          </span>{" "}
+          unavailable — {provenance.explanation}
+        </p>
       )}
-    </div>
-  );
-}
-
-function Field({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <div className={styles.recordField}>
-      <p className={styles.recordLabel}>{label}</p>
-      <p className={mono ? styles.recordValue : `${styles.prose} ${styles.wrapLongValue}`}>{value}</p>
     </div>
   );
 }

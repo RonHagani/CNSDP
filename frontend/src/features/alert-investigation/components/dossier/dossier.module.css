@@ -1,14 +1,28 @@
 /*
- * Grayscale structural styling for the Causal Evidence Dossier component
- * family (implementation plan §9; this is the "structural pass only"
- * described there — no final typeface, accent hue, motion, or ornament).
+ * CNSDP Alert Investigation — Composition Reset.
  *
- * Self-contained by design: every custom property below is declared on
- * `.dossierRoot`, a class every top-level dossier component's outermost
- * element carries, so nothing here reads from or writes to the existing
- * global token file (`styles/tokens.css`) — the dossier family has no
- * dependency on tokens scheduled for later retirement, and no global
- * design token is modified or introduced by this file.
+ * The page is authored as one FORENSIC CASE FOLIO, not a stack of
+ * document-style sections. Three alignment zones run through every part
+ * of the page that carries real content:
+ *
+ *   ACCESSION GUTTER — citations, condition IDs, artifact accession marks.
+ *   EVIDENCE FIELD    — the primary reading and investigation area.
+ *   PROOF MARGIN      — provenance, traceability state, cross-references.
+ *
+ * The zones are never boxed or backgrounded — they are alignment, not
+ * containers. Two primitives express them everywhere on the page:
+ *
+ *   `.folioSection` — a fixed, one-off region (the case opening, the
+ *                     custody closure) that declares the full three-column
+ *                     template directly, usually via named grid areas.
+ *   `.folioRow` / `.folioSplit` — the repeated-row primitive (an
+ *                     evidentiary clause, a register entry): `.folioRow`
+ *                     splits accession-gutter from everything else;
+ *                     `.folioSplit`, nested inside it, splits that
+ *                     remainder into field and margin. Two simple grids
+ *                     stacked, rather than one page-length grid or
+ *                     `subgrid`, so every row aligns to the same gutter
+ *                     and margin widths without depending on either.
  */
 
 .dossierRoot {
@@ -17,24 +31,47 @@
   --dossier-space-3: 0.75rem;
   --dossier-space-4: 1rem;
   --dossier-space-5: 1.5rem;
-  --dossier-space-6: 2rem;
+  --dossier-space-6: 2.25rem;
+  --dossier-space-7: 3rem;
+  --dossier-space-8: 4rem;
 
   --dossier-font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --dossier-font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
 
-  --dossier-text: #1b1b1b;
-  --dossier-text-secondary: #4a4a4a;
-  --dossier-text-tertiary: #6f6f6f;
-  --dossier-text-on-dark: #f2f2f2;
+  /* ---- Mineral-graphite canvas: dark-neutral, not blue-cyber ---- */
+  --dossier-canvas: #14161a;
+  --dossier-text: #eee8dc;
+  --dossier-text-secondary: #b6ad9c;
+  --dossier-text-tertiary: #928a79;
 
-  --dossier-border: #d6d6d6;
-  --dossier-border-strong: #8a8a8a;
-  --dossier-surface: #ffffff;
-  --dossier-surface-selected: #ececec;
-  --dossier-surface-unavailable: #f5f5f5;
+  --dossier-rule: #2b2a26;
+  --dossier-rule-strong: #423f37;
 
-  --dossier-focus: #1b1b1b;
-  --dossier-max-width: 72rem;
+  /* One desaturated, aged-brass active mark — used only for the currently
+     selected/active element and focus, never decoratively elsewhere. */
+  --dossier-accent: #b28d5b;
+  --dossier-accent-dim: #7c6444;
+
+  /* A restrained muted rust, reserved solely for broken traceability —
+     the one mark shared, unchanged, between the case opening and the
+     custody closure. */
+  --dossier-rust: #a5624a;
+
+  --dossier-surface: var(--dossier-canvas);
+  --dossier-focus: var(--dossier-accent);
+
+  /* ---- Folio geometry ----
+     Directional, not rigid: ~88px gutter, flexible field, ~280px margin,
+     complete folio ~1280px. `--folio-gutter-w` is the same measurement as
+     a fixed length, for the padding-based alignment fixed one-off
+     sections use instead of a grid track. */
+  --folio-gutter-w: 5.5rem;
+  --folio-gutter: minmax(5rem, 6.5rem);
+  --folio-margin: minmax(230px, 300px);
+  --folio-grid: var(--folio-gutter) minmax(0, 1fr) var(--folio-margin);
+  --folio-grid-fm: minmax(0, 1fr) var(--folio-margin);
+  --folio-gap: var(--dossier-space-5);
+  --dossier-max-width: 80rem;
 
   font-family: var(--dossier-font-sans);
   color: var(--dossier-text);
@@ -47,16 +84,42 @@
   max-width: var(--dossier-max-width);
   margin-inline: auto;
   width: 100%;
+  padding-inline: clamp(1.25rem, 4vw, 2.5rem);
 }
 
 .stack {
   display: flex;
   flex-direction: column;
-  gap: var(--dossier-space-4);
 }
 
 .section {
-  padding-block: var(--dossier-space-4);
+  display: block;
+}
+
+/* ---- Folio primitives ---- */
+
+.folioRow {
+  display: grid;
+  grid-template-columns: var(--folio-gutter) minmax(0, 1fr);
+  column-gap: var(--folio-gap);
+}
+
+.folioSplit {
+  display: grid;
+  grid-template-columns: var(--folio-grid-fm);
+  column-gap: var(--folio-gap);
+}
+
+@media (max-width: 840px) {
+  .folioRow {
+    grid-template-columns: 2.25rem minmax(0, 1fr);
+    column-gap: var(--dossier-space-3);
+  }
+
+  .folioSplit {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--dossier-space-2);
+  }
 }
 
 /* ---- Typography roles ---- */
@@ -64,15 +127,15 @@
 .heading {
   font-family: var(--dossier-font-sans);
   font-weight: 600;
-  font-size: 1.05rem;
+  font-size: 0.95rem;
+  color: var(--dossier-text-secondary);
   margin: 0;
 }
 
 .eyebrow {
   font-family: var(--dossier-font-mono);
-  font-size: 0.75rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
   color: var(--dossier-text-tertiary);
   margin: 0;
 }
@@ -80,7 +143,7 @@
 .prose {
   font-family: var(--dossier-font-sans);
   font-size: 0.9rem;
-  line-height: 1.5;
+  line-height: 1.55;
   color: var(--dossier-text);
   margin: 0;
 }
@@ -96,65 +159,91 @@
   color: var(--dossier-text);
 }
 
-/* Safe wrapping for long technical strings (revisions, audit IDs, raw
-   paths, request URIs) — always visible in full, never clipped with an
-   ellipsis, so no accessible content is ever lost to truncation. */
 .wrapLongValue {
   overflow-wrap: anywhere;
   word-break: break-word;
 }
 
-/* ---- Hairlines and ruled records ---- */
-
-.hairline {
-  border: none;
-  border-top: 1px solid var(--dossier-border);
-  margin: 0;
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
+
+/* The one restrained rust mark, shared verbatim between the case opening's
+   traceability state and the custody closure's restated status — never
+   redefined locally, so "the same mark at both locations" is structurally
+   guaranteed, not just visually similar. */
+.rustMark {
+  color: var(--dossier-rust);
+  font-weight: 600;
+}
+
+/* ---- Hairlines and ruled records (the plain artifact-ledger treatment
+   used inside the opened record's detail lists and definition/satisfied-
+   characteristic lists). ---- */
 
 .ruledList {
   list-style: none;
   margin: 0;
   padding: 0;
-  border-top: 1px solid var(--dossier-border);
+  border-top: 1px solid var(--dossier-rule);
 }
 
 .ruledRow {
-  border-bottom: 1px solid var(--dossier-border);
+  border-bottom: 1px solid var(--dossier-rule);
   padding-block: var(--dossier-space-3);
-}
-
-/* ---- Accession index / register geometry ---- */
-
-.accessionRow {
-  display: grid;
-  grid-template-columns: 2.5rem 1fr;
-  gap: var(--dossier-space-3);
-  align-items: baseline;
 }
 
 .accessionIndex {
   font-family: var(--dossier-font-mono);
-  font-size: 0.75rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
   color: var(--dossier-text-tertiary);
 }
 
-/* ---- Indentation for detailed records (ProvenanceRecord, definitions) --- */
+.registerLabel {
+  font-weight: 600;
+  color: var(--dossier-text);
+}
+
+/* ---- ProvenanceRecord: a deeper evidentiary annotation attached directly
+   inside the selected clause, not a generic label/value form. The accent
+   border matches the activated accession of the selected clause, so the
+   two read as one physically attached structure. ---- */
 
 .record {
   display: grid;
   gap: var(--dossier-space-2);
   padding-inline-start: var(--dossier-space-4);
-  border-inline-start: 2px solid var(--dossier-border);
+  border-inline-start: 2px solid var(--dossier-accent);
 }
 
-.recordField {
-  display: grid;
-  gap: var(--dossier-space-1);
+.provenanceRecord {
+  padding-block: var(--dossier-space-1) 0;
 }
 
-.recordLabel {
-  composes: eyebrow;
+.annotationCondition {
+  color: var(--dossier-text);
+}
+
+.annotationLine {
+  font-size: 0.9rem;
+}
+
+.annotationRaw {
+  padding-top: var(--dossier-space-1);
+  border-top: 1px dashed var(--dossier-rule);
+}
+
+.annotationLimitation {
+  font-size: 0.88rem;
 }
 
 .recordValue {
@@ -178,84 +267,526 @@
 .dossierRoot button:focus-visible {
   outline: 2px solid var(--dossier-focus);
   outline-offset: 2px;
+  border-radius: 2px;
 }
 
-/* ---- Selected state — a hairline accent, never a filled card ---- */
+/* ---- Selected state — a local accent mark, never a filled row ---- */
 
 .selected {
-  border-inline-start: 3px solid var(--dossier-border-strong);
-  background: var(--dossier-surface-selected);
-  padding-inline-start: calc(var(--dossier-space-3) - 1px);
+  background: none;
+  border-inline-start: 2px solid var(--dossier-accent);
+  padding-inline-start: calc(var(--dossier-space-3) - 2px);
 }
 
 .unavailable {
-  background: var(--dossier-surface-unavailable);
+  background: none;
   color: var(--dossier-text-tertiary);
 }
 
-/* ---- Concordance row: three-tier grid, collapsing to a stack ---- */
+/* =======================================================================
+   Case Opening — the identifying edge, merged with the observed act
+   (Composition Reset: replaces the separate Docket Header / Finding
+   sections outright; there is no internal rule between "identity" and
+   "what happened" here, because the task is one connected reading, not
+   two sections).
+   ======================================================================= */
 
-.conditionRow {
+.caseOpening {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
-  gap: var(--dossier-space-4);
-  padding-block: var(--dossier-space-3);
-  text-align: start;
+  grid-template-columns: var(--folio-grid);
+  column-gap: var(--folio-gap);
+  row-gap: var(--dossier-space-2);
+  grid-template-areas:
+    "citation citation citation"
+    ".        title    meta"
+    ".        act      act"
+    ".        outcome  outcome";
+  padding-block: var(--dossier-space-6) var(--dossier-space-5);
+  border-bottom: 1px solid var(--dossier-rule-strong);
 }
 
-.conditionRowTwoTier {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+.citationLine {
+  grid-area: citation;
+  margin: 0;
+  font-family: var(--dossier-font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.03em;
+  color: var(--dossier-text-tertiary);
 }
 
-.conditionTier {
-  display: grid;
-  gap: var(--dossier-space-1);
-  min-width: 0;
+/* The pinned revision is real, load-bearing content (NFR-025) but must not
+   dominate the case opening — dimmed a shade further than the rest of the
+   citation line, and, on narrow viewports only, visually truncated (never
+   removed: the full value stays in the DOM and in `title`, reachable by
+   copy, find-in-page, and assistive tech regardless). */
+.citationRevision {
+  color: var(--dossier-text-tertiary);
+  opacity: 0.72;
 }
 
-@media (max-width: 640px) {
-  .conditionRow,
-  .conditionRowTwoTier {
-    grid-template-columns: 1fr;
-    gap: var(--dossier-space-2);
+@media (max-width: 840px) {
+  .citationRevision {
+    display: inline-block;
+    max-width: 52vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: bottom;
   }
 }
 
-/* ---- Definition lists used throughout for label/value pairs ---- */
+.caseTitle {
+  grid-area: title;
+  margin: 0;
+  font-family: var(--dossier-font-sans);
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  line-height: 1.25;
+  color: var(--dossier-text);
+  max-width: 40rem;
+}
+
+.caseMeta {
+  grid-area: meta;
+  display: flex;
+  align-items: baseline;
+  gap: var(--dossier-space-5);
+  flex-wrap: wrap;
+  justify-self: end;
+}
+
+.traceabilityStat {
+  margin: 0;
+  white-space: nowrap;
+  font-size: 0.85rem;
+}
+
+.commandTrigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: auto;
+  white-space: nowrap;
+  font-family: var(--dossier-font-mono);
+  font-size: 0.78rem;
+  color: var(--dossier-text-secondary);
+  border: 1px solid var(--dossier-rule-strong);
+  border-radius: 2px;
+  padding: 0.3rem 0.65rem;
+}
+
+.commandTrigger:hover {
+  color: var(--dossier-text);
+  border-color: var(--dossier-accent-dim);
+}
+
+.observedAct {
+  grid-area: act;
+  font-family: var(--dossier-font-sans);
+  font-size: 1.02rem;
+  font-weight: 500;
+  line-height: 1.55;
+  color: var(--dossier-text);
+  max-width: 46rem;
+}
+
+.outcomeAnnotation {
+  grid-area: outcome;
+  font-size: 0.85rem;
+  max-width: 40rem;
+}
+
+@media (max-width: 840px) {
+  .caseOpening {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "citation"
+      "title"
+      "meta"
+      "act"
+      "outcome";
+    padding-block: var(--dossier-space-5) var(--dossier-space-4);
+    row-gap: var(--dossier-space-3);
+  }
+
+  .caseMeta {
+    justify-self: start;
+  }
+
+  .caseTitle {
+    font-size: 1.28rem;
+    max-width: 100%;
+  }
+}
+
+/* =======================================================================
+   Evidence Concordance — the admission threshold, then one indexed
+   evidentiary clause per matched characteristic.
+   ======================================================================= */
+
+.concordanceSection {
+  display: grid;
+  gap: var(--dossier-space-3);
+  padding-block: var(--dossier-space-5) var(--dossier-space-6);
+  border-top: 2px solid var(--dossier-rule-strong);
+}
+
+.concordanceLede {
+  font-size: 0.85rem;
+  max-width: 38rem;
+}
+
+/* Section headings share one tag and role (both matter for existing
+   accessible-name assertions and heading-order semantics) but not one
+   visual weight — the Concordance is the causal core and reads
+   strongest of the four; the Register/Inspection/Traceability headings
+   stay quieter organizational markers beneath the case title. */
+.concordanceSection > .heading {
+  font-size: 1.05rem;
+  color: var(--dossier-text);
+}
+
+/* ---- Admission threshold: operation / required outcome. Deliberately
+   not a clause — no accession mark, no evidence spine, a single quiet
+   line closed by a short threshold rule rather than the clause list's
+   ruled row. ---- */
+
+.admissionThreshold {
+  padding-block: var(--dossier-space-2) var(--dossier-space-3);
+  padding-inline-start: var(--folio-gutter-w);
+}
+
+@media (max-width: 840px) {
+  .admissionThreshold {
+    padding-inline-start: 2.25rem;
+  }
+}
+
+.admissionRule {
+  width: 2.5rem;
+  height: 1px;
+  margin-top: var(--dossier-space-2);
+  background: var(--dossier-rule);
+}
+
+.thresholdLine {
+  font-size: 0.87rem;
+  color: var(--dossier-text-secondary);
+}
+
+.thresholdLine .technical {
+  color: var(--dossier-text);
+}
+
+/* ---- Evidentiary clauses: one indexed causal sentence per matched
+   characteristic, read declared -> observed -> provenance. Accession
+   marks come from a CSS counter on the list, not a rendered index prop,
+   so the markup never repeats "Documented condition / Observed fact /
+   Source evidence" captions — the sentence grammar carries those roles. */
+
+.clauseList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  counter-reset: clause-citation;
+}
+
+.evidentiaryClause {
+  composes: folioRow;
+  position: relative;
+  padding-block: var(--dossier-space-4);
+  border-bottom: 1px solid var(--dossier-rule);
+  counter-increment: clause-citation;
+}
+
+.evidentiaryClause::before {
+  grid-column: 1;
+  grid-row: 1;
+  padding-top: 0.2em;
+  content: "c" counter(clause-citation, decimal-leading-zero);
+  font-family: var(--dossier-font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+  color: var(--dossier-text-secondary);
+}
+
+.clauseList > .evidentiaryClause:last-child {
+  border-bottom: none;
+}
+
+.evidentiaryClause.selected::before {
+  color: var(--dossier-accent);
+  font-weight: 700;
+}
+
+.clauseSentence {
+  font-size: 0.96rem;
+}
+
+.characteristicId {
+  font-weight: 600;
+  color: var(--dossier-text);
+}
+
+.clauseDescription {
+  margin-top: var(--dossier-space-1);
+  font-size: 0.87rem;
+}
+
+.clauseExpansion {
+  margin-top: var(--dossier-space-3);
+  padding-top: var(--dossier-space-3);
+  border-top: 1px dashed var(--dossier-rule-strong);
+}
+
+.sourceEvidence {
+  composes: proseSecondary;
+  font-size: 0.87rem;
+}
+
+.sourceEvidenceQuiet {
+  color: var(--dossier-text-tertiary);
+}
+
+/* =======================================================================
+   Evidence Register — a folio index, not a boxed left column: exactly six
+   rows read as one continuous accession-numbered index line, sharing the
+   same gutter as the rest of the folio.
+   ======================================================================= */
+
+.registerSection {
+  display: grid;
+  gap: var(--dossier-space-2);
+  padding-block: var(--dossier-space-5) var(--dossier-space-2);
+}
+
+.registerLedger {
+  border-top: 1px solid var(--dossier-rule-strong);
+}
+
+.registerLedger .ruledRow {
+  border-bottom: 1px solid var(--dossier-rule-strong);
+}
+
+.registerLine {
+  font-size: 0.9rem;
+}
+
+.registerLedger .selected .accessionIndex {
+  color: var(--dossier-accent);
+  font-weight: 700;
+}
+
+/* =======================================================================
+   Inspection Leaf — the opened folio record, continuing directly from the
+   register above it rather than sitting beside it as a details column.
+   ======================================================================= */
+
+.inspectionSection {
+  display: grid;
+  grid-template-columns: var(--folio-gutter) minmax(0, 1fr);
+  column-gap: var(--folio-gap);
+  row-gap: var(--dossier-space-3);
+  padding-block: var(--dossier-space-3) var(--dossier-space-6);
+  border-top: 1px dashed var(--dossier-rule);
+}
+
+.inspectionSection > .heading {
+  grid-column: 2;
+}
+
+.inspectionBody {
+  grid-column: 2;
+}
+
+.attachedProvenance {
+  margin-top: var(--dossier-space-3);
+  padding-top: var(--dossier-space-4);
+  border-top: 1px dashed var(--dossier-rule-strong);
+}
+
+.relatedEvidence {
+  grid-column: 2;
+}
+
+.relatedEvidence .ruledList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--dossier-space-2) var(--dossier-space-5);
+  border-top: none;
+}
+
+.relatedEvidence .ruledRow {
+  border-bottom: none;
+  padding-block: 0;
+}
+
+.relatedEvidence button {
+  color: var(--dossier-text-secondary);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+.relatedEvidence button:hover {
+  color: var(--dossier-accent);
+}
+
+@media (max-width: 840px) {
+  .inspectionSection {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .inspectionSection > .heading,
+  .inspectionBody,
+  .relatedEvidence {
+    grid-column: 1;
+  }
+}
+
+/* =======================================================================
+   Traceability Proof — the custody closure. Spans field and margin, and
+   physically terminates the folio with a closing rule.
+   ======================================================================= */
+
+.traceabilitySection {
+  display: grid;
+  gap: var(--dossier-space-3);
+  padding-block: var(--dossier-space-6) var(--dossier-space-7);
+  padding-inline-start: var(--folio-gutter-w);
+}
+
+.traceabilityVerdict {
+  font-size: 1.02rem;
+  max-width: 46rem;
+}
+
+.traceabilityFailure {
+  color: var(--dossier-text-secondary);
+}
+
+.traceabilityBroken .traceabilityFailure {
+  color: var(--dossier-rust);
+  font-weight: 600;
+}
+
+.custodySplit {
+  display: grid;
+  grid-template-columns: var(--folio-grid-fm);
+  column-gap: var(--folio-gap);
+  align-items: start;
+}
+
+.custodyChainList {
+  display: grid;
+  gap: var(--dossier-space-1);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  counter-reset: custody-citation;
+}
+
+.custodyChainList li {
+  font-size: 0.85rem;
+  counter-increment: custody-citation;
+}
+
+.custodyChainList li::before {
+  content: counter(custody-citation) ". ";
+  color: var(--dossier-text-tertiary);
+  font-family: var(--dossier-font-mono);
+}
+
+.custodyMargin {
+  display: grid;
+  gap: var(--dossier-space-1);
+  justify-items: start;
+}
+
+.custodyTerminal {
+  height: 1px;
+  margin-top: var(--dossier-space-3);
+  background: var(--dossier-rule-strong);
+}
+
+.traceabilityBroken .custodyTerminal {
+  background: var(--dossier-rust);
+}
+
+@media (max-width: 840px) {
+  .traceabilitySection {
+    padding-inline-start: 0;
+  }
+
+  .custodySplit {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--dossier-space-3);
+  }
+}
+
+/* =======================================================================
+   Definition lists — the opened record's technical field rhythm (used by
+   the six artifact-specific inspection views, unchanged in this pass).
+   ======================================================================= */
 
 .fieldList {
   margin: 0;
   display: grid;
-  gap: var(--dossier-space-2);
+  gap: 0;
 }
 
 .fieldRow {
   display: grid;
-  grid-template-columns: minmax(8rem, 12rem) 1fr;
+  grid-template-columns: minmax(9rem, 13rem) minmax(0, 1fr);
   gap: var(--dossier-space-3);
   align-items: baseline;
+  padding-block: var(--dossier-space-2);
+  border-bottom: 1px solid var(--dossier-rule);
 }
 
-@media (max-width: 640px) {
+.fieldRow:last-child {
+  border-bottom: none;
+}
+
+@media (max-width: 840px) {
   .fieldRow {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--dossier-space-1);
   }
 }
 
 .fieldRow dt {
   font-family: var(--dossier-font-mono);
-  font-size: 0.75rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
   color: var(--dossier-text-tertiary);
   margin: 0;
 }
 
 .fieldRow dd {
   font-family: var(--dossier-font-sans);
-  font-size: 0.9rem;
+  font-size: 0.92rem;
   line-height: 1.5;
   color: var(--dossier-text);
   margin: 0;
+}
+
+/* =======================================================================
+   Mobile page rhythm — 390px reading order is already DOM order (case
+   opening -> observed act -> concordance -> register -> opened record ->
+   custody closure); this section only tunes spacing/padding, not order.
+   ======================================================================= */
+
+@media (max-width: 840px) {
+  .contentWidth {
+    padding-inline: 1.125rem;
+  }
+
+  .concordanceSection {
+    padding-block: var(--dossier-space-4) var(--dossier-space-5);
+  }
+
+  .registerSection {
+    padding-block: var(--dossier-space-4) var(--dossier-space-2);
+  }
 }

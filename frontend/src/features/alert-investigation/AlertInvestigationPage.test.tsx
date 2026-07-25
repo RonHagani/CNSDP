@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AlertInvestigationPage } from "./AlertInvestigationPage";
@@ -17,53 +17,47 @@ function renderAt(path: string) {
   );
 }
 
-// The docket citation line ("Alert no. 0001 · scenario-1 · rev. …") renders
-// its padded id as its own <b> node inline with sibling text, so a single
-// string/regex match against the accumulated paragraph text is ambiguous
-// for Testing Library — target the exact node instead.
-function findAlertNumber(padded: string) {
-  return screen.findByText(
-    (_, element) => element?.tagName.toLowerCase() === "b" && element.textContent === padded,
-  );
-}
-
-describe("AlertInvestigationPage — required presentation states", () => {
+describe("AlertInvestigationPage — required route-level states", () => {
   it("renders the loading state before data resolves", () => {
     renderAt("/alerts/1?demo=slow");
     expect(screen.getByText(/Retrieving alert investigation record/)).toBeInTheDocument();
   });
 
-  it("renders the full investigation for the intact fixture (valid traceability)", async () => {
+  it("renders the full Causal Evidence Dossier for the intact fixture (valid traceability)", async () => {
     renderAt("/alerts/1");
-    await findAlertNumber("0001");
+    await screen.findAllByText(/Alert #1\b/);
     await screen.findByText("Traceability verified.");
-    // Query with a simple, reliable matcher, then assert on the found
-    // element's own textContent directly — RTL's regex matcher does not
-    // reliably match "N / 6 present" (split across a text node and a
-    // <span> divider) even though a plain JS RegExp.test against the
-    // identical string succeeds; the simple substring query below sidesteps
-    // that matcher quirk rather than fighting it.
-    const count = await screen.findByText(/6 present/);
-    expect(count.textContent).toBe("6 / 6 present");
+    // All six register entries render, none marked unavailable.
+    const registerSection = screen.getByRole("heading", { name: "Evidence register" }).closest("section")!;
+    for (const label of [
+      "Source submission",
+      "Validation outcome",
+      "Normalized event",
+      "Detection definition",
+      "Detection result",
+      "Generated alert",
+    ]) {
+      expect(
+        within(registerSection).getByRole("button", { name: new RegExp(label, "i") }),
+      ).toBeInTheDocument();
+    }
   });
 
-  it("renders partial artifact availability distinctly", async () => {
+  it("renders partial artifact availability distinctly, with the gap named explicitly", async () => {
     renderAt("/alerts/2");
-    await findAlertNumber("0002");
-    const count = await screen.findByText(/6 present/);
-    expect(count.textContent).toBe("5 / 6 present");
+    await screen.findAllByText(/Alert #2\b/);
+    await waitFor(() =>
+      expect(screen.getByText(/Detection definition is not available/i)).toBeInTheDocument(),
+    );
+    // The other five artifacts remain unaffected.
+    expect(screen.getByRole("button", { name: /Source submission/i })).toBeInTheDocument();
   });
 
   it("renders broken traceability with the specific failed link named", async () => {
     renderAt("/alerts/3");
-    await findAlertNumber("0003");
+    await screen.findAllByText(/Alert #3\b/);
     await screen.findByText("Traceability broken.");
-    // Both the seal (aria-label) and the verdict copy name the failed
-    // link — the point of this test is that it is named at all,
-    // consistently, not merely once.
-    await waitFor(() =>
-      expect(screen.getAllByText(/raw_event_sha256/).length).toBeGreaterThanOrEqual(1),
-    );
+    await waitFor(() => expect(screen.getByText("Failed link: raw_event_sha256")).toBeInTheDocument());
   });
 
   it("renders a not-found state for an unknown alert id", async () => {
@@ -86,5 +80,28 @@ describe("AlertInvestigationPage — required presentation states", () => {
       ).toBeInTheDocument(),
     );
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+  });
+
+  it("never renders fabricated alert content in a route-level failure state", async () => {
+    renderAt("/alerts/999");
+    await waitFor(() =>
+      expect(screen.getByText(/No alert exists with id 999/)).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole("heading", { name: "Finding" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Evidence register" })).not.toBeInTheDocument();
+  });
+});
+
+describe("AlertInvestigationPage — no legacy presentation in the live DOM", () => {
+  it("renders none of the rejected legacy vocabulary or attributes", async () => {
+    const { container } = renderAt("/alerts/1");
+    await screen.findAllByText(/Alert #1\b/);
+    const text = container.textContent!.toLowerCase();
+    for (const forbidden of ["signal path", "stage rail", "conduit", "exhibit procession", "decoder strip", "evidence theater"]) {
+      expect(text).not.toContain(forbidden);
+    }
+    expect(container.querySelector('[data-role="conduit-field"]')).toBeNull();
+    expect(container.querySelector('[data-role="evidence-ribbon"]')).toBeNull();
+    expect(container.querySelector('[data-role="proof-chain"]')).toBeNull();
   });
 });

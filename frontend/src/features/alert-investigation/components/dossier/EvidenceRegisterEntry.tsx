@@ -2,14 +2,14 @@ import type { EvidenceRegisterEntry as EvidenceRegisterEntryModel } from "@/feat
 import styles from "./dossier.module.css";
 
 /**
- * One Evidence Register row (UX spec §3.4). Purely presentational: every
- * field it renders — index, total, label, availability, summary — is
- * already computed by Step 1 (`evidenceRegister.ts`); nothing here
- * recomputes a summary or an availability flag. An unavailable entry
- * remains fully visible and selectable — its own summary already states
- * the limitation (FR-035) in the model's own words, so this component
- * does not add a second, redundant "unavailable" claim beyond what the
- * model says.
+ * One Evidence Register row (Composition Reset §6): a single continuous
+ * index line — accession, name, and summary read together as one entry in
+ * the folio index — not a two-line label-then-summary block. Purely
+ * presentational: every field it renders is already computed by Step 1
+ * (`evidenceRegister.ts`); nothing here recomputes a summary or an
+ * availability flag. An unavailable entry remains fully visible and
+ * selectable — its own summary already states the limitation (FR-035) in
+ * the model's own words.
  */
 export function EvidenceRegisterEntry({
   entry,
@@ -21,23 +21,25 @@ export function EvidenceRegisterEntry({
   onSelect: (key: EvidenceRegisterEntryModel["key"]) => void;
 }) {
   return (
-    <li className={`${styles.ruledRow} ${selected ? styles.selected : ""} ${entry.available ? "" : styles.unavailable}`}>
+    <li
+      className={`${styles.ruledRow} ${selected ? styles.selected : ""} ${
+        entry.available ? "" : styles.unavailable
+      }`}
+    >
       <button
         type="button"
         className={styles.plainButton}
         aria-pressed={selected}
         onClick={() => onSelect(entry.key)}
       >
-        <div className={styles.accessionRow}>
+        <div className={styles.folioRow}>
           <span className={styles.accessionIndex}>
             {String(entry.index).padStart(2, "0")}/{entry.total}
           </span>
-          <div className={styles.conditionTier}>
-            <p className={styles.prose}>
-              <span className={styles.recordLabel}>{entry.label}</span>
-            </p>
-            <p className={`${styles.proseSecondary} ${styles.wrapLongValue}`}>{entry.summary}</p>
-          </div>
+          <p className={`${styles.prose} ${styles.registerLine} ${styles.wrapLongValue}`}>
+            <span className={styles.registerLabel}>{entry.label}</span>
+            <span className={styles.proseSecondary}> — {entry.summary}</span>
+          </p>
         </div>
       </button>
     </li>
