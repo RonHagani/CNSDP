@@ -279,6 +279,11 @@
   color: var(--map-text-secondary);
   font-family: var(--map-font-mono);
   font-size: 0.8em;
+  /* Long dot-path field names (e.g. operation.requestURI) have no natural
+     break point and otherwise overflow past this 43%-width column into
+     the value column at narrower desktop widths (1024px) — matching the
+     same wrap behavior `.wrapLongValue` already gives the value column. */
+  overflow-wrap: anywhere;
 }
 
 .fieldRowValue {
@@ -379,7 +384,12 @@
 /* ---- Detection Result convergence (§9) ---- */
 
 .resultWedge {
-  padding: var(--map-space-4) var(--map-space-5);
+  /* Extra top and bottom clearance (beyond the other artifacts' shared
+     space-4/space-5 padding) so the eyebrow heading and the "satisfied"
+     caption clear the clip-path's diagonal top/bottom edges instead of
+     being cut by them — the wedge is short enough that the default
+     padding alone isn't sufficient headroom at either end. */
+  padding: calc(var(--map-space-4) + 1.25rem) var(--map-space-5) calc(var(--map-space-4) + 1.25rem);
   display: flex;
   flex-direction: column;
   align-items: center;
