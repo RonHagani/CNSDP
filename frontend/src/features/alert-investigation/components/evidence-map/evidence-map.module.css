@@ -1,0 +1,534 @@
+/*
+ * Dark Evidence Map — shared style module (Track B, Pass 1).
+ *
+ * A self-contained token set, deliberately independent of dossier.module.css's
+ * `--dossier-*` tokens and global.css's `--cnsdp-*` tokens — both belong to
+ * presentation systems this document supersedes (UX spec front matter) and
+ * are scheduled for retirement alongside the Folio (implementation plan
+ * Pass 7). Nothing in this file is copied from the isolated prototype's CSS
+ * (frontend/review-artifacts/dark-evidence-map/prototype.css) — only the
+ * visual-language constraints in UX spec §18 are followed.
+ *
+ * Pass 1 scope note: this pass establishes correct structure, states, and
+ * accessible interaction. Exact spacing, density, connector-line routing,
+ * and typography scale are explicitly deferred to a later refinement pass
+ * (see the migration report's "known gaps" list) — nothing here should be
+ * read as final visual polish.
+ */
+
+.mapRoot {
+  --map-bg: #12161c;
+  --map-surface: #181d25;
+  --map-surface-2: #212832;
+  --map-rule: rgba(233, 237, 241, 0.14);
+  --map-rule-strong: rgba(233, 237, 241, 0.28);
+
+  --map-text: #e9edf1;
+  --map-text-secondary: #9aa4b2;
+  --map-text-tertiary: #6b7480;
+
+  --map-verified: #4fd1c5;
+  --map-verified-surface: rgba(79, 209, 197, 0.12);
+  --map-partial: #d9a441;
+  --map-partial-surface: rgba(217, 164, 65, 0.12);
+  --map-broken: #e2685a;
+  --map-broken-surface: rgba(226, 104, 90, 0.14);
+  --map-selected: #c8a97e;
+
+  --map-font-sans: "Inter", "Segoe UI", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --map-font-mono: ui-monospace, "SFMono-Regular", "Cascadia Code", Consolas, monospace;
+
+  --map-space-1: 0.25rem;
+  --map-space-2: 0.5rem;
+  --map-space-3: 0.75rem;
+  --map-space-4: 1rem;
+  --map-space-5: 1.5rem;
+  --map-space-6: 2rem;
+
+  background: var(--map-bg);
+  color: var(--map-text);
+  font-family: var(--map-font-sans);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  color-scheme: dark;
+}
+
+.mapRoot :focus-visible {
+  outline: 2px solid var(--map-text);
+  outline-offset: 2px;
+}
+
+.technical {
+  font-family: var(--map-font-mono);
+  font-size: 0.85em;
+}
+
+.eyebrow {
+  font-family: var(--map-font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--map-text-tertiary);
+  margin: 0;
+}
+
+.wrapLongValue {
+  overflow-wrap: anywhere;
+}
+
+.plainButton {
+  all: unset;
+  cursor: pointer;
+}
+
+/* ---- Layout shell (EvidenceCanvas) ---- */
+
+.canvas {
+  display: grid;
+  gap: var(--map-space-5);
+  padding: var(--map-space-5);
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-areas:
+    "header header header header"
+    "source normalized definition definition"
+    "source normalized result alert"
+    "rail rail rail rail";
+}
+
+.canvasHeader {
+  grid-area: header;
+}
+.canvasSource {
+  grid-area: source;
+}
+.canvasNormalized {
+  grid-area: normalized;
+}
+.canvasDefinition {
+  grid-area: definition;
+}
+.canvasResult {
+  grid-area: result;
+}
+.canvasAlert {
+  grid-area: alert;
+}
+.canvasRail {
+  grid-area: rail;
+}
+
+@media (max-width: 1023px) {
+  .canvas {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "header"
+      "source"
+      "normalized"
+      "definition"
+      "result"
+      "alert"
+      "rail";
+  }
+}
+
+.artifactShape {
+  background: var(--map-surface);
+  border: 1px solid var(--map-rule);
+  min-width: 0;
+}
+
+/* ---- Alert identity header (§4) ---- */
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--map-space-2) var(--map-space-4);
+  padding: var(--map-space-4) var(--map-space-5);
+  border-bottom: 1px solid var(--map-rule-strong);
+}
+
+.headerSentence {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.headerMeta {
+  margin-left: auto;
+  display: flex;
+  gap: var(--map-space-4);
+  color: var(--map-text-secondary);
+  font-family: var(--map-font-mono);
+  font-size: 0.75rem;
+}
+
+.traceabilityChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--map-space-1);
+  border: 1px solid var(--map-rule-strong);
+  padding: 0 var(--map-space-2);
+}
+
+.traceabilityChip[data-state="intact"] {
+  color: var(--map-verified);
+  border-color: var(--map-verified);
+}
+.traceabilityChip[data-state="broken"] {
+  color: var(--map-broken);
+  border-color: var(--map-broken);
+}
+
+/* ---- Source Submission specimen (§5) ---- */
+
+.specimen {
+  padding: var(--map-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--map-space-3);
+  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%);
+}
+
+.specimenTier1 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--map-space-2);
+  border-bottom: 1px solid var(--map-rule);
+  padding-bottom: var(--map-space-3);
+}
+
+.specimenTier2 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--map-space-1);
+  opacity: 0.86;
+  font-size: 0.85em;
+}
+
+.specimenTier3 {
+  opacity: 0.92;
+  display: flex;
+  flex-direction: column;
+  gap: var(--map-space-2);
+}
+
+.specimenRawBox {
+  background: var(--map-surface-2);
+  border: 1px solid var(--map-rule);
+  padding: var(--map-space-2) var(--map-space-3);
+  max-height: 12rem;
+  overflow: auto;
+}
+
+/* ---- Validation checkpoint (§6) ---- */
+
+.validationStamp {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--map-space-1);
+  width: 6rem;
+  height: 6rem;
+  border: 2px solid var(--map-verified);
+  border-radius: 50%;
+  color: var(--map-verified);
+  text-align: center;
+}
+
+.validationStamp[data-outcome="invalid"],
+.validationStamp[data-outcome="incomplete"],
+.validationStamp[data-outcome="unsupported"] {
+  border-color: var(--map-broken);
+  color: var(--map-broken);
+}
+
+.validationStampLabel {
+  font-family: var(--map-font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* ---- Normalized Event field surface (§7) ---- */
+
+.fieldSurface {
+  padding: var(--map-space-4);
+}
+
+.fieldSurfaceHeading {
+  border-bottom: 1px solid var(--map-rule-strong);
+  padding-bottom: var(--map-space-2);
+  margin-bottom: var(--map-space-2);
+}
+
+.fieldRow {
+  display: grid;
+  grid-template-columns: 43% 57%;
+  gap: var(--map-space-2);
+  padding: var(--map-space-1) 0;
+  border-bottom: 1px solid var(--map-rule);
+}
+
+.fieldRow[data-highlighted="true"] {
+  background: var(--map-verified-surface);
+  outline: 1px solid var(--map-verified);
+}
+
+.fieldRowKey {
+  color: var(--map-text-secondary);
+  font-family: var(--map-font-mono);
+  font-size: 0.8em;
+}
+
+.fieldRowValue {
+  font-family: var(--map-font-mono);
+  font-size: 0.85em;
+}
+
+/* ---- Detection Definition rule frame + characteristic bus (§8) ---- */
+
+.ruleFrame {
+  padding: var(--map-space-4);
+  position: relative;
+}
+
+.ruleFrame::before,
+.ruleFrame::after {
+  content: "";
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border: 1px solid var(--map-text-tertiary);
+}
+.ruleFrame::before {
+  top: 4px;
+  left: 4px;
+  border-right: none;
+  border-bottom: none;
+}
+.ruleFrame::after {
+  bottom: 4px;
+  right: 4px;
+  border-left: none;
+  border-top: none;
+}
+
+.ruleFrameClause {
+  margin: var(--map-space-1) 0;
+  color: var(--map-text-secondary);
+  font-size: 0.85em;
+}
+
+.bus {
+  margin-top: var(--map-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--map-space-2);
+  border-left: 2px solid var(--map-rule-strong);
+  padding-left: var(--map-space-4);
+}
+
+.pin {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: var(--map-space-2) var(--map-space-3);
+  background: var(--map-surface-2);
+  border: 1px solid var(--map-rule);
+  border-left: 3px solid transparent;
+}
+
+.pin[data-provenance="verified"] {
+  border-left-color: var(--map-verified);
+}
+.pin[data-provenance="partial"] {
+  border-left-color: var(--map-partial);
+}
+.pin[data-provenance="unavailable"] {
+  border-left-color: var(--map-broken);
+}
+
+.pin[data-selected="true"] {
+  border-color: var(--map-selected);
+  position: relative;
+}
+.pin[data-selected="true"]::after {
+  content: "";
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 8px;
+  height: 8px;
+  background: var(--map-selected);
+}
+
+.pinId {
+  font-family: var(--map-font-mono);
+  font-size: 0.85em;
+  display: block;
+}
+
+.pinState {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--map-text-secondary);
+  margin-top: 2px;
+}
+
+/* ---- Detection Result convergence (§9) ---- */
+
+.resultWedge {
+  padding: var(--map-space-4) var(--map-space-5);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--map-space-2);
+  clip-path: polygon(0 0, 100% 18%, 100% 82%, 0 100%);
+  text-align: center;
+}
+
+.resultTally {
+  display: flex;
+  gap: 4px;
+}
+
+.resultTallyTick {
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--map-text-secondary);
+}
+.resultTallyTick[data-filled="true"] {
+  background: var(--map-text);
+  border-color: var(--map-text);
+}
+
+.resultCount {
+  font-family: var(--map-font-mono);
+  font-size: 1.5rem;
+}
+
+/* ---- Generated Alert marker (§10) ---- */
+
+.alertMarker {
+  padding: var(--map-space-3) var(--map-space-4);
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%, 10px 50%);
+}
+
+.alertMarkerPrompt {
+  font-family: var(--map-font-mono);
+  color: var(--map-text-tertiary);
+}
+
+/* ---- Provenance annotation (§12-13) ---- */
+
+.annotation {
+  padding: var(--map-space-3) var(--map-space-4);
+  border: 1px solid var(--map-rule-strong);
+  background: var(--map-surface-2);
+  margin-top: var(--map-space-2);
+}
+
+.annotation[data-kind="verified"] {
+  border-left: 3px solid var(--map-verified);
+}
+.annotation[data-kind="partial"] {
+  border-left: 3px solid var(--map-partial);
+}
+.annotation[data-kind="unavailable"] {
+  border-left: 3px solid var(--map-broken);
+}
+
+.annotationKind {
+  font-family: var(--map-font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.annotation[data-kind="verified"] .annotationKind {
+  color: var(--map-verified);
+}
+.annotation[data-kind="partial"] .annotationKind {
+  color: var(--map-partial);
+}
+.annotation[data-kind="unavailable"] .annotationKind {
+  color: var(--map-broken);
+}
+
+.annotationLine {
+  margin: var(--map-space-1) 0 0;
+}
+
+/* ---- Traceability rail (§11) ---- */
+
+.rail {
+  padding: var(--map-space-4) var(--map-space-5);
+}
+
+.railTrack {
+  display: flex;
+  align-items: center;
+  list-style: none;
+  margin: var(--map-space-3) 0 0;
+  padding: 0;
+}
+
+.railNode {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--map-space-1);
+  flex: 0 0 auto;
+}
+
+.railNodeMark {
+  width: 10px;
+  height: 10px;
+  background: var(--map-verified);
+  border-radius: 50%;
+}
+
+.railNodeLabel {
+  font-family: var(--map-font-mono);
+  font-size: 0.6875rem;
+  color: var(--map-text-secondary);
+}
+
+.railSegment {
+  flex: 1 1 auto;
+  height: 2px;
+  background: var(--map-verified);
+  margin: 0 var(--map-space-1);
+}
+
+.railSegment[data-broken="true"] {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--map-broken),
+    var(--map-broken) 6px,
+    transparent 6px,
+    transparent 12px
+  );
+}
+
+.railNode[data-broken="true"] .railNodeMark {
+  background: var(--map-broken);
+}
+
+.railExplanation {
+  margin: var(--map-space-3) 0 0;
+  color: var(--map-text-secondary);
+  font-size: 0.85em;
+}
+
+.railExplanation[data-broken="true"] {
+  color: var(--map-broken);
+}
+
+/* ---- Shared status text ---- */
+
+.statusUnavailable {
+  color: var(--map-text-tertiary);
+  font-style: italic;
+}
