@@ -1,25 +1,35 @@
 import { test, expect } from "@playwright/test";
 
 /**
- * Visual and interaction verification for the Causal Evidence Dossier,
- * run against the production preview build (playwright.config.ts points
- * baseURL at `vite preview`). Captures the six required review screenshots
- * into review-artifacts/ (gitignored — never committed) and exercises the
- * interactions the Alert Investigation shell replacement specifically
- * requires: register/concordance selection, the command palette, every
- * route-level state, and structural integrity (no horizontal overflow).
+ * Visual and interaction verification for the Dark Evidence Map — the live
+ * Alert Investigation presentation as of Track B Pass 5's atomic shell
+ * swap (InvestigationMap replacing the retired Forensic Case Folio). Runs
+ * against the production preview build (playwright.config.ts points
+ * baseURL at `vite preview`). Captures the required review screenshots
+ * into review-artifacts/ (gitignored — never committed) and exercises
+ * condition selection, keyboard operation, every route-level state, and
+ * structural integrity (no horizontal overflow) at the UX spec's own
+ * desktop viewport floor (1024px) and principal target range
+ * (1440–1600px).
  */
+
+const DESKTOP_VIEWPORTS = [
+  ["1024px (viewport floor)", { width: 1024, height: 900 }],
+  ["1440px (principal)", { width: 1440, height: 960 }],
+  ["1600px (principal)", { width: 1600, height: 1000 }],
+] as const;
 
 test.describe("Alert Investigation — screenshots", () => {
   test("01 — scenario 1, wide desktop, default state", async ({ page }) => {
-    await page.setViewportSize({ width: 1680, height: 1000 });
+    await page.setViewportSize({ width: 1600, height: 1000 });
     await page.goto("/alerts/1");
 
     await expect(page.getByText("Alert #1", { exact: false }).first()).toBeVisible();
-    await expect(page.getByText("Traceability verified.")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Evidence register" })).toBeVisible();
-    // Detection Result is selected by default — no prior interaction.
-    await expect(page.getByRole("heading", { name: /Inspection: Detection result/i })).toBeVisible();
+    await expect(page.getByText("Traceability intact").first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Source submission" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Detection result" })).toBeVisible();
+    // No pin preselected on load.
+    await expect(page.getByRole("group", { name: /Provenance record/i })).toHaveCount(0);
 
     await page.screenshot({
       path: "review-artifacts/01-scenario1-wide-desktop-default.png",
@@ -28,7 +38,7 @@ test.describe("Alert Investigation — screenshots", () => {
   });
 
   test("02 — scenario 1, wide desktop, Verified-provenance condition selected", async ({ page }) => {
-    await page.setViewportSize({ width: 1680, height: 1000 });
+    await page.setViewportSize({ width: 1600, height: 1000 });
     await page.goto("/alerts/1");
 
     await page.getByRole("button", { name: /tty_allocation/i }).click();
@@ -43,14 +53,20 @@ test.describe("Alert Investigation — screenshots", () => {
   });
 
   test("03 — scenario 2, wide desktop, multiple Partial-provenance conditions", async ({ page }) => {
-    await page.setViewportSize({ width: 1680, height: 1000 });
+    await page.setViewportSize({ width: 1600, height: 1000 });
     await page.goto("/alerts/4");
 
     await expect(page.getByText("Alert #4", { exact: false }).first()).toBeVisible();
-    // All five declared characteristics are Partial provenance and are
-    // simultaneously visible in the concordance without any selection.
-    await expect(page.getByText(/^Partial —/).first()).toBeVisible();
-    expect(await page.getByText(/^Partial —/).count()).toBe(5);
+    // All five declared characteristics are satisfied and simultaneously
+    // visible on the characteristic bus without any selection.
+    for (const id of ["privileged_container", "host_network", "host_pid", "host_ipc", "host_path_volume"]) {
+      await expect(page.getByRole("button", { name: new RegExp(id) })).toBeVisible();
+    }
+
+    await page.getByRole("button", { name: /privileged_container/i }).click();
+    const record = page.getByRole("group", { name: /Provenance record/i });
+    await expect(record).toBeVisible();
+    await expect(record.getByText(/Partial/)).toBeVisible();
 
     await page.screenshot({
       path: "review-artifacts/03-scenario2-partial-provenance.png",
@@ -59,12 +75,11 @@ test.describe("Alert Investigation — screenshots", () => {
   });
 
   test("04 — scenario 3, wide desktop", async ({ page }) => {
-    await page.setViewportSize({ width: 1680, height: 1000 });
+    await page.setViewportSize({ width: 1600, height: 1000 });
     await page.goto("/alerts/5");
 
     await expect(page.getByText("Alert #5", { exact: false }).first()).toBeVisible();
-    await expect(page.getByText(/scenario-3/).first()).toBeVisible();
-    await expect(page.getByText("role_ref_cluster_admin").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /role_ref_cluster_admin/i })).toBeVisible();
 
     await page.screenshot({
       path: "review-artifacts/04-scenario3-wide-desktop.png",
@@ -72,69 +87,76 @@ test.describe("Alert Investigation — screenshots", () => {
     });
   });
 
-  test("05 — scenario 1, narrow mobile", async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 844 });
+  test("05 — scenario 1, below-1024px readable fallback", async ({ page }) => {
+    await page.setViewportSize({ width: 768, height: 1024 });
     await page.goto("/alerts/1");
 
     await expect(page.getByText("Alert #1", { exact: false }).first()).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Evidence register" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Source submission" })).toBeVisible();
+    await expect(page.getByText("Traceability intact").first()).toBeVisible();
+
+    const hasHorizontalOverflow = await page.evaluate(
+      () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    );
+    expect(hasHorizontalOverflow).toBe(false);
 
     await page.screenshot({
-      path: "review-artifacts/05-scenario1-narrow-mobile.png",
+      path: "review-artifacts/05-scenario1-below-1024-fallback.png",
       fullPage: true,
     });
   });
 
-  test("06 — broken traceability, wide desktop", async ({ page }) => {
-    await page.setViewportSize({ width: 1680, height: 1000 });
+  test("06 — broken traceability (raw_event_sha256), wide desktop", async ({ page }) => {
+    await page.setViewportSize({ width: 1600, height: 1000 });
     await page.goto("/alerts/3");
 
     await expect(page.getByText("Alert #3", { exact: false }).first()).toBeVisible();
-    await expect(page.getByText("Traceability broken.")).toBeVisible();
-    await expect(page.getByText("Failed link: raw_event_sha256")).toBeVisible();
+    await expect(page.getByText("Traceability broken").first()).toBeVisible();
+    await expect(page.getByText(/recorded integrity digest/)).toBeVisible();
 
     await page.screenshot({
-      path: "review-artifacts/06-broken-traceability-wide-desktop.png",
+      path: "review-artifacts/06-broken-traceability-raw-event-sha256.png",
+      fullPage: true,
+    });
+  });
+
+  test("07 — broken traceability (source_key), wide desktop", async ({ page }) => {
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await page.goto("/alerts/6");
+
+    await expect(page.getByText("Alert #6", { exact: false }).first()).toBeVisible();
+    await expect(page.getByText("Traceability broken").first()).toBeVisible();
+    await expect(page.getByText(/source identity/)).toBeVisible();
+
+    await page.screenshot({
+      path: "review-artifacts/07-broken-traceability-source-key.png",
       fullPage: true,
     });
   });
 });
 
 test.describe("Alert Investigation — interaction", () => {
-  test("command palette opens with Ctrl+K and an Inspect command selects the artifact", async ({
-    page,
-  }) => {
+  test("selecting a satisfied characteristic pin reveals its provenance record", async ({ page }) => {
     await page.goto("/alerts/1");
-    await expect(page.getByRole("heading", { name: "Evidence register" })).toBeVisible();
-    await page.keyboard.press("Control+k");
-    await expect(page.getByPlaceholder(/Jump to/)).toBeVisible();
-
-    await page.keyboard.type("Inspect normalized event");
-    await page.keyboard.press("Enter");
-
-    await expect(page.getByPlaceholder(/Jump to/)).toBeHidden();
-    await expect(page.getByRole("heading", { name: /Inspection: Normalized event/i })).toBeVisible();
-    await expect(page.getByRole("button", { name: /Normalized event/i }).first()).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    await page.getByRole("button", { name: /stdin_streaming/i }).click();
+    await expect(page.getByRole("group", { name: /Provenance record/i })).toBeVisible();
   });
 
-  test("selecting a register entry and a concordance condition are independent axes", async ({
-    page,
-  }) => {
+  test("keyboard selection: focusing a pin and activating with Enter", async ({ page }) => {
     await page.goto("/alerts/1");
-
-    const registerSection = page.locator("section", { has: page.getByRole("heading", { name: "Evidence register" }) });
-    await registerSection.getByRole("button", { name: /Source submission/i }).click();
-    await expect(page.getByRole("heading", { name: /Inspection: Source event/i })).toBeVisible();
-
-    await page.getByRole("button", { name: /tty_allocation/i }).click();
+    const pin = page.getByRole("button", { name: /tty_allocation/i });
+    await pin.focus();
+    await page.keyboard.press("Enter");
     await expect(page.getByRole("group", { name: /Provenance record/i })).toBeVisible();
-    // The register selection made moments ago is unaffected.
-    await expect(
-      registerSection.getByRole("button", { name: /Source submission/i }),
-    ).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("re-selecting the same pin closes its provenance record", async ({ page }) => {
+    await page.goto("/alerts/1");
+    const pin = page.getByRole("button", { name: /tty_allocation/i });
+    await pin.click();
+    await expect(page.getByRole("group", { name: /Provenance record/i })).toBeVisible();
+    await pin.click();
+    await expect(page.getByRole("group", { name: /Provenance record/i })).toHaveCount(0);
   });
 });
 
@@ -152,24 +174,64 @@ test.describe("Alert Investigation — route-level states", () => {
     await expect(page.getByText("The investigation backend could not be reached")).toBeVisible();
     await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
   });
+
+  test("partial artifact availability renders the gap explicitly, other artifacts unaffected", async ({
+    page,
+  }) => {
+    await page.goto("/alerts/2");
+    await expect(page.getByText("Alert #2", { exact: false }).first()).toBeVisible();
+    await expect(page.getByText("Detection definition unavailable")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Source submission" })).toBeVisible();
+  });
 });
 
 test.describe("Alert Investigation — structural integrity", () => {
-  for (const [label, viewport] of [
-    ["desktop", { width: 1680, height: 1000 }],
-    ["mobile", { width: 390, height: 844 }],
-  ] as const) {
-    test(`no page-level horizontal overflow at ${label} viewport`, async ({ page }) => {
+  for (const [label, viewport] of DESKTOP_VIEWPORTS) {
+    test(`functions correctly at ${label}: no overflow, key regions visible, selection traces correctly`, async ({
+      page,
+    }) => {
       await page.setViewportSize(viewport);
       await page.goto("/alerts/1");
-      await expect(page.getByRole("heading", { name: "Evidence register" })).toBeVisible();
+
+      // All six evidence artifacts remain reachable and visible, not just
+      // a sample of them, at this exact viewport.
+      await expect(page.getByRole("heading", { name: "Source submission" })).toBeVisible();
+      await expect(page.getByRole("group", { name: "Validation outcome" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Normalized event" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Detection definition" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Detection result" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Generated alert" })).toBeVisible();
+      await expect(page.getByText("Traceability intact").first()).toBeVisible();
 
       const hasHorizontalOverflow = await page.evaluate(
         () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
       );
       expect(hasHorizontalOverflow).toBe(false);
+
+      // The selected condition's trace lands on the correct normalized
+      // field and its provenance annotation, at this exact viewport.
+      await page.getByRole("button", { name: /tty_allocation/i }).click();
+      const record = page.getByRole("group", { name: /Provenance record/i });
+      await expect(record).toBeVisible();
+      await expect(record.getByText("exec.tty", { exact: true })).toBeVisible();
+      const highlightedRow = page.locator('[data-highlighted="true"]');
+      await expect(highlightedRow).toHaveCount(1);
+      await expect(highlightedRow).toContainText("exec.tty");
     });
   }
+
+  test("no page-level horizontal overflow below 1024px (readable fallback, not a dedicated phone experience)", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 768, height: 1024 });
+    await page.goto("/alerts/1");
+    await expect(page.getByRole("heading", { name: "Source submission" })).toBeVisible();
+
+    const hasHorizontalOverflow = await page.evaluate(
+      () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    );
+    expect(hasHorizontalOverflow).toBe(false);
+  });
 
   test("no console errors or warnings during the primary investigation flow", async ({ page }) => {
     const messages: string[] = [];
@@ -180,11 +242,8 @@ test.describe("Alert Investigation — structural integrity", () => {
     });
 
     await page.goto("/alerts/1");
-    const registerSection = page.locator("section", { has: page.getByRole("heading", { name: "Evidence register" }) });
-    await registerSection.getByRole("button", { name: /Normalized event/i }).click();
     await page.getByRole("button", { name: /tty_allocation/i }).click();
-    await page.keyboard.press("Control+k");
-    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: /tty_allocation/i }).click();
 
     expect(messages).toEqual([]);
   });

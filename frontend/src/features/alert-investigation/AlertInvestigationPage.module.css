@@ -1,17 +1,20 @@
 /*
  * Page-level shell styling only — every other structural rule lives in
- * the shared dossier stylesheet (components/dossier/dossier.module.css),
- * whose custom properties this file reads directly (the page root also
- * carries `dossier.module.css`'s `.dossierRoot` class, so those
- * properties are in scope here). No legacy token (`--cnsdp-*`) is
- * referenced anywhere in this file — the live route no longer depends on
- * the token set the rejected visual direction owned.
+ * the Dark Evidence Map's own stylesheet
+ * (components/evidence-map/evidence-map.module.css), whose custom
+ * properties this file reads directly (the page root also carries
+ * `evidence-map.module.css`'s `.mapRoot` class, so those properties are in
+ * scope here — the same class `InvestigationMap` itself wraps its own
+ * content in, so this outer application only re-covers the utility
+ * bar/skip-link/loading/error chrome that renders outside it). No
+ * `--dossier-*` or `--cnsdp-*` token is referenced anywhere in this file —
+ * the live route no longer depends on either retiring token set.
+ * `.mapRoot` already supplies the page background/text color/font, so this
+ * file only adds `min-height`.
  */
 
 .page {
   min-height: 100vh;
-  background: var(--dossier-canvas);
-  color: var(--dossier-text);
 }
 
 .skipLink {
@@ -19,36 +22,36 @@
   left: -9999px;
   top: 0;
   z-index: 10;
-  background: var(--dossier-text);
-  color: var(--dossier-canvas);
-  padding: var(--dossier-space-2) var(--dossier-space-4);
-  font-family: var(--dossier-font-mono);
+  background: var(--map-text);
+  color: var(--map-bg);
+  padding: var(--map-space-2) var(--map-space-4);
+  font-family: var(--map-font-mono);
   font-size: 0.85rem;
 }
 
 .skipLink:focus {
-  left: var(--dossier-space-3);
-  top: var(--dossier-space-3);
+  left: var(--map-space-3);
+  top: var(--map-space-3);
 }
 
 .utilityBar {
   display: flex;
   align-items: baseline;
-  gap: var(--dossier-space-2);
-  padding: var(--dossier-space-4) var(--dossier-space-5);
-  border-bottom: 1px solid var(--dossier-rule-strong);
+  gap: var(--map-space-2);
+  padding: var(--map-space-4) var(--map-space-5);
+  border-bottom: 1px solid var(--map-rule-strong);
 }
 
 .wordmark {
-  font-family: var(--dossier-font-mono);
+  font-family: var(--map-font-mono);
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.12em;
-  color: var(--dossier-text-tertiary);
+  color: var(--map-text-tertiary);
 }
 
 .wordmarkSub {
-  font-family: var(--dossier-font-mono);
+  font-family: var(--map-font-mono);
   font-size: 0.7rem;
-  color: var(--dossier-text-tertiary);
+  color: var(--map-text-tertiary);
 }
