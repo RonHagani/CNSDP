@@ -3,13 +3,15 @@
 | Field | Value |
 | --- | --- |
 | Document | CNSDP Alert Investigation UX Specification |
-| Version | 0.1 |
+| Version | 0.2 |
 | Status | Approved — Phase 1.5 UX baseline |
 | Phase | Phase 1.5 — Security Investigation Experience |
 | Identifier | Not assigned. Deliberately outside the closed PC-015 identifier namespace (PC-###, PD-###, PER-###, UC-###, FR-###, NFR-###, AC-### are not reopened, renumbered, or extended by this document). Referenced by path only: `docs/frontend/alert-investigation-ux-spec.md`. |
-| Relationship to baseline | Extends, and must not contradict, the approved Phase 0 product baseline (`../product.md` and its companions) and the approved Phase 1 architecture baseline (`../architecture.md`, ARCH-01). Defines no new product scope, functional requirement, non-functional requirement, or acceptance criterion. Any backend capability this document's open questions touch requires its own separate architecture and implementation approval before backend code is written (§15). |
+| Relationship to baseline | Extends, and must not contradict, the approved Phase 0 product baseline (`../product.md` and its companions) and the approved Phase 1 architecture baseline (`../architecture.md`, ARCH-01). Defines no new product scope, functional requirement, non-functional requirement, or acceptance criterion. Any backend capability this document's open questions touch requires its own separate architecture and implementation approval before backend code is written (§22). |
 
-**Supersession.** This document supersedes `docs/frontend/product-experience-brief.md` §1 (product ambition), §4 (creative direction — "The Signal Path"), §5 (flagship screen specification), §6 (information architecture, as it pertains to the Alert Investigation route), §7 (design system), and §8 (motion system). It does not supersede that document's §2 (backend-capability audit) or §11 (backend-capability plan) — those sections state contract facts that remain accurate today and are restated, for self-containment, in §2 and §15 below. `product-experience-brief.md` is **not deleted or edited by this task**. It remains in the repository for historical reference. A later documentation task should mark it explicitly superseded (e.g., a status-field change or an in-place "Superseded by" note); leaving two contradictory approved creative directions live and unmarked is not the intended end state, but resolving that is out of scope for this document (§14).
+**Supersession.** This is a full in-place rewrite, not an amendment. It supersedes v0.1 of this same document in its entirety — including v0.1's "Causal Evidence Dossier" information architecture, its Docket Header / Finding / Evidence Concordance / Evidence Register / Inspection Leaf / Traceability Proof vocabulary, and its document/ledger visual-language constraints (§11). v0.1 was itself an approved, implemented direction — the live implementation under `frontend/src/features/alert-investigation/` currently renders a later, unapproved visual restyling of it (internally called the "Forensic Case Folio" / "Composition Reset," using "folio," "custody," and "evidentiary clause" vocabulary that was never documented in any approved specification). This document approves neither the v0.1 Dossier presentation nor the undocumented Folio restyling. It adopts, as the sole authoritative direction, the refined **Dark Evidence Map** prototype at `frontend/review-artifacts/dark-evidence-map/` and its review document (`frontend/review-artifacts/dark-evidence-map/review.md`), reconciled here against the full approved Phase 0/Phase 1 baseline and the current live domain code.
+
+This document does not supersede `product-experience-brief.md`'s §2 (backend-capability audit) or §11 (backend-capability plan) — those sections state contract facts that remain accurate and are restated, for self-containment, in §2 and §22 below.
 
 **Notation.** Four tags are used throughout to keep the origin of each statement auditable:
 
@@ -20,30 +22,15 @@
 
 ## 1. Purpose and user outcome
 
-This document defines the v0.1 user experience for the Alert Investigation screen — the platform's one investigation surface — replacing the "Signal Path" schematic/pipeline direction previously defined in `product-experience-brief.md`.
+This document defines the v0.2 user experience for the Alert Investigation screen — the platform's one investigation surface.
 
-**[Approved]** The screen serves the Security Analyst (PER-001) performing UC-003: reaching an evidence-backed assessment of a detected activity by reviewing the alert's explanation, inspecting the normalized and source telemetry behind it, and following the traceability chain back to the original event. It also serves the Detection Engineer (PER-002) performing UC-002: verifying that a detection matched for its documented reason. The primary task is not observing how an event moved through the platform's processing stages — it is verifying, from evidence, that an existing alert's claim is true.
+**[Approved]** The screen serves the Security Analyst (PER-001) performing UC-003: reaching an evidence-backed assessment of a detected activity by reviewing the alert's explanation, inspecting the normalized and source telemetry behind it, and following the traceability chain back to the original event. It also serves the Detection Engineer (PER-002) performing UC-002: verifying that a detection matched for its documented reason.
 
-**[UX]** The screen is a **Causal Evidence Dossier**: a structured record organized around one causal chain, not a dashboard, not a pipeline visualization, not a processing-stage presentation, not a generic SIEM layout, and not an editorial landing page. Every element on the screen exists to answer one of five questions the analyst actually has:
+**[UX]** Stated in product terms, not visual-metaphor language: **the screen lets an analyst see, in one continuous spatial view, how one real Kubernetes audit event became a normalized fact, satisfied a documented detection condition, produced a detection result, and generated an alert — and lets them verify, for any one satisfied condition, exactly which raw field produced it, and for the alert as a whole, whether that entire chain still resolves intact back to the original event.** The screen is not a document, not a dashboard, not a pipeline diagram, and not a node graph. It is an interactive causal map: six real artifacts, connected by real dependency relationships, in which every visible line, shape, and label corresponds to a named field in the response contract (§2) or a documented product concept (`../glossary.md`) — never a decorative one.
 
-1. **What happened** — the plain-language claim (§3.2, Finding).
-2. **Why the detection matched** — which documented conditions were evaluated (§3.3, Evidence Concordance).
-3. **Which documented conditions were satisfied** — the concordance between declared conditions and the recorded match (§3.3).
-4. **Which observed event facts satisfied them** — the specific normalized-event values behind each satisfied condition (§3.3, §4).
-5. **Whether every claim resolves to original source telemetry** — the field-level provenance record (§3.5) and the traceability verification result (§3.6, §7).
+The user outcome, restated from UC-003 and UC-002 without reference to any rejected visual metaphor: a reviewer can, without leaving the screen, (1) read what the alert claims happened, (2) see which documented condition(s) it satisfied and which specific observed facts satisfied them, (3) trace any one of those facts back to the exact raw field it was derived from (or see plainly why that raw origin cannot currently be identified), and (4) confirm whether the whole evidentiary chain — alert, detection result, normalized event, source submission — still resolves intact, or see exactly which link in it is broken.
 
-The organizing model is a single causal chain, always read in the same direction:
-
-```
-CLAIM → DOCUMENTED CONDITION → OBSERVED FACT → SOURCE EVIDENCE
-```
-
-- **CLAIM** — the Finding (§3.2): what the platform asserts happened and what it detected, stated in plain language, sourced only from `alert.summary` and `detectionResult.matchReason`.
-- **DOCUMENTED CONDITION** — the matched detection definition's declared conditions (§3.3): `operation`, `requires_outcome`, `requires_any`, `requires_all`, exactly as authored and reviewable (PD-04 scope decision 3 — detection definitions are read-only product content).
-- **OBSERVED FACT** — the specific `normalizedEvent` values and `detectionResult.matchReason.satisfiedCharacteristics` entries that satisfied those conditions (§3.3, §4.3).
-- **SOURCE EVIDENCE** — the original `sourceEvent.rawEvent` field(s) each observed fact was derived from, with the derivation behavior stated explicitly — a verbatim carry or a parsed transformation (§3.5, §4.3).
-
-**[Approved]** Success criterion, restated from UC-003: a reviewer can move from the Finding to a specific matched condition, to the observed fact that satisfied it, to the source evidence it was derived from, to the traceability proof of the whole chain — without leaving the screen (UC-003 main flow; PC-G-005, PC-G-006, PC-G-007). Every value displayed traces to a named field in the current response contract (§2); nothing is fabricated to fill a visual gap.
+**[Approved]** Every value displayed traces to a named field in the current response contract (§2); nothing is fabricated to fill a visual gap (PC-P-004, NFR-031).
 
 ## 2. Current v0.1 contract boundaries
 
@@ -62,396 +49,338 @@ traceability         { intact, failedLink? }
 
 The following are binding limits on everything this document specifies. No section below may describe UI that implies a capability beyond this list exists.
 
-- **[Contract]** No alert index or search endpoint exists. The dossier cannot offer alert browsing, filtering, or discovery; an alert ID must already be known (direct navigation) before this screen can render anything.
-- **[Contract]** No non-alerting telemetry retrieval path exists. `POST /v1/audit-events` returns only an admission result. A submission that was rejected, flagged incomplete, classified unsupported, or validly processed without matching a scenario has no read-back path. This screen only ever renders on an alert that already exists — it never needs to represent a non-match.
-- **[Contract]** No standalone detection-definition catalog exists. A definition is reachable only through an alert that references it, via `detectionDefinition`.
-- **[Contract]** No per-stage timestamps exist. No response field carries processing-stage timing or duration. This document specifies no timeline, clock, or elapsed-time element anywhere.
-- **[Contract]** No severity or confidence field exists. This document specifies no severity badge, risk score, or confidence indicator anywhere. The only quantifiable signal on the screen is the literal declared-vs-satisfied condition count (§3.3), and it is presented as a checklist, never as a score.
-- **[Approved]** The minimum evidence set is exactly six artifacts (PD-04 scope decision 8; FR-031): `sourceEvent`, `validationOutcome`, `normalizedEvent`, `detectionDefinition`, `detectionResult`, `alert`. This set is closed — no seventh artifact may be introduced by this document.
-- **[Approved]** Traceability verification (`traceability.intact` / `traceability.failedLink`) is explicitly **not** a seventh artifact (PD-04 scope decision 8; `product-experience-brief.md` §3.3, stated three times in the approved baseline). It describes the integrity and connectivity of the six-artifact set and is always presented as a verification result, never inventoried alongside the six.
+- **[Contract]** No alert index or search endpoint exists. The map cannot offer alert browsing, filtering, or discovery; an alert ID must already be known before this screen can render anything.
+- **[Contract]** No non-alerting telemetry retrieval path exists. A submission that was rejected, flagged incomplete, classified unsupported, or validly processed without matching a scenario has no read-back path. This screen only ever renders on an alert that already exists.
+- **[Contract]** No standalone detection-definition catalog exists. A definition is reachable only through an alert that references it.
+- **[Contract]** No per-stage timestamps exist. No response field carries processing-stage timing or duration. This document specifies no timeline, clock, elapsed-time element, or topology diagram of the platform's internal pipeline anywhere.
+- **[Contract]** No severity or confidence field exists. This document specifies no severity badge, risk score, or confidence indicator anywhere, including within the Detection Result object (§9). The only quantifiable signal on the screen is the literal declared-vs-satisfied condition count, presented as a plain count, never as a score or percentage.
+- **[Approved]** The minimum evidence set is exactly six artifacts (PD-04 scope decision 8; FR-031): the source submission, the validation outcome, the normalized event, the detection definition, the detection result, and the generated alert. This set is closed — no seventh artifact may be introduced by this document.
+- **[Approved]** Traceability verification (`traceability.intact` / `traceability.failedLink`) is explicitly **not** a seventh artifact. It describes the integrity and connectivity of the six-artifact set and is always presented as a verification result, never inventoried alongside the six.
 - **[Approved]** Each of the six artifacts carries its own independent `available: boolean` (FR-035). No shared or generic "something is missing" placeholder is permitted anywhere in this specification.
 - **[Contract]** `traceability.intact` is `true` or `false`; when `false`, `failedLink` is exactly one of `"alert"`, `"source_key"`, `"raw_event_sha256"`. No other failure value exists.
-- **[Contract]** `DetectionConditions` (`detectionDefinition.definition.conditions`) may declare any combination of `requires_outcome` (optional), `requires_any` (optional list), and `requires_all` (optional list), including neither list present. Every element of this specification that renders conditions must handle all combinations, not only the one exercised by the currently committed scenario-1 fixture.
+- **[Contract]** `DetectionConditions` (`detectionDefinition.definition.conditions`) may declare any combination of `requires_outcome` (optional), `requires_any` (optional list), and `requires_all` (optional list), including neither list present. Every element of this specification that renders conditions must handle all combinations.
+- **[Contract]** `requires_any`'s declared list may legitimately contain characteristics that were **not** satisfied for a given alert — only "at least one" is required for a match. `requires_all`'s declared list is, for any alert that exists, satisfied in full by construction. This declared-vs-satisfied distinction is real product content (FR-021, FR-022; UC-002) and is never collapsed away.
 
-## 3. Information architecture
+## 3. The governing model: six artifacts, one causal map, unequal visual roles
 
-Six elements, always present on a successfully loaded dossier (individual artifacts may still report `available: false` — see §6). Order follows investigative primacy — Finding and Concordance first, because they carry the CLAIM and its DOCUMENTED CONDITION/OBSERVED FACT reasoning — not workflow chronology. **No processing-stage order governs layout or navigation** (§1; carried through every later section).
+**[UX]** The investigation is not a document, dashboard, table, or list. It is an interactive causal evidence map showing how one real source event became a normalized event, satisfied a detection condition, produced a detection result, and generated an alert. This is the single governing model for the entire screen; every section below is a part of this one map, not an independent page region.
 
-### 3.1 Docket Header
+**[Approved]** The six real artifacts (§2) are placed according to their real causal and structural relationship, not as six identical, equally weighted tiles:
 
-**[UX]** A compact identity strip, not a masthead. Content, each field independently guarded by its source artifact's availability:
+1. **Source Submission** (§5) — the origin. The raw event as received at the intake.
+2. **Validation Outcome** (§6) — a small, attached verification fact on the source submission, not a peer-weighted artifact.
+3. **Normalized Event** (§7) — the central, structured event representation produced from the source submission.
+4. **Detection Definition** (§8) — the reviewable rule, evaluated against the normalized event, exposing its declared characteristics.
+5. **Detection Result** (§9) — the resolved outcome of that evaluation: which declared characteristics were satisfied.
+6. **Generated Alert** (§10) — the terminal artifact produced for a matching detection result.
 
-- `alertId` (e.g. "Alert #1").
-- The matched scenario id and definition name, from `detectionResult.matchReason.scenario` / `.definitionName` — omitted, with an explicit "detection identity unavailable" statement (FR-035), if `detectionResult.available` is `false`.
-- The pinned detection-definition revision (`detectionDefinition.revision`, truncated for display), labeled explicitly as **pinned** — a later definition edit does not change what this alert resolves to (NFR-025).
-- A compact traceability-state indicator (intact / broken word plus glyph), which is a pointer to §3.6's full statement, not a duplicate explanation of it.
+**[UX]** Each artifact has a distinct visual form appropriate to its causal role — a dense evidence specimen, a compact stamped checkpoint, a structured field surface, a rule frame with a branching condition bus, a resolution object, and a terminal output marker, respectively. No two artifacts share a silhouette. This is a functional distinction, not decoration: an analyst should be able to tell which of the six artifacts they are looking at from its shape alone, before reading a single label.
 
-Explicitly excluded from the Docket Header: severity, confidence, any timestamp/duration figure, a decorative verification seal.
+**[UX]** A permanent Traceability Rail (§11) connects four of the six artifacts — alert, detection result, normalized event, source submission — along the bottom of the map, always visible, independent of any selection. Validation Outcome and Detection Definition are correctly absent from this rail: they are not part of the alert-to-source identity chain (`../architecture.md` §4; `traceability.ts`), and the rail must not imply that they are.
 
-### 3.2 Finding
+**[UX]** This is not a generic node-editor canvas. The map's topology is fixed and known (it is always the same six artifacts in the same causal order); nothing about it is a force-directed or user-arranged graph. Every connecting line represents a real, named dependency (§2's field-level relationships), never a decorative or inferred one.
 
-**[UX]** The CLAIM, in full plain-language prose. Built entirely from `alert.summary` (`subject`, `operation`, `target`, `outcome`, `requestTime`) and `detectionResult.matchReason.definitionName` / `.scenario`. **Always visible on load** — never behind a click, never collapsed by default.
+## 4. Permanent alert identity header
 
-- **[Approved]** The recorded outcome and time are always stated (FR-029), even for scenario 1, whose match condition does not depend on outcome (FR-024) — the outcome is still part of "what was detected," independent of whether it was a match condition.
-- If `alert.available` is `false`, the Finding renders an explicit "alert summary unavailable" statement (FR-035) rather than a blank region.
-- **[Approved]** Tone constraint (NFR-031): declarative, sourced from the response only. No adjective implying a risk level absent from the data ("critical," "high-risk" as invented labels). Only the platform's own documented vocabulary is used: `valid` / `invalid` / `incomplete` / `unsupported`, matched / not matched, `intact` / broken (named `failedLink`).
+**[UX]** A compact, always-visible header — not a masthead, not a hero heading, not a document title block — reads as one composed sentence plus quiet technical metadata:
 
-### 3.3 Evidence Concordance
+- `alertId` (e.g., "Alert #4").
+- The matched detection's name, from `detectionResult.matchReason.definitionName` — with an explicit "detection identity unavailable" statement (FR-035) if `detectionResult.available` is `false`.
+- The actor, operation, and target, from `alert.summary` (`subject.username`, `operation.verb`, `target`) — always stated (FR-029), independent of whether outcome was itself a match condition (§8).
+- The recorded outcome code (`alert.summary.outcome.code`).
+- The request time (`alert.summary.requestTime`).
+- The pinned detection-definition revision (`detectionDefinition.revision`, truncated for display), labeled as pinned: a later definition edit does not change what this alert resolves to (NFR-025).
+- A compact traceability-state indicator (intact / broken, plus the specific `failedLink` when broken) — a pointer to §11's full rail state, not a duplicate explanation of it.
 
-**[UX]** Renders DOCUMENTED CONDITION → OBSERVED FACT as a structured comparison, not a chain visualization, not a ribbon, not a decorative checklist icon set. This is the screen's causal core, and it contains **only conditions actually satisfied by the current detection result** — it is a record of matched evidence, not a rendering of the full definition text (the full literal text, satisfied or not, lives in the Detection Definition Inspection Leaf — §6 item 4).
+**[Approved]** This header carries what v0.1 (§3.1 Docket Header, §3.2 Finding) split across two separate, stacked sections. There is no reason to keep them apart: both are drawn from the same alert-identity data (`alert.summary` plus `detectionResult.matchReason`), and combining them into one line is what keeps this header genuinely compact rather than a second document section.
 
-**Terminology.** Two separate concepts, never conflated:
+Explicitly excluded from this header: severity, confidence, any decorative verification seal, any processing-stage timeline.
 
-- **Declared** — a condition or characteristic named in `detectionDefinition.definition.conditions` (`operation`, `requires_outcome`, `requires_any`, `requires_all`). Declaring a characteristic does not mean this alert's event satisfied it.
-- **Satisfied** — a characteristic whose `id` appears in `detectionResult.matchReason.satisfiedCharacteristics` for this specific detection result. Only satisfied characteristics are matched evidence.
+If `alert.available` is `false`, the header renders an explicit "alert summary unavailable" statement (FR-035) in place of the composed sentence, rather than a blank region.
 
-**[Approved]** Declared clauses combine with logical AND (FR-024–FR-026): a matching detection result requires the operation to match, `requires_outcome` (if declared) to hold, `requires_any` (if declared) to have at least one satisfied entry, and `requires_all` (if declared) to have every entry satisfied. Because a produced alert already proves this, every row the Concordance renders is, by construction, satisfied — there is no per-row satisfied/unsatisfied marking within the Concordance itself.
+## 5. Source Submission specimen
 
-An unsatisfied declared characteristic (possible within a `requires_any` group, whose semantics require only *at least one* declared option to be present) is real, reviewable product content — but it belongs in the Detection Definition Inspection Leaf's full literal text, never in the Evidence Concordance. The Concordance would misrepresent an unsatisfied declared condition as matched evidence if it rendered one.
+**[UX]** The Source Submission is the origin object and the visually densest artifact on the map — a raw-event specimen, not a generic card. It is recomposed into three visual tiers, not one undifferentiated field dump:
 
-**Rendering algorithm.** Applies identically to every scenario, with no scenario-specific UI branch (§5, §15 item 7). Every declared-condition combination the contract permits (§2) is enumerated below, so no ambiguity remains for implementation:
+1. **Identity and request essentials** (most prominent tier): `auditID`, `verb`, `user.username`, `objectRef` (resource, name, namespace, subresource), and the recorded response code. Set at a value-scale typographic weight — this is what an analyst reads first.
+2. **Secondary ingestion metadata** (visually quieter): `level`, `stage`, `sourceIPs`, `userAgent`, `requestReceivedTimestamp`. Present, legible, and real, but subordinate to tier 1.
+3. **Raw payload** (last, quietest tier, but never hidden or truncated away): the full `requestURI` (scenario 1) or a real excerpt of `requestObject` (scenarios 2 and 3), labeled plainly as raw payload.
 
-| Declared shape | Evidence Concordance content |
-| --- | --- |
-| `requires_any` only | Operation row + one row per **satisfied** entry from the declared `requires_any` list. |
-| `requires_all` only | Operation row + one row per entry from the declared `requires_all` list (by construction, satisfied — see AND-combination, above). |
-| `requires_outcome` only | Operation row + outcome row. No characteristic rows; no "N of M" summary line (nothing to count). |
-| `requires_any` + `requires_outcome` | Operation row + outcome row + satisfied `requires_any` rows. |
-| `requires_all` + `requires_outcome` | Operation row + outcome row + `requires_all` rows. |
-| `requires_any` + `requires_all` together | Operation row + **two separately labeled groups**, one per clause — never merged into one undifferentiated list, since "at least one" and "all of these" are different satisfaction semantics and merging them would misstate which rule governed the match. |
-| Neither `requires_any` nor `requires_all`, no `requires_outcome` | Operation row only. No summary line. |
+**[UX]** The raw payload must remain available and fully legible, but visually subordinate — never converted into tabs, an accordion, or a conventional label/value form table. Subordination is expressed through position (last), typographic weight, and reduced-opacity treatment of its surrounding container, never by shrinking its text below the same legibility floor the rest of the map uses (§16).
 
-Row-level detail:
+**[UX] Full raw record.** `RawAuditEvent` (`contract.ts`) may carry fields beyond what the three tiers individually promote (e.g., `annotations`, `sourceIPs` as a full list, the complete `requestObject` for scenarios 2 and 3 rather than the curated excerpt). An on-demand "view full raw record" affordance, reusing the existing `JsonTree` component unchanged, must be reachable from the Source Submission object for complete evidentiary fidelity (FR-032). This affordance is explicit and on-demand — never auto-expanded — consistent with the general rule that voluminous content is available, not thrust in front of the analyst by default.
 
-1. **Operation-match row** — always rendered when `detectionDefinition.available`: the declared `conditions.operation` (`resource`, `subresource?`, `verb?`). Not a characteristic with an `id`; it is a structural fact about which operation this detection evaluates, not something individually marked satisfied/unsatisfied.
-2. **Outcome row** — rendered only if `conditions.requires_outcome` is declared; states the required outcome. **[UX]** Outcome is shown as a causal condition in the Concordance *only* when the definition declares it as required — this is distinct from the Finding (§3.2), which always states the recorded outcome as part of "what happened" regardless of whether it is a match condition (FR-029). The same underlying `outcome` value serves two different purposes in two different places; neither substitutes for the other.
-3. **`requires_any` / `requires_all` rows** — every row shown is, by definition, satisfied (per the table above); each states the characteristic's declared `id` and `description` from `detectionDefinition`, plus the corresponding entry from `detectionResult.matchReason.satisfiedCharacteristics`. **The number of rows is never assumed** — it may be one, two, five, or any other count the response actually contains; nothing in this algorithm is sized to exactly two.
+**[UX]** When a satisfied characteristic has Verified provenance (§13), the exact substring of the raw payload that produced it (e.g., the `tty=true` fragment of `requestURI`) is visually marked directly within the specimen on selection (§12) — this is the literal mechanism by which "select a condition, see its raw origin" is satisfied, not a separate lookup.
 
-A summary line ("N of M declared characteristics satisfied") may caption the row list when `M > 0` — a literal count derived from the declared-list length and the satisfied-row count, never a percentage, never styled as a score, and never implying the unsatisfied `M − N` are shown anywhere in the Concordance (they are not — see Terminology, above).
+## 6. Validation Outcome
 
-- **[UX] Selection.** Every row in the Concordance is, by construction, satisfied, so every row is selectable into a provenance Inspection Leaf (§3.5, §4.3). Selectability depends only on `detectionResult` reporting the characteristic as satisfied — it does **not** depend on whether `sourceEvent` or `normalizedEvent` are independently available. Selecting a row when one of those artifacts is unavailable still opens a leaf; it reports Unavailable provenance (§3.5) rather than fabricating content, consistent with FR-035's requirement that a limitation be visible, not silently withheld from selection entirely.
-- **[UX] Default state.** Because Detection Result is the default-selected Evidence Register entry (§3.4, §4.1), its Evidence Concordance is what is visible on load, satisfying the requirement that the Finding and the matched-condition concordance are both visible without interaction.
-- **[UX]** The Evidence Concordance remains visible regardless of which Evidence Register entry the analyst later selects — it is pinned, causal-core content, not a per-artifact detail pane that disappears when inspecting a different artifact.
+**[UX]** A small, compact, visually attached object — a stamped checkpoint, not a peer-weighted artifact — positioned directly against the Source Submission, connected by a short structural stub, never floating independently on the map.
 
-### 3.4 Evidence Register
+**[Approved]** Content: the outcome value (`valid` / `invalid` / `incomplete` / `unsupported`) and, when present, its stated `reason`. **[Approved]** A `valid` outcome legitimately carries no `reason` (FR-011, FR-012) — this is not a missing field. Every alert this screen can ever show has a `valid` validation outcome by construction (FR-014 gates non-valid telemetry before detection ever runs) — the object still renders generically for all four contract-permitted values, never hardcoded to assume `valid` is the only reachable value.
 
-**[UX]** The six-artifact ledger — literal FR-031/FR-035 visibility, rendered as a list or table with hairline rule dividers, never a card grid, never a "ribbon," never a staggered-entrance procession.
+## 7. Normalized Event field surface
 
-Exactly six ordered entries, each showing a fixed accession index (1–6, never reordered), a name, a one-line real-content caption drawn from actual field values, and an availability state:
+**[UX]** The central artifact on the map — a structured field surface, not a form and not a JSON viewer. Every field `NormalizedEvent` (`contract.ts`) carries is rendered as one row: `subject.username`, `operation.verb`, `operation.requestURI`, `target.*`, `outcome.code`, `requestTime`, and whichever single scenario-specific block (`exec` | `podCreation` | `clusterRoleBinding`) is populated.
 
-| # | Entry | Source | Caption content (illustrative, not literal copy) |
-| --- | --- | --- | --- |
-| 1 | Source event | `sourceEvent` | operation verb + truncated `auditID` |
-| 2 | Validation outcome | `validationOutcome` | the outcome value |
-| 3 | Normalized event | `normalizedEvent` | operation verb + target resource |
-| 4 | Detection definition | `detectionDefinition` | truncated pinned revision |
-| 5 | Detection result | `detectionResult` | matched scenario id |
-| 6 | Alert | `alert` | `#{alertId}` |
+**[UX] Generic scenario-block rendering.** The scenario block's fields render as one row per top-level field, generically, with no scenario-specific branch in the rendering mechanism itself:
 
-- **[UX] Selection model.** Exactly one entry is "current" at a time. Selecting an entry updates the current selection and governs what the Inspection Leaf shows for it (§4.2). **Detection Result (#5) is current by default.**
-- **[Approved]** Traceability is deliberately absent from this register — it is not a seventh artifact (§2). A single reference line pointing to §3.6 may appear as a register footer, never as a numbered seventh row.
-- Unavailable entries (`available: false`) remain in the register at their fixed accession index, visibly marked unavailable — never omitted (FR-035).
+- Scenario 1 (`exec`): `exec.stdin`, `exec.tty` — boolean rows.
+- Scenario 2 (`podCreation`): `podCreation.privileged`, `.hostNetwork`, `.hostPID`, `.hostIPC`, `.hostPathVolume` — boolean rows.
+- Scenario 3 (`clusterRoleBinding`): `clusterRoleBinding.bindingName`, `.roleRef` (rendered as `kind/name`, e.g., `ClusterRole/cluster-admin`), `.subjects` (an array — rendered as a compact, comma-joined list within the value cell, never as nested sub-rows; the field surface's row mechanism stays flat regardless of which scenario block populates it).
 
-### 3.5 Inspection Leaf
+**[UX]** Each row that corresponds to a characteristic evaluated by the matched detection definition is a **selectable trace target**: it is the destination of the row-to-condition trace line described in §12, and the origin of the row-to-source trace segment for Verified provenance. Rows that are not evaluated by any declared characteristic (identity fields such as `subject.username`, or scenario 3's `bindingName`/`subjects` when not themselves a declared characteristic) render as plain, non-selectable field rows.
 
-**[UX]** The single, on-demand, secondary detail surface. This is the only place large or literal content (full raw JSON, full field lists, full definition text) is shown. **Only one Inspection Leaf is open at a time**; opening a new one closes whichever was previously open.
+**[Contract]** `NormalizedEvent` is a small, fully enumerable interface — its complete content is exactly what the field surface already renders. No separate "full normalized record" affordance is required the way the Source Submission needs one for its unbounded raw payload (§5).
 
-An Inspection Leaf takes one of two forms:
+## 8. Detection Definition: rule frame, characteristic bus, and grouping
 
-**a) Artifact detail**, for whichever Evidence Register entry is current (§3.4, §6):
-- Compact artifacts (validation outcome, detection definition, detection result, alert) render their detail directly when selected — no further toggle needed.
-- Voluminous artifacts (source event, normalized event) render a compact summary plus an explicit, separate "Inspect full source record" / "Inspect full normalized record" affordance; the full record (via `JsonTree` for source, a field list for normalized) opens only on that explicit action — **full records are secondary, on-demand views, never auto-expanded.**
+**[UX]** A rule frame — an open, corner-bracketed instrument boundary, never a filled card — containing the definition's reviewable content and a branching characteristic bus, never a conventional vertical checklist.
 
-**b) Matched-condition provenance record**, opened by selecting a satisfied row in the Evidence Concordance (§3.3). It contains exactly four things, and nothing else:
-1. The raw path and value (from `sourceEvent.rawEvent`).
-2. The transformation-or-preservation behavior — stated as either a verbatim carry or a specific parsed transformation (e.g., "parsed from the `requestURI` query parameter," never a generic "processed").
-3. The normalized path and value (from `normalizedEvent.event`) that resulted.
-4. The documented detection condition text (from `detectionDefinition.definition.conditions`) that this observed fact satisfies.
+**Frame content**, all drawn directly from `detectionDefinition.definition` and always visible (never behind a click):
 
-**Provenance states.** Every matched-condition provenance record (b) renders in exactly one of three states, computed deterministically from artifact availability and whether a concrete lineage mapping exists for the normalized field involved (§13). **No raw field path, value, transformation, or source mapping is ever invented** to fill a state the data does not support.
+- `name` and `description`.
+- The operation clause (`conditions.operation`: resource, subresource, verb — whichever are declared).
+- The outcome clause (`conditions.requires_outcome`), rendered only when declared — scenario 1 has none (FR-024 matches independent of outcome); scenarios 2 and 3 both declare `success` (FR-025, FR-026).
+- A group label naming which combinator(s) govern the declared characteristics (`requires_any`, `requires_all`, or — when the contract-permitted case of both being declared together occurs — both, clearly distinguished, per the next paragraph).
 
-- **Verified provenance** — `sourceEvent.available` and `normalizedEvent.available` are both `true`, and a concrete lineage mapping identifies a specific raw path for the normalized field involved. All four items of (b) render in full.
-- **Partial provenance** — `sourceEvent.available` and `normalizedEvent.available` are both `true`, the documented condition and the observed normalized fact are both known, but no lineage mapping identifies a guaranteed raw field path for it (today: scenario 2 and 3's `requestObject`-derived characteristics — §15 item 6). Items 3 and 4 of (b) — normalized path/value and documented condition — still render in full, because both are genuinely known. Item 1 (raw path/value) is replaced by a single explanatory sentence, in the platform's own restrained product language, naming the limitation (in substance: this field's source location cannot be structurally identified in the current raw-event contract). Item 2 (transformation behavior) is omitted rather than guessed — asserting a verbatim-carry or parsed-transform behavior for an unidentified mapping would itself be an invented claim. **Partial provenance is a visible limitation and must never be rendered as if it were a complete, successful end-to-end mapping.**
-- **Unavailable provenance** — `sourceEvent.available` or `normalizedEvent.available` is `false`, so the relationship cannot be inspected at all, regardless of whether a lineage mapping exists. The leaf states plainly which artifact is unavailable (reusing §6's per-artifact unavailable wording) rather than attempting a partial render.
+**[UX] The characteristic bus.** Each declared characteristic (§2's `Characteristic[]` entries in `requires_any` and/or `requires_all`) is rendered as an independently selectable pin, branching left or right off a central vertical bus inside the frame — never a stacked list, never a repeated label/value/description block per characteristic. This directly satisfies the requirement that Scenario 2's five declared characteristics read as a branching structure, not five repeated rows or cards.
 
-**[UX]** None of the three states is rendered with a generic warning card, badge, icon, or severity level (§11). Differentiation between Verified and Partial is carried entirely by label and copy — a Partial record reads visibly differently in prose from a Verified one — not by a new color or icon vocabulary layered on top of §11's single restrained accent.
+**[UX] Declared vs. satisfied.** A pin whose characteristic id appears in `detectionResult.matchReason.satisfiedCharacteristics` renders in its normal, full-weight state and is selectable into the trace-and-provenance interaction (§12). A pin declared but **not** satisfied (only possible within a `requires_any` group, whose semantics require only *at least one* declared option) renders in a visually recessed state — muted weight, no "satisfied" sub-label, no `--selected`/`--verified` accent eligibility — and remains independently selectable for review (FR-022), but selecting it opens a plain declared-only statement ("Declared in this definition; not satisfied by this alert's recorded event") rather than a provenance trace, since there is no matched evidence to trace. **This distinction must never be blurred**: only satisfied characteristics are matched evidence; only matched evidence may be traced to source (§12).
 
-**[Approved] Provenance is not traceability.** A missing field-level raw-path mapping (Partial provenance) is a distinct fact from a broken alert-to-source artifact link (`traceability.intact === false`, §7). Partial provenance can occur on an alert whose traceability is fully intact — it means the platform has not identified *which specific raw field* produced a normalized fact, not that the source event's integrity or connectivity is in question. The two are never conflated in rendering or in copy (§7).
+**[UX] Subgroup clustering.** Where the real declared conditions justify it, characteristics cluster visually along the bus with a wider gap and a small rotated bracket label at the boundary — proximity, not a panel, carries the grouping. Two real, contract-grounded cases use this mechanism:
 
-- **[UX] Nothing is preselected on load.** On initial render, zero Inspection Leaves are open. The Evidence Concordance (§3.3) is not itself an Inspection Leaf — it is pinned, always-visible content — so this constraint and "Detection Result is default-selected" (§3.4) are both satisfied simultaneously without contradiction: the register marks Detection Result current, but opening its literal artifact detail (the raw `matchReason` payload, distinct from the interpreted Concordance) remains a deliberate, on-demand action.
+1. **A genuine semantic grouping already implied by the characteristics' own descriptions** — e.g., scenario 2's four host-namespace/access characteristics (`host_ipc`, `host_network`, `host_pid`, a host-path-volume characteristic) clustering apart from its one privilege characteristic (`privileged_container`). This restates a real distinction already present in the declared `description` text; it never introduces a domain category the definitions do not already imply.
+2. **`requires_any` and `requires_all` declared together** (§2) — the same bracket mechanism separates the two combinator groups, since "at least one" and "all of these" are different satisfaction semantics that must never merge into one undifferentiated list.
 
-### 3.6 Traceability Proof
+Every characteristic, in every group, remains independently selectable regardless of clustering.
 
-**[UX]** A plain, declarative verification statement — never a chain-link graphic, never a glowing pill, never a decorative seal.
+## 9. Detection Result: a convergence/resolution object, never a score
 
-- **[Approved]** Content: whether `traceability.intact` is `true` or `false`; when `false`, the specific named `failedLink` value with its plain-language meaning (§7). Framed explicitly as live-verified on every retrieval, not a cached flag (ARCH-01 §4 — traceability is recomputed independently on every `GET /v1/alerts/{id}` call).
-- **[UX]** Position: last in reading order — the terminal verification of the whole dossier's SOURCE EVIDENCE resolution, matching UC-003's main flow ("follows the traceability chain … reaches an evidence-backed assessment").
-- Not selectable or expandable. It is a terminal statement, not a navigation entry, and it is not one of the six Evidence Register rows (§2, §3.4).
+**[UX]** A compact resolution object — a wedge that geometrically converges from a wide edge (facing the Detection Definition's characteristic bus) to a narrow edge (feeding the Generated Alert) — communicating four things and nothing else:
 
-## 4. Detailed interaction behavior
+1. **Resolved match** — this object exists at all only because a matching detection result was produced (FR-027); its very presence on the map states that a match occurred.
+2. **Satisfied count** — one tally mark per **declared** characteristic (the wide edge), filled/accented for each **satisfied** one, unfilled for any declared-but-unsatisfied `requires_any` option. This generalizes correctly to every real case, including one where a `requires_any` group's satisfied count is genuinely less than its declared count.
+3. **Convergence of condition inputs** — the geometric narrowing itself, not a caption, communicates that the declared characteristic set resolves to one settled verdict.
+4. **Production of the alert** — the narrow edge is the object's only outgoing connection, feeding directly into the Generated Alert.
 
-### 4.1 Load
+**[Approved] No invented confidence score, anywhere.** The tally is a literal, countable fact — declared count and satisfied count, drawn directly from `detectionDefinition`/`detectionResult` — never rendered as a percentage, a star rating, a color-coded risk level, or any other construct that would imply a confidence or severity judgment the contract does not carry (§2). When no characteristics are declared at all (an operation-and-outcome-only definition, a real contract-permitted shape), the object renders with zero tally ticks and no fabricated "0 of 0" — only the resolved-match fact and the convergence geometry apply.
 
-On a successful retrieval: Docket Header, Finding, and the Evidence Concordance for the default-selected Detection Result artifact render immediately, alongside the Evidence Register (Detection Result marked current) and Traceability Proof. Zero Inspection Leaves are open. No field is preselected within any concordance row or record.
+**[UX]** Deliberately not a circle, a generic card, a badge, a hexagon, or a standard flowchart decision diamond — every one of those reads as either a decorative UI ornament or a borrowed symbol from a different visual grammar (flowcharting) that this product does not otherwise use.
 
-### 4.2 Evidence Register selection
+## 10. Generated Alert: the terminal result
 
-Selecting any of the six entries:
+**[UX]** A small, compact terminal-output marker — the map's rightmost/terminal object, fed by exactly one incoming connection from the Detection Result. Content: `alertId` and a one-line summary composed from `alert.summary` (actor, operation, target, outcome) — the same underlying facts the identity header (§4) states in full; this object is the literal artifact view of that same data, not a re-derivation of it.
 
-1. Updates the "current" marker to that entry.
-2. Closes any currently open Inspection Leaf.
-3. For a compact artifact (validation outcome, detection definition, detection result, alert): opens that artifact's literal-content Inspection Leaf immediately.
-4. For a voluminous artifact (source event, normalized event): shows the compact summary already visible in the register row, plus the on-demand "Inspect full record" affordance (§3.5a) — the full record itself opens only on a further explicit action.
-5. Selecting an **unavailable** entry (`available: false`) still opens an Inspection Leaf — one that states, per FR-035, exactly which artifact is unavailable and does not attempt to render partial or reconstructed content.
+## 11. Traceability Rail: a permanent, literal path
 
-### 4.3 Evidence Concordance row selection
+**[Approved]** The real four-artifact identity chain (`../architecture.md` §4; `traceability.ts`'s `TRACEABILITY_CHAIN_ORDER`), read left to right in causal order: **Source Submission → Normalized Event → Detection Result → Generated Alert.**
 
-Selecting a row (every rendered row is satisfied — §3.3):
+**[UX]** Rendered as a permanent rail along the base of the map — always visible, independent of any selection, never tucked behind a click and never appearing only when something is wrong. This is a structural, binding change from v0.1's Traceability Proof (a plain statement, reachable only as the last item in reading order): traceability must appear as a real path across the relevant artifact objects, not as a footer paragraph, an ordered text list, a generic timeline, or a set of status cards.
 
-1. Closes any currently open Inspection Leaf.
-2. Opens the matched-condition provenance record (§3.5b), rendered per its computed provenance state (§3.5) — Verified, Partial, or Unavailable.
-3. Does not change the Evidence Register's "current" marker — the Register and the Concordance are independent selection axes; only one Inspection Leaf may be open regardless of which axis triggered it.
+**[Approved]** Validation Outcome and Detection Definition are not part of this chain (`traceability.ts`) — the rail passes beneath their map positions without a tick at either, matching the real model exactly. This is not an oversight; a later reviewer must not "fix" the rail by adding ticks for either artifact.
 
-Unsatisfied and declared-but-absent characteristics never render as Evidence Concordance rows (§3.3) — there is nothing to select. They remain inspectable, in full, via the Detection Definition Inspection Leaf (§6 item 4).
+**[Contract]** The rail has exactly two states:
 
-### 4.4 Mutual exclusivity
-
-Exactly one Inspection Leaf is rendered at any time, regardless of whether it was opened from the Evidence Register (§4.2) or the Evidence Concordance (§4.3). Opening any new leaf closes the previous one unconditionally.
-
-### 4.5 Traceability Proof
-
-Read-only. Not selectable, not expandable, always rendered in full once the response has loaded, independent of which artifact is current or which leaf is open (§3.6).
-
-### 4.6 Command palette
-
-See §10 for full behavior. In summary: jump to a specific Evidence Register entry (opens it exactly as a direct selection would, §4.2), jump to the Traceability Proof, jump to the Finding/top of the dossier, or clear the currently open Inspection Leaf. No command references a processing stage (§1, §14).
-
-### 4.7 Retrieval retry
-
-Route-level retrieval failure (§8) offers a retry action that re-issues the same `GET /v1/alerts/{id}` request; this is independent of, and does not reset, in-dossier selection state, since a retrieval failure means no dossier has rendered yet.
-
-## 5. Scenario-aware content model
-
-**[UX]** The Evidence Concordance (§3.3) and Inspection Leaf (§3.5) mechanisms are generic: driven entirely by whichever `conditions` and `satisfiedCharacteristics` the response actually contains, and by whichever single normalized-event scenario block (`exec` | `podCreation` | `clusterRoleBinding`) is populated. No scenario-specific UI branch exists anywhere in this specification. This section documents how the generic mechanism instantiates for each of the three currently supported scenarios, as a truthfulness and testability aid — not as three separate implementations. **[Approved]** This remains truthful to the single currently supported telemetry source family (Kubernetes API-server audit events, PD-04) while remaining structurally extensible: a future fourth normalized-event characteristic block or scenario id requires no redesign of the Concordance, Register, or Inspection Leaf mechanisms themselves (§15 item 9).
-
-### 5.1 Scenario 1: interactive `pods/exec`
-
-- Operation match: `resource: "pods"`, `subresource: "exec"`.
-- **[Approved]** No `requires_outcome` is documented — this scenario matches regardless of the recorded outcome (FR-024). The Concordance correctly omits the outcome row (§3.3 step 2) rather than inventing one; the recorded outcome is still shown in the Finding (§3.2) because FR-029 requires it in the alert statement regardless of match logic.
-- `requires_any`: up to two declared characteristics (`stdin_streaming`, `tty_allocation`). The Concordance renders however many are actually declared and satisfied for this alert — zero, one, or two — never assuming exactly two.
-- Observed facts: `normalizedEvent.event.exec.{stdin, tty}` (booleans).
-- **[Approved]** Source evidence: both derived by parsing the `requestURI` query string (ADR-0003 Q1), not from `requestObject`. The provenance record's transformation-behavior text must say "parsed from the `requestURI` query parameter," not "carried verbatim."
-- **[UX] Provenance state (§3.5):** Verified, whenever both `sourceEvent` and `normalizedEvent` are available — the `requestURI` query string is a plain, always-addressable string field, so a concrete raw path is always identifiable for these two characteristics.
-
-### 5.2 Scenario 2: high-risk Pod creation
-
-- Operation match: Pod-creation request.
-- **[Approved]** `requires_outcome`: successful completion is documented (FR-025) — the Concordance renders this row and marks it satisfied only when the recorded outcome indicates success.
-- `requires_any`: up to five declared characteristics (`privileged`, `hostNetwork`, `hostPID`, `hostIPC`, a host-path-volume characteristic). The Concordance renders however many are declared and satisfied — this scenario is the concrete case that makes "never assume exactly two" a real constraint, not a hypothetical one.
-- Observed facts: `normalizedEvent.event.podCreation.{privileged, hostNetwork, hostPID, hostIPC, hostPathVolume}` (booleans).
-- **[Approved]** Source evidence: each characteristic is carried, not parsed, from the corresponding field of the Pod specification (FR-018).
-- **[UX] Provenance state (§3.5):** Partial, whenever both `sourceEvent` and `normalizedEvent` are available — `RawAuditEvent.requestObject` is typed `unknown` (§15 item 6), so no structurally verified raw path exists for these characteristics today. The Concordance row and the normalized fact still render in full; the raw-path/value and transformation-behavior items are replaced by the explanatory sentence §3.5 defines, never fabricated.
-
-### 5.3 Scenario 3: cluster-admin `ClusterRoleBinding` creation
-
-- Operation match: `ClusterRoleBinding`-creation request.
-- **[Approved]** `requires_outcome`: successful completion is documented (FR-026).
-- **[UX]** This document does not assume whether the cluster-admin role match is expressed as a declared `requires_any`/`requires_all` characteristic or determined purely by the operation-and-outcome match with the role check embedded in matching logic not further decomposed into a characteristic (§15 item 7). The Concordance's generic algorithm (§3.3) handles either shape without modification: if characteristics are declared, they render as rows; if none are declared, the Concordance shows only the structural rows.
-- Observed facts / identity fields: `normalizedEvent.event.clusterRoleBinding.{bindingName, roleRef, subjects}`. These are **identity facts** (which binding, which role, which subjects), not boolean flags — they render within the Finding and the Normalized Event Inspection Leaf as identity fields, the same way subject/operation/target are always shown without being conditions themselves; they are not automatically rendered as Concordance rows unless the definition actually declares them as characteristics.
-- **[UX] Provenance state (§3.5):** Partial, for the same reason as scenario 2 (§5.2, §15 item 6), whenever a declared characteristic exists and both `sourceEvent` and `normalizedEvent` are available. Where scenario 3's definition declares no characteristics at all (§3.3's "neither declared" table row), the Concordance renders only structural rows and no provenance record applies — there is no matched-condition row to select.
-
-**[Approved]** No scenario requires this screen to represent a non-match. Only matching detection results produce alerts (FR-027), and this screen only ever renders on an existing alert — AC-013 branch (a)'s non-match case has no corresponding content model here by design, not by omission.
-
-## 6. Evidence-artifact behavior
-
-Each of the six artifacts is independently available (§2). This section defines Evidence Register caption content and Inspection Leaf detail content for each; §8 defines the shared unavailable-state wording pattern.
-
-1. **Source event** — Register caption: operation verb + truncated `auditID`. Inspection Leaf: the full raw event via `JsonTree` (§13), collapsible, including whichever fields are present (`user`, `objectRef`, `responseStatus`, `requestObject`, `annotations`, etc.).
-2. **Validation outcome** — Register caption: the outcome value. Inspection Leaf: outcome plus `reason` when present. **[Approved]** A `valid` outcome legitimately carries no `reason` (FR-011, FR-012) — this is not treated as a missing field. The Leaf renders all four possible outcome values generically (`valid`/`invalid`/`incomplete`/`unsupported`); it does not assume `valid` is the only value the contract can return for this field, even though every real alert-producing submission is expected to have been classified valid (FR-014) before reaching detection.
-3. **Normalized event** — Register caption: operation verb + target resource. Inspection Leaf: compact summary (`subject`, `operation`, `target`, `outcome`, `requestTime`) with an on-demand full-record toggle (§3.5a) revealing every present field, including whichever single scenario-specific block (`exec` | `podCreation` | `clusterRoleBinding`) is populated, rendered generically rather than hardcoded to one.
-4. **Detection definition** — Register caption: truncated pinned revision + scenario id. Inspection Leaf: `name`, `description`, and the full literal `conditions` object (`operation`, `requires_outcome`, `requires_any`, `requires_all`, whichever are present), labeled pinned (NFR-025). This is the only place an unsatisfied declared characteristic is inspectable — the Evidence Concordance (§3.3) never renders one.
-5. **Detection result** — Register caption: matched scenario id. Inspection Leaf (opened on explicit selection, not auto-opened by default — §3.5): the literal `matchReason` payload (`scenario`, `definitionName`, `definitionRevision`, full `satisfiedCharacteristics` list). This is the raw artifact; the interpreted declared-vs-satisfied comparison lives in the Evidence Concordance (§3.3), not here.
-6. **Alert** — Register caption: `#{alertId}`. Inspection Leaf: the full `alert.summary` fields as a literal artifact view, distinct from the Finding's plain-language prose rendering of the same underlying data.
-
-## 7. Traceability behavior
-
-- **[Contract]** `traceability.intact: boolean`; when `false`, `traceability.failedLink` is exactly one of `"alert"`, `"source_key"`, `"raw_event_sha256"`.
-- **[Approved]** Traceability is computed independently of the six artifacts' individual availability, and is recomputed on every retrieval (ARCH-01 §4). Traceability Proof (§3.6) always renders once the response has loaded, regardless of which artifacts are `available`.
-- **Intact:** states plainly that the alert resolves through its detection result and normalized event to the source submission, and that the re-derived source identity and raw-event digest both match their stored records (NFR-017).
-- **Broken:** states the specific `failedLink` with its plain-language meaning — reused verbatim from the legacy implementation's proven-correct mapping (`ProofChain.tsx`'s `FAILED_LINK_EXPLANATION`), as text, not as a chain-link graphic:
+- **Intact** (`traceability.intact === true`): every segment renders in its normal healthy state. The identity header's traceability indicator (§4) reads "intact."
+- **Broken** (`traceability.intact === false`): **only** the specific segment corresponding to the named `failedLink` renders in the broken state (a distinct color plus an explicit break marker at the exact point of failure); every other segment remains in its normal healthy state, unchanged. The whole rail — and the whole screen — must never turn uniformly red. A plain-language explanation of the specific failure accompanies the broken segment, reusing the platform's own established wording:
   - `alert` — the alert itself does not resolve through the chain.
   - `source_key` — the submission's re-derived source identity no longer matches its stored record.
   - `raw_event_sha256` — the stored raw event no longer matches its recorded integrity digest.
-- **[UX]** Framing requirement: the statement must say the verification is live, computed on this retrieval, and is not a cached flag — this is a factually correct description of ARCH-01 §4's behavior and must be preserved.
-- **[Approved]** Traceability and artifact availability are independent facts and must never be conflated. A 6-of-6-available alert can still have broken traceability (this is exactly fixture 3's documented case); the UX shows both facts distinctly, side by side, never letting a complete Evidence Register imply intact traceability or vice versa (FR-035).
-- **[Approved]** Traceability (this section) and per-condition provenance state (§3.5) are independent concepts computed at different levels: traceability verifies the alert-to-source artifact chain as a whole (`traceability.intact`/`failedLink`); provenance state describes whether one specific matched condition's raw field can be identified within an already-available source artifact. A row reporting Partial provenance never implies `traceability.intact === false`, and intact traceability never implies every condition row has Verified provenance — the two axes render independently and must never be conflated in copy or presentation (§3.5).
 
-## 8. Loading, unavailable, partial, broken, unauthorized, not-found, and retrieval-failure states
+**[UX] Failed-link localization.** `raw_event_sha256` and `source_key` both concern the integrity of the Source Submission → Normalized Event segment specifically (the identity and content of the source event itself); `alert` concerns the Detection Result → Generated Alert segment. The rail must localize the broken-state rendering to the one segment the named `failedLink` actually concerns, never to a segment chosen arbitrarily or to the whole rail.
 
-Two tiers of state, rendered differently:
+**[Approved]** Framed explicitly as **live-verified on every retrieval**, never a cached flag (`../architecture.md` §4: traceability is recomputed independently on every `GET /v1/alerts/{id}` call). The identity header's compact indicator and the rail's own state must never contradict each other, since both are read from the same `traceability` field on the same response.
 
-**Route-level states** (no dossier content exists yet) — each gets its own distinct full screen:
+## 12. Condition selection and raw-to-normalized provenance tracing
 
-| State | Trigger | Rendering |
-| --- | --- | --- |
-| Loading | Query pending | A plain, non-decorative loading indicator with an `aria-live` status region. No schematic or rail-based loading animation. |
-| Not found | `AlertFetchError.kind === "not-found"` | Distinct screen naming the specific requested alert id. |
-| Unauthorized | `AlertFetchError.kind === "unauthorized"` | Distinct screen (NFR-012, NFR-013). No retry action — retrying with the same missing or invalid credential cannot succeed. |
-| Unavailable / retrieval failure | `AlertFetchError.kind === "unavailable"`, or any other thrown error | Distinct screen with a working Retry action, and an explicit statement that no internal error detail is available for display (NFR-022 — never leak implementation detail). |
+**[UX]** Selecting a satisfied characteristic pin (§8) is the screen's primary interaction. Nothing is preselected on load — the map's neutral state has no active selection.
 
-**Artifact-level and chain-level states** (a dossier has rendered) — rendered inline, never as a separate screen:
+Selecting a pin must, together, on the same screen, without navigating away:
 
-| State | Trigger | Rendering |
-| --- | --- | --- |
-| Artifact unavailable | Any of the six `available: false` | That artifact's Evidence Register row and Inspection Leaf render an explicit, artifact-named unavailable statement (§6), never a blank or a shared placeholder. |
-| Partial availability | Some but not all six `available: false` | No dedicated "partial" screen — this is simply the composition of each artifact's own state (§6) within the normal dossier layout. |
-| Broken traceability | `traceability.intact === false` | Rendered entirely by Traceability Proof (§3.6, §7) within the normal dossier layout; the six artifacts continue to render per their own individual availability. |
+1. **Preserve the entire map.** Nothing is hidden, replaced, or navigated away from.
+2. **Trace the relevant path**, drawn as a real line (not a caption) from the Normalized Event field row the pin's characteristic evaluates, into the pin itself, and — for Verified provenance only — onward to the exact substring of the Source Submission's raw payload it was derived from (§5, §13).
+3. **Dim, never hide, unrelated content.** Other pins, other field rows, and unrelated connectors recede (a visible-but-quiet opacity level, not near-invisible) so the selected path reads as dominant within one second, without erasing the rest of the map's context.
+4. **Reveal an anchored provenance annotation** (§13) attached to the selected path by a short leader line that lands at wherever the trace actually terminates — not a fixed-position panel, not a right-side inspector, not a modal, not a drawer, not a table, and not a card stack. The annotation must read as physically part of the map, not as a floating, disconnected panel.
+5. **Remain identifiable without depending only on color.** The selected pin carries its own shape-based marker (a border-weight change plus a small filled corner mark) in a single warm-neutral accent reserved for selection state — distinct from the turquoise/amber/red vocabulary reserved for provenance and traceability state (§13, §16). Selection state and provenance state are visually independent facts and must never be collapsed into the same visual signal.
 
-**[Approved]** Every one of the seven `available`-guarded states plus the two traceability states has its own distinct, named rendering (FR-035). No state — route-level or artifact-level — is ever collapsed into a shared generic "something went wrong" placeholder.
+**[UX]** Selecting an unsatisfied, declared-only pin (§8) performs steps 1 and 3–5 identically, but step 2's trace terminates at the pin itself (no Source Submission segment, since there is no matched evidence to trace), and step 4's annotation states the plain declared-only fact instead of a provenance record.
 
-## 9. Desktop and mobile responsive behavior
+## 13. Provenance states: Verified, Partial, and Unavailable
 
-- **[UX]** Single reading order at every width: Docket Header → Finding → Evidence Concordance → Evidence Register → Traceability Proof, with the active Inspection Leaf appearing inline, adjacent to whatever triggered it — never as a separate page or route.
-- **[UX]** No sidebar navigation is introduced anywhere in this document — this remains a single-route v0.1 experience (§2).
-- **Desktop (wide):** the Evidence Register may render with more caption detail per row; the Inspection Leaf may render in a secondary column beside the Register when width allows. Exactly one leaf is still open.
-- **Narrow / mobile:** the Evidence Register collapses to a single-column list, six ordered rows with accession numerals preserved; the Inspection Leaf renders as an inline expanding region directly beneath the selected Register row — a deliberately simpler collapse than a bottom-sheet reinterpretation, since there is no stage rail to collapse from in the first place (§14).
-- **[Approved]** No information is dropped at any breakpoint: every artifact's availability state, every Concordance row, and the Traceability Proof statement remain reachable at every tested width.
-- No layout introduces page-level horizontal scrolling; the raw-event `JsonTree` content scrolls within its own bounded region, as it does today.
+**[Approved]** Every satisfied characteristic's provenance is computed deterministically by the existing, unchanged `lib/provenance.ts` (§17), from artifact availability and whether a concrete raw-to-normalized field mapping is known for that characteristic. **No raw field path, value, transformation, or source mapping is ever invented** to fill a state the data does not support.
 
-## 10. Keyboard and command-palette behavior
+- **Verified** — `sourceEvent.available` and `normalizedEvent.available` are both `true`, and a concrete lineage mapping identifies a specific raw field for this characteristic (today: scenario 1's `exec.stdin`/`exec.tty`, both parsed from the `requestURI` query string). Rendered as a **continuous, solid line** from the Source Submission's exact raw substring, through the Normalized Event's field row, into the pin — plus a **turquoise/blue-green status accent** on the trace and the annotation, and a **complete source locator** (the exact raw field path and value) in the annotation.
+- **Partial** — both artifacts are available, and the documented condition and observed normalized fact are both genuinely known, but no lineage mapping identifies a guaranteed raw field path (today: all of scenario 2's `podCreation.*` and scenario 3's `clusterRoleBinding`-derived characteristics, because `RawAuditEvent.requestObject` is typed `unknown` — §18 item 6). Rendered as a **structurally interrupted** source-side segment — a dashed or visibly broken connector between the Source Submission and the Normalized Event row, with an explicit gap marker — plus a **muted-amber status accent**, and the annotation's raw-path field is replaced by a single explanatory sentence naming the real limitation, never a fabricated or guessed path. The normalized-to-pin segment beyond the gap remains solid amber, since that portion of the fact (the normalized value and the condition it satisfies) genuinely is known.
+- **Unavailable** — `sourceEvent.available` or `normalizedEvent.available` is `false`, so the relationship cannot be inspected at all. The annotation states plainly which artifact is unavailable, reusing §14's per-artifact unavailable wording, rather than attempting a partial render.
 
-- **[UX]** The full dossier is reachable and operable without a mouse: Tab / Shift+Tab moves through Register entries and Concordance rows in document order; Enter or Space activates a focused entry exactly as a click does.
-- Escape closes the topmost open interactive surface: the command palette if it is open, otherwise the currently open Inspection Leaf, returning the dossier to its zero-leaves-open default (§4.1).
-- `⌘K` / `Ctrl+K` opens the command palette. **[UX]** The palette mechanism itself (`components/CommandPalette/CommandPalette.tsx` — Radix Dialog primitive, filterable list, Arrow-key selection, Enter to run, mouse-hover sets active index) is reused unchanged (§13); only its command list is rebuilt.
-- **[UX]** Command list for this dossier: one jump command per Evidence Register entry (by artifact name, e.g. "Focus evidence: Source event" — opens it exactly as §4.2 describes), one jump-to-Traceability-Proof command, one jump-to-Finding command, and one clear-active-Inspection-Leaf command. **No command references a processing stage or a capability this screen does not have** — carried forward as a binding rule from the superseded brief because it was correct and is not tied to the rejected visual system. Given §2's constraints, the palette does not offer cross-alert navigation — no alert list exists to jump within.
-- **[UX]** Every interactive Register row, Concordance row, on-demand toggle, and palette entry has a visible, high-contrast focus state. This is a standard accessibility affordance, not a "glow" — it is not excluded by §11's prohibition on decorative glow.
-- **[UX]** Reduced-motion parity: any transition used to open or close an Inspection Leaf has an instant-change fallback carrying the identical information, using the existing `useReducedMotion` pattern already present throughout the codebase (§13).
+**[UX]** None of the three states is ever rendered with a generic warning card, badge, icon, or severity level. Verified and Partial differ **structurally** — a continuous line versus a visibly interrupted one — not only by accent color; color reinforces the distinction, it does not solely carry it.
 
-## 11. Visual-language constraints
+## 14. Distinguishing per-condition provenance from whole-chain traceability
 
-Binding on every element specified above.
+**[Approved]** Provenance (§13) and traceability (§11) are independent concepts, computed at different levels, and must never be conflated in rendering, copy, or interaction:
+
+- **Traceability** verifies the alert-to-source **artifact chain as a whole** — whether the four chained artifacts resolve and remain unmodified.
+- **Provenance** describes whether **one specific matched characteristic's raw field** can be identified within an already-available source artifact.
+
+A row reporting Partial provenance never implies `traceability.intact === false`. Intact traceability never implies every characteristic has Verified provenance — scenario 2's fixture is the concrete, real proof: five satisfied characteristics, every one Partial, on an alert whose traceability is fully intact. The two axes render with visually distinct mechanisms (§11's rail vs. §13's trace-and-annotation) specifically so they can never be mistaken for one another.
+
+## 15. Unavailable-artifact rendering
+
+**[Approved]** Each of the six artifacts independently carries `available: boolean` (FR-035). An unavailable artifact remains in its fixed causal position on the map — it is never removed, collapsed, or omitted.
+
+**[UX]** Each artifact's shape (§5–§10) has its own distinct unavailable rendering, consistent with that shape's own visual language, never a shared generic blank or placeholder:
+
+- The shape's outline renders in a dimmed, outline-only treatment (no fill, muted border).
+- An explicit, artifact-named statement replaces its normal content (e.g., "Source event unavailable," "Detection definition unavailable") — reusing the same wording pattern across all six, varied only by artifact name.
+- Any connector that would normally originate from or terminate at that artifact renders in the same dimmed treatment, never simply vanishing.
+- If the unavailable artifact is one whose declared characteristics the Traceability Rail or the characteristic bus depends on for full rendering (e.g., `detectionDefinition` unavailable while `detectionResult` is available), the dependent surface renders its own explicit degraded statement (e.g., the characteristic bus states that declared-condition text cannot be shown) rather than silently omitting the dependency.
+
+**[UX]** Partial availability (some but not all six `available: false`) is simply the composition of each artifact's own state within the normal map layout — there is no separate "partial" screen or mode.
+
+## 16. Keyboard interaction and focus behavior
+
+**[UX]** The full map is reachable and operable without a mouse:
+
+- Every selectable object — each characteristic pin (satisfied or declared-only), and any artifact-level "view full raw record" affordance (§5) — is a real, natively focusable control (`tabIndex="0"`, `role="button"`, `aria-pressed` reflecting selection state), reachable by Tab in document order and activated by Enter or Space exactly as a click would.
+- A visible, high-contrast `:focus-visible` treatment applies to every one of these controls, tuned against the dark graphite background (§17) — this is a standard accessibility affordance, not a decorative "glow," and is not excluded by §17's prohibition on glow/neon treatments.
+- Selecting a pin via keyboard produces the identical trace-and-annotation result as a pointer click (§12) — no keyboard-only degraded path exists.
+- Reduced-motion users receive an instant equivalent for every selection/trace transition, carrying identical information — no animation is the sole carrier of any fact.
+
+**[Future]** A command-palette or cross-alert jump mechanism is not specified by this document. §2 already establishes that no alert index exists to jump within; any command surface for this screen would be scoped to the current alert's own map elements only, and is left to implementation judgment rather than mandated here.
+
+## 17. Desktop-first responsive policy
+
+**[UX] v0.1 (this specification) is desktop-first.** This is a deliberate, binding change from the prior version's mobile-parity requirement, made for this phase only:
+
+- **Full investigation support — the complete spatial map, condition selection, provenance tracing, and the traceability rail — is required at viewport widths of 1024px and above.**
+- **The principal design targets are 1440–1600px desktop workstations.** Visual density, typography scale, and spacing are tuned for this range first; 1024–1440px must remain fully functional and readable, but is not the primary design target.
+- **A dedicated phone/mobile investigation experience is explicitly out of scope for this phase.** No mobile causal-traversal mode, no swipe/carousel/stepper navigation, no phone-specific screenshot or acceptance requirement exists anywhere in this document. This reverses v0.1's mobile-parity requirement (its former §9's "no information is dropped at any breakpoint" mobile rule, and its dedicated mobile composition) — that requirement is retired, not merely deferred silently; a later phase may reinstate dedicated mobile support as its own explicitly scoped decision.
+- **Below 1024px, a deliberate, readable fallback is required — not the full spatial map interaction.** The fallback must: avoid catastrophic horizontal overflow; avoid inaccessible or hidden content (every artifact's availability state and the traceability state must remain reachable, even if not spatially arranged); use the same dark visual system and the same real data as the desktop map (no separate design language, no fabricated content). It is explicitly **not** required to preserve the full interactive causal-map experience, the pin-level selection/trace mechanism, or the exact spatial layout — a simplified, vertically ordered presentation of the same six artifacts and the same traceability state, in the same causal order, satisfies this requirement. The exact fallback composition is left to implementation judgment within these constraints; this document does not mandate a specific stacked layout, since doing so would risk re-specifying a small mobile experience this phase has explicitly decided not to invest in.
+
+**[UX] Desktop viewport checks.** The full map must be verified at 1600px, 1440px, 1280px, and 1024px — the four widths spanning the principal target range down to the desktop-support floor. No horizontal page-level scrolling is permitted at any of these four widths; technical values that could overflow (revision hashes, audit IDs, request URIs) wrap or truncate within their own bounded containers, never forcing page-level overflow.
+
+## 18. Visual-language constraints
+
+Binding on every element specified above. These are the Dark Evidence Map's own established constraints (`frontend/review-artifacts/dark-evidence-map/review.md`), reconciled here as the approved product direction.
+
+**Required tonal direction:**
+
+- Deep graphite application background (not pure black); a slightly lighter primary working surface; a controlled steel secondary surface.
+- Soft off-white primary text; cool desaturated gray secondary text.
+- Exactly three status accents, each meaning exactly one thing: restrained turquoise/blue-green for Verified provenance and intact traceability; muted amber for Partial provenance; controlled coral/red for Broken traceability and unavailable-state emphasis. No other UI state borrows these hues.
+- One precise warm-neutral accent, reserved solely for selection state (§12), distinct from the three status accents above.
 
 **Prohibited, without exception:**
 
+- White, off-white, beige, or paper page backgrounds; lavender or purple SaaS palettes; pastel colors.
+- Gradients, glassmorphism, glow, and neon.
+- Large drop shadows; rounded dashboard cards; card grids; KPI tiles.
+- Decorative icons and playful illustrations.
+- A curved conduit, stage rail, or any SVG-path-based pipeline navigation spine.
+- Evidence presented as a card grid, a bordered-row ledger, or a document-style stack of headed sections.
+- Any chain-link graphic, glowing "proof chain" pill, or decorative verification seal for traceability — the Traceability Rail (§11) is a literal path across real artifact positions, not a graphic bolted onto a footer.
+- A generic warning card, badge, icon, or severity level for a provenance limitation (§13) — Verified, Partial, and Unavailable are distinguished structurally and by label/copy, never by a new color or icon vocabulary layered on top of the three status accents above.
+- Severity, confidence, risk score, or any other indicator not present in the contract (§2, §9).
+- Oversized display headings, hero sections, or large, empty, purposeless canvas regions.
 - Serif typography anywhere.
-- Glow, neon, or gradient treatments anywhere.
-- A curved conduit or stage rail — no SVG-path-based navigation spine.
-- Evidence cards — the Evidence Register is a ledger with hairline rules, never a card grid or tile procession.
-- Glowing proof-chain pills or any chain-link graphic for traceability — Traceability Proof is a text statement (§3.6, §7).
-- A decorative verification seal.
-- KPI cards, invented metrics, or any severity/confidence indicator (§2 — none exists in the contract).
-- A generic warning card, badge, icon, or severity level for a provenance limitation (§3.5) — Partial and Unavailable provenance are distinguished by label and copy only, within the same single-accent constraint below, never by a new color or icon vocabulary.
-- Sidebar navigation, for this single-route v0.1 experience.
-- Oversized display headings or large, empty, vertically separated presentation sections.
 
 **Prescribed instead:**
 
-- One sans-serif typeface for interface text.
-- Monospace reserved for technical/verbatim values: raw field values, revision hashes, audit IDs, dot-paths, accession indices.
-- Accession indices (1–6, fixed — §3.4).
-- Citation-style leaders/labels (e.g., the Docket Header's compact identity line, §3.1).
-- Hairline rule dividers, not shadows or elevation, to express structure.
-- Controlled, deliberate indentation expressing the raw → normalized → condition hierarchy within a provenance record (§3.5b).
-- Exactly one restrained accent treatment, reserved solely for whichever element is currently active or selected (a Register row, a Concordance row, or an open Inspection Leaf) — not a reused semantic-status color system applied decoratively elsewhere.
+- A highly readable sans-serif for prose, headings, and interface text; monospace reserved for technical/verbatim values — raw field values, revision hashes, audit IDs, dot-paths, request URIs.
+- Sharp or minimally softened geometry; functional shapes tied to each artifact's causal role (§3), never decorative ones.
+- Orthogonal, schematic-style connector lines with small, precise junctions — not smooth node-editor bezier curves.
+- Empty space used only to separate evidence relationships (breathing room around causal connections, around the traceability rail), never left over merely to appear minimal.
 
-**Status language:** exactly the platform's own real vocabulary — `valid` / `invalid` / `incomplete` / `unsupported`; satisfied / not satisfied (per condition); `intact` / broken, named by `failedLink` — never invented synonyms, never a traffic-light or severity metaphor (NFR-031).
+**Status language:** exactly the platform's own real vocabulary — `valid` / `invalid` / `incomplete` / `unsupported`; satisfied / declared-only (per characteristic); `intact` / broken, named by `failedLink` — never invented synonyms, never a traffic-light or generic severity metaphor (NFR-031).
 
-**[UX] Distinctiveness principle.** The screen's identity comes from making causal evidence structure and field-level provenance literally inspectable as the primary interaction — not from a cyber-security aesthetic. This replaces the superseded brief's claim ("no other product renders its own state machine as a schematic") with the corresponding claim for this direction: no other product lets an analyst select a matched condition and see its exact raw-to-normalized derivation inline, as the primary interaction, without leaving the screen.
+## 19. Frontend acceptance criteria
 
-## 12. Frontend acceptance criteria
+Frontend-scoped, locally numbered `UX-AC-#` criteria — **not** part of the closed PD-07 `AC-###` namespace. Each is independently checkable against the rendered screen.
 
-These are frontend-scoped, locally numbered `UX-AC-#` criteria — **not** part of the closed PD-07 `AC-###` namespace and not a proposal to extend it. Each is independently checkable against the rendered screen.
+1. On load, the identity header, all six artifacts (each in its available or unavailable state), and the Traceability Rail are all visible in their neutral state; no characteristic pin is preselected.
+2. Every satisfied characteristic pin is independently selectable by pointer and by keyboard (Tab + Enter/Space), producing an identical result either way.
+3. Selecting a satisfied pin preserves the full map, traces the real path from the relevant Normalized Event row into the pin (and onward to the Source Submission for Verified provenance only), dims unrelated content without hiding it, and reveals an anchored provenance annotation attached to the selected path.
+4. Selecting a declared-but-unsatisfied pin (where one exists in the response) is possible, dims unrelated content identically, and reveals a plain declared-only statement, never a fabricated provenance record.
+5. Verified provenance renders a continuous, solid trace with a complete raw source locator; Partial provenance renders a visibly interrupted source-side segment plus an explanatory limitation sentence, with no raw path ever fabricated; Unavailable provenance names the specific missing artifact.
+6. The Detection Result object renders a literal declared/satisfied tally — never a percentage, score, or color-coded risk level — and renders correctly with zero declared characteristics (no fabricated "0 of 0").
+7. The Traceability Rail renders `intact: true` with every segment healthy, and each of the three `failedLink` values with only its own specific, correctly localized segment in the broken state — never the whole rail or the whole screen turning uniformly red.
+8. Provenance state and traceability state render independently: a satisfied pin's provenance and the rail's state never imply or contradict one another, and both remain simultaneously visible and correct on an alert exhibiting both a Partial-provenance characteristic and intact traceability.
+9. Each of the six artifacts renders its own distinct, artifact-named unavailable statement when `available: false`, remaining in its fixed map position — never a shared blank or an omitted artifact.
+10. Scenario 1, Scenario 2, and Scenario 3 each render correctly through the same generic mechanisms (§7's field-surface rule, §8's bus/grouping rule, §9's tally rule) with no scenario-specific branch anywhere in the implementation.
+11. Scenario 2's five declared characteristics read as a branching, clustered structure — never five repeated cards or rows — with the host-access/privilege grouping visible and every characteristic still independently selectable.
+12. No horizontal page-level overflow exists at 1600px, 1440px, 1280px, or 1024px.
+13. Below 1024px, a readable fallback renders with no catastrophic overflow and no artifact or traceability state hidden or inaccessible; the full spatial map interaction is not required at this width.
+14. No severity, confidence, per-stage timestamp, alert-count, index, search affordance, or pipeline-topology diagram is rendered anywhere on the screen.
+15. No card grid, KPI tile, chain-link graphic, decorative seal, glow, gradient, or serif typeface exists anywhere in the rendered output.
+16. All rendered text traces to a named field in `AlertInvestigationResponse`, `RawAuditEvent`, `NormalizedEvent`, `DetectionDefinition`, or `MatchReason` — zero fabricated content.
 
-1. On load, Docket Header, Finding, Evidence Concordance (for Detection Result), Evidence Register (Detection Result marked current), and Traceability Proof are all visible; zero Inspection Leaves are open; no field is preselected.
-2. Selecting any Evidence Register entry updates the current selection; compact artifacts open their Inspection Leaf immediately; source/normalized event reveal an on-demand full-record toggle rather than auto-expanding.
-3. At most one Inspection Leaf is ever rendered open; opening a new one closes any previously open leaf.
-4. Selecting a Concordance row opens a provenance leaf whose content matches its computed provenance state (§3.5): Verified renders all four items (raw path/value, transformation behavior, normalized path/value, documented condition); Partial renders the normalized path/value and documented condition plus a single explanatory limitation sentence in place of the raw path/value, with no transformation behavior claimed; Unavailable renders an explicit named-artifact-unavailable statement.
-5. Unsatisfied declared characteristics never render as Evidence Concordance rows — they are inspectable only via the Detection Definition Inspection Leaf's full literal text, never as matched evidence (§3.3).
-6. The Evidence Concordance renders correctly for a definition declaring only `requires_outcome` with no `requires_any`/`requires_all` — no fabricated "0 of 0" count.
-7. The Evidence Concordance renders correctly for each of the seven declared-condition combinations in §3.3's table (`requires_any` alone, `requires_all` alone, `requires_outcome` alone, each paired with `requires_outcome`, `requires_any` and `requires_all` together as two separately labeled groups, and no declared characteristic list at all), for any satisfied-row count including counts other than two.
-8. Each of the six Evidence Register entries renders its own explicit, artifact-named unavailable state when `available: false` — never a shared blank.
-9. Traceability Proof correctly renders `intact: true` and each of the three `failedLink` values with the correct plain-language explanation.
-10. Traceability state and artifact availability render independently — a 6-of-6-available alert with broken traceability shows both facts, and neither masks the other.
-11. The four route-level states (loading, not-found, unauthorized, unavailable) each render a distinct screen; unavailable includes a working Retry action; unauthorized does not offer a retry.
-12. No severity, confidence, per-stage timestamp, alert-count, index, or search affordance is rendered anywhere on the screen.
-13. Every interactive element (Register row, Concordance row, toggle, palette entry) is reachable and operable by keyboard alone, with a visible focus state.
-14. `⌘K` / `Ctrl+K` opens the command palette; Escape closes the topmost open surface (palette, else the active Inspection Leaf).
-15. No stage-rail, conduit, ribbon, chain-graphic, card-grid, or KPI element exists in the rendered DOM.
-16. Reduced-motion users receive an instant equivalent for every open/close transition, carrying identical information.
-17. No tested breakpoint drops an artifact's availability state or a Concordance row from reachability.
-18. All rendered text traces to a named field in `AlertInvestigationResponse`, `RawAuditEvent`, `NormalizedEvent`, `DetectionDefinition`, or `MatchReason` — zero fabricated content.
-19. A satisfied Concordance row with a structurally known raw-to-normalized mapping, and both `sourceEvent` and `normalizedEvent` available, renders Verified provenance with all four items populated.
-20. A satisfied Concordance row whose normalized field has no known raw-path mapping, with both artifacts available, renders Partial provenance: the normalized path/value and documented condition populate; the raw-path/value and transformation-behavior items are replaced by a single explanatory sentence; nothing is fabricated.
-21. A satisfied Concordance row where `sourceEvent.available` or `normalizedEvent.available` is `false` renders Unavailable provenance: an explicit statement naming which artifact is unavailable and that the relationship cannot currently be inspected.
-22. No provenance state — Verified, Partial, or Unavailable — is ever rendered with a generic warning card, badge, icon, or severity level; differentiation is by label and copy only, within §11's single-accent constraint.
-23. Partial and Unavailable provenance are never rendered or worded in a way that implies `traceability.intact` is `false`; a row's provenance state and the alert's traceability result render independently (§7).
-24. Scenario 1's `exec`-derived rows render Verified provenance whenever both `sourceEvent` and `normalizedEvent` are available; scenario 2's `podCreation`-derived and scenario 3's `clusterRoleBinding`-derived rows render Partial provenance under the same availability condition, per the current lineage-mapping limits (§5, §15 item 6).
-
-## 13. Mapping from current reusable implementation to the new UX
+## 20. Mapping from current reusable implementation
 
 | Existing module | Disposition | New role |
 | --- | --- | --- |
-| `frontend/src/types/contract.ts` | Keep as-is | Unchanged wire-type contract; this specification introduces no new field. |
-| `lib/alertSource.ts` (`fetchAlertInvestigation`, `AlertFetchError`) | Keep as-is | Unchanged fetch seam and three-way error taxonomy; §8's route-level states map 1:1 to `AlertFetchError.kind`. |
+| `frontend/src/types/contract.ts` | Keep as-is, minus one dead export | Unchanged wire-type contract (§2). The trailing `SignalPathStageId` type (lines 226–240) is retired vocabulary from the already-superseded Signal Path direction (§21) — remove it; nothing in this specification's model is a "stage." |
+| `lib/alertSource.ts` (`fetchAlertInvestigation`, `AlertFetchError`) | Keep as-is | Unchanged fetch seam and three-way error taxonomy; route-level loading/not-found/unauthorized/unavailable states (unspecified visually by this document beyond reusing the dark tonal system, §18) map 1:1 to `AlertFetchError.kind`. |
 | `hooks/useAlertInvestigation.ts` | Keep as-is | Unchanged TanStack Query hook. |
-| `fixtures/alert-investigation/v1.ts` | Keep as-is | The intact/partial/broken-traceability fixtures already cover §8's artifact- and chain-level states; no new fixture variant is required by this document. |
-| `lib/lineage.ts` (`buildLineageLinks`, `resolveHighlights`) | Keep, extend | Becomes the provenance-state engine behind §3.5's Verified/Partial/Unavailable model (§3.5, §4.3). Its field-based construction already produces Verified provenance for scenario 1's `requestURI`-derived fields; scenario 2/3's `podCreation`/`clusterRoleBinding` fields correctly resolve to Partial provenance today, per §15 item 6's `requestObject`-typing gap, and move to Verified only if a documented/typed `requestObject` shape becomes available — not by frontend mapping effort alone. |
-| `lib/deriveStageStatus.ts` | Extract logic, rename | Its availability/outcome boolean logic (all-six-available check, per-artifact availability, validation-outcome branching) is preserved. Its `SignalPathStageId` keying and `signal`/`branch`/`severed` vocabulary are dropped — no stage concept survives (§14). |
-| `components/JsonTree.tsx` | Keep as-is | Unchanged; becomes the Source Event Inspection Leaf's full-record renderer (§6), and remains available generically for `requestObject`-derived scenario blocks (§15 item 6). |
-| `components/CommandPalette/CommandPalette.tsx` | Keep as-is | Unchanged mechanism (§10); only its command list (`useInvestigationCommands.ts`) is rewritten. |
-| `AlertInvestigationPage.tsx` query/error branching (`isPending`/`isError`/`isSuccess`, `AlertFetchError.kind` switch) | Keep, recompose | Unchanged orchestration logic; only the success-branch composition changes to the six §3 elements. |
-| `app/router.tsx` | Keep as-is | Unchanged single-route model; this document adds no route (§2, §9). |
-| Existing test intent (`alertSource.test.ts`, `deriveStageStatus.test.ts`, `lineage.test.ts`, `AlertInvestigationPage.test.tsx`'s seven-state coverage, `LineageInteraction.test.tsx`'s provenance-selection coverage, `CommandPalette.test.tsx`, `flagship.spec.ts`'s scenario list) | Keep intent, rewrite assertions | The same states and behaviors under test remain the correct acceptance surface (§12); selectors and component references must be rewritten against the new component tree in a later implementation task. |
+| `fixtures/alert-investigation/v1.ts` | Keep as-is | The five existing fixtures (scenario-1 intact/partial-availability/broken-traceability, scenario-2 intact, scenario-3 intact) already cover most of §19's scenario coverage; broken-traceability variants for the other two `failedLink` values remain a genuine gap (§21, implementation plan). |
+| `lib/lineage.ts` (`buildLineageLinks`, `resolveHighlights`) | Keep as-is | Unchanged. Its field-based construction already produces Verified provenance for scenario 1's `requestURI`-derived fields and correctly produces no link (hence Partial) for scenario 2/3's `requestObject`-derived fields (§13). |
+| `lib/provenance.ts` | Keep as-is | Unchanged. Already implements exactly the Verified/Partial/Unavailable engine §13 specifies. |
+| `lib/traceability.ts` | Keep as-is | Unchanged. Already implements exactly the intact/broken model §11 specifies, including the real `FAILED_LINK_EXPLANATION` copy this document reuses verbatim. |
+| `lib/evidenceRegister.ts` | Keep, reframe only | The six-artifact availability/default-selection logic is sound and reused; only its consumers change — there is no separate "register" section in this document's model (§15), so its output feeds each artifact's map-position rendering directly instead of a ledger list. |
+| `lib/finding.ts` | Keep as-is | The CLAIM view-model this document's identity header (§4) consumes. |
+| `lib/concordance.ts`, `lib/detectionConditions.ts` | Keep, reframe | The declared-vs-satisfied logic (§8's core distinction) is sound and fully reusable; its row output feeds the characteristic bus's pins instead of a concordance list. |
+| `lib/artifactInspection.ts` | Keep as-is | The six typed, presentation-neutral artifact views this document's map objects (§5–§10) render directly. |
+| `lib/investigationViewModel.ts` | Keep, rename fields | The single root view-model composition is sound; `DocketHeaderViewModel` is renamed to match §4's vocabulary (an implementation detail, not a new computation). |
+| `components/JsonTree.tsx` | Keep as-is | Unchanged; becomes the Source Submission's on-demand full-record renderer (§5). |
+| `components/CommandPalette/CommandPalette.tsx` | Keep as-is, optional | Unchanged mechanism, if retained per §16's [Future] note; not mandated by this document. |
+| `AlertInvestigationPage.tsx` (query/error branching) | Keep, recompose | Unchanged `isPending`/`isError`/`isSuccess`/`AlertFetchError.kind` orchestration; only the success-branch composition changes to the map described in §3–§11. |
+| `app/router.tsx` | Keep as-is | Unchanged single-route model. |
+| Existing domain test suites (`lib/*.test.ts`) | Keep, extend | The same states and behaviors under test remain the correct acceptance surface; new tests are additive (declared-but-unsatisfied rendering, §8) rather than replacing sound existing assertions. |
 
-## 14. Explicit legacy components and vocabulary to retire later
+A full, phased build sequence for the presentation layer is defined separately in `docs/frontend/alert-investigation-implementation-plan.md`.
 
-**No deletion or retirement is performed by this task.** This section records what a later implementation task must retire, and why, so removal is deliberate and traceable rather than incidental.
+## 21. Vocabulary and components explicitly retired by this document
 
-**Components to retire:**
+**No deletion is performed by this document.** This section records what a later implementation task must retire, so removal is deliberate and traceable. It supersedes, and folds into one list, both v0.1's own §14 retirement list (the Signal Path era, already mostly dead code — see the implementation plan's cleanup inventory) and the undocumented Forensic Case Folio restyling currently live on disk.
 
-- `ConduitField.tsx` / `.module.css` — the curved SVG stage rail. Replaced by no navigation-rail concept at all (§3, §9).
-- `ConduitMobileStrip.tsx` / `.module.css` — the rail's mobile counterpart.
-- `EvidenceRibbon.tsx` / `.module.css` — the "exhibit procession." Replaced by the Evidence Register (§3.4), a ledger, not a card rail.
-- `ProofChain.tsx` / `.module.css` — the chain-link SVG traceability graphic. Replaced by Traceability Proof (§3.6, §7) as text; its `FAILED_LINK_EXPLANATION` copy is worth reusing verbatim (§7).
-- `components/artifactIcons.tsx` — the six hand-authored per-artifact icon glyphs. The Evidence Register (§3.4, §11) does not specify icon-driven differentiation.
-- The `DecoderStrip` sub-component specifically, inside `LineageInteraction.tsx` — the "Decoder Strip" instrument, explicitly named as the rejected central concept. The surrounding provenance-selection interaction in the same file is preserved (§13); only this sub-component is retired.
-- `StageContent.tsx`'s outer "editorial register" composition (`StageHead`, the single-focus canvas, the `selectedStage`-driven switch) — replaced by the six fixed IA elements of §3, which are not stage-selected panes.
-- `lib/stageMapping.ts`'s `STAGE_ORDER`, `STAGES`, and `SignalPathStageId` — the eight-stage pipeline model. No stage concept survives in this document. Its `EVIDENCE_ARTIFACT_LABELS` export is separable and may be preserved (§13).
-- `lib/InvestigationUIContext.tsx`'s current shape (`selectedStage: SignalPathStageId`) — replaced by state matching §3/§4 (current Register entry, active Inspection Leaf, palette open). The context-over-Zustand mechanism itself is not retired, only its shape.
+**Section/IA vocabulary retired** (this was v0.1's own approved vocabulary; it is retired by this revision, not by an earlier one):
 
-**Vocabulary to retire** (code, comments, `aria-label`s, class names, and copy):
+- "Docket Header" — replaced by the permanent alert identity header (§4).
+- "Finding" — folded into the identity header (§4); no separate CLAIM-prose section exists.
+- "Evidence Concordance" — replaced by the characteristic bus and condition-selection interaction (§8, §12).
+- "Evidence Register" — replaced by the six artifacts' own fixed positions on the map (§3); there is no separate ledger section.
+- "Inspection Leaf" — replaced by each artifact's own always-visible map content (§5–§10) plus the on-demand full-record affordance (§5).
+- "Traceability Proof" — replaced by the Traceability Rail (§11).
+
+**Forensic Case Folio / "Composition Reset" vocabulary retired** (undocumented, currently live in `components/dossier/dossier.module.css` and its consuming components):
+
+- "Folio," "folio index," "folio row," "folio split."
+- "Case Opening," "case statement," "case meta."
+- "Custody," "custody split," "custody margin," "custody terminal," "custody closure."
+- "Evidentiary clause," "admission threshold," "admission rule."
+- "Accession index," "accession gutter."
+- "Rust mark" (the CSS class used for both the identity header's and the traceability section's broken-state accent).
+
+**Signal Path vocabulary retired** (already dead code on disk, confirmed unreferenced by the live page — see the implementation plan's cleanup inventory for the exact file list):
 
 - "Signal Path," "stage rail," "conduit," "tendril," "junction."
 - "Exhibit," "exhibit procession," "the filmstrip."
 - "Proof chain," "forge," "spark," "severed connector," "gate/jaws."
 - "Decoder Strip," "instrument," "read head."
-- Status tone names "signal / branch / severed" — replaced by the platform's own real vocabulary (§11).
-- `tokens.css`'s cyan/blue "signal," amber "branch," red "severed" palette, and its Fraunces serif display-font role — retired per §11's visual-language constraints. A replacement token set is implementation work, not defined by this document.
+- The `StatusTone` vocabulary `"signal" | "branch" | "severed" | "neutral"` — this one is **not** fully dead: `components/StatusBadge/StatusBadge.tsx` and `components/StateScreens.tsx` still use it live today. It is retired by this document regardless of which era's component currently carries it, and must be replaced by state names matching this document's own real vocabulary (§18: `intact`/`broken`, `available`/`unavailable`, `verified`/`partial`/`unavailable`).
 
-**[UX]** `docs/frontend/product-experience-brief.md` itself is not deleted by this task (front matter, above). This section records only that its creative direction is superseded; marking it explicitly superseded in place is a follow-up documentation task, not performed here.
+**[UX]** `docs/frontend/product-experience-brief.md` is not deleted by this document (front matter, above); it remains superseded historical material. The v0.1 version of this same document is overwritten in place by this revision, per the task that produced it — there is no separate v0.1 file retained on disk; its content is recoverable from version control if ever needed for historical reference.
 
-## 15. Open constraints caused by the current backend contract
+## 22. Open constraints caused by the current backend contract
 
-1. **[Contract]** No alert index or search endpoint (§2) — the dossier cannot offer alert-to-alert browsing. The command palette (§10) is scoped to the current alert's own dossier elements only; it offers no cross-alert jump list, because no capability produces one.
-2. **[Contract]** No non-alerting telemetry retrieval (§2) — UC-001's classification-visibility outcomes remain wholly outside this screen; §5's closing note applies.
-3. **[Contract]** No standalone detection-definition catalog (§2) — the Detection Definition Inspection Leaf (§6) is the only way to read a definition, and only for one already referenced by an existing alert.
-4. **[Contract]** No per-stage timestamps (§2) — confirmed absent from every section above; no timeline or duration content exists anywhere in this specification.
-5. **[Contract]** No severity or confidence field (§2) — confirmed absent from every section above.
-6. **[Contract]** `RawAuditEvent.requestObject` is typed `unknown` in the current frontend contract (`frontend/src/types/contract.ts`). Scenario 2 (Pod creation) and scenario 3 (`ClusterRoleBinding` creation) observed facts derive from this field, but the contract does not structurally guarantee a specific raw JSON path for a given normalized characteristic the way scenario 1's `requestURI` (a plain string) does. This is exactly the condition §3.5 defines as **Partial provenance**: the provenance Inspection Leaf can still show the full raw `requestObject` content generically (via `JsonTree`) alongside the normalized characteristic value and the documented condition, but must not render a fabricated raw path or transformation label for these two scenarios without either a documented/typed `requestObject` shape or an unverified heuristic mapping. This document does not authorize the latter, since it would not be a structurally verified fact (§5.2, §5.3).
-7. **[Contract]** This document does not know, and does not assume, the exact literal shape of scenario 3's `conditions` object — whether the cluster-admin role match is expressed as a declared characteristic or determined purely by operation-and-outcome matching. The Evidence Concordance's generic rendering (§3.3) is designed to handle either shape without a scenario-specific branch, but this remains an assumption pending direct observation of a real scenario-3 response (§5.3).
-8. **[Future]** Alert list/index, non-matching/non-valid submission retrieval, a standalone detection-definition catalog, and processing-stage timing were previously classified in `product-experience-brief.md` §11.3 as requiring separate architecture approval before any corresponding UI is built. This document does not change that classification; it only redefines the UX for the one screen buildable on the current contract — `product-experience-brief.md` §11.2's conclusion ("None beyond §11.1") remains accurate.
-9. **[Future]** Any telemetry source family beyond Kubernetes audit events (PD-04 exclusion 12). §5's scenario model is written to remain structurally extensible — a fourth normalized-event characteristic block and a fourth scenario id would not require redesigning the Concordance, Register, or Inspection Leaf mechanisms — but this document does not define what a non-Kubernetes scenario's Finding or Concordance content would say. That is future scope, not decided here.
-
-## 16. Implementation-readiness constraints
-
-Binding on the first implementation pass, before any visual polish begins.
-
-- **[UX]** The first implementation replaces the page composition as **one coherent shell** — `AlertInvestigationPage.tsx`'s success-branch composition changes to the six §3 elements in a single change, not through migrating one legacy presentation section at a time. A commit that mixes, e.g., a new Evidence Register alongside the legacy `ConduitField` rail is not an acceptable intermediate state.
-- **[UX]** **No legacy and new visual systems may coexist** in the approved implementation, at any point in the branch's history that is presented as reviewable. Legacy presentation components (§14) are removed in the same change that introduces their §3 replacement, not left dormant beside it.
-- **[UX]** Domain and data behavior is reused **separately from**, and independently of, the rejected presentation components currently wrapping it (§13) — e.g., `lib/lineage.ts`'s field-mapping logic is extracted and reused on its own; `LineageInteraction.tsx`'s `DecoderStrip` sub-component is not carried forward even temporarily as a placeholder shell around the reused logic.
-- **[UX]** The first implementation pass is **grayscale, structural work only**: the six IA elements (§3), their interaction behavior (§4), and their state handling (§6–§8) are built and functionally verified before any typography, color, or motion authorship beyond §11's minimum functional requirements (visible focus states, reduced-motion parity) is applied.
-- **[UX]** **Visual authorship and polish occur only after** interaction and scenario coverage are reviewed and approved against §12's acceptance criteria — the specific sans-serif/monospace pairing, the single restrained accent treatment, spacing rhythm, and any motion beyond functional necessity are a later, separately reviewed pass, not part of the structural build.
-- **[UX]** Before visual approval is sought, the grayscale structural build must demonstrably cover, from a real or fixture response rather than asserted from this document's text alone: **Scenario 1** (§5.1), **Scenario 2** (§5.2), **Scenario 3** (§5.3), **partial artifact availability** (§8), and **broken traceability** (§8) — including the provenance-state behavior (§3.5) each scenario exercises.
+1. **[Contract]** No alert index or search endpoint (§2) — the map cannot offer alert-to-alert browsing or a "next alert" affordance.
+2. **[Contract]** No non-alerting telemetry retrieval (§2) — UC-001's classification-visibility outcomes remain wholly outside this screen.
+3. **[Contract]** No standalone detection-definition catalog (§2) — the Detection Definition object (§8) is the only way to read a definition, and only for one already referenced by an existing alert.
+4. **[Contract]** No per-stage timestamps (§2) — confirmed absent from every section above; no timeline, duration, or elapsed-time content exists anywhere in this specification.
+5. **[Contract]** No severity or confidence field (§2, §9) — confirmed absent from every section above.
+6. **[Contract]** `RawAuditEvent.requestObject` is typed `unknown` in the current frontend contract. Scenario 2 and scenario 3's observed facts derive from this field, but the contract does not structurally guarantee a specific raw JSON path for a given normalized characteristic the way scenario 1's `requestURI` (a plain string) does. This is exactly the condition §13 defines as Partial provenance — the full raw `requestObject` content remains inspectable generically via the Source Submission's full-record affordance (§5), but no fabricated raw path or transformation label is ever rendered for these two scenarios without either a documented/typed `requestObject` shape or an unverified heuristic mapping, which this document does not authorize.
+7. **[Contract]** Scenario 3's exact declared-condition shape is confirmed by direct inspection of the real fixture (`frontend/src/fixtures/alert-investigation/v1.ts`): a `requires_all` group of exactly one characteristic (`role_ref_cluster_admin`), plus `requires_outcome: "success"`. This resolves what v0.1 had left as an open assumption.
+8. **[Future]** Alert list/index, non-matching/non-valid submission retrieval, a standalone detection-definition catalog, and processing-stage timing remain classified as requiring separate architecture approval before any corresponding UI is built (`product-experience-brief.md` §11.3). This document does not change that classification.
+9. **[Future]** Any telemetry source family beyond Kubernetes audit events (PD-04 exclusion 12), and any dedicated mobile/phone investigation experience (§17) — both explicitly out of scope for this phase, not decided here.
 
 ## Traceability
 
@@ -461,3 +390,4 @@ This specification presents, and must remain faithful to, product behavior alrea
 - **Product goals served:** `PC-G-005` (explainable alert generation), `PC-G-006` (evidence-based investigation), `PC-G-007` (end-to-end traceability) — `../product.md`.
 - **Requirements the presented data must remain faithful to:** `FR-029` (alert explainability content), `FR-031`/`FR-035` (evidence inventory and visible absence), `FR-033`/`FR-034` (traceability links and navigation), `NFR-025` (definition-revision pinning), `NFR-031` (self-contained understandability in the product's own documented terms) — `../functional-requirements.md`, `../non-functional-requirements.md`.
 - **Scope boundary this document does not reopen:** the approved minimum evidence set (`../scope.md` scope decision 8) and the PC-011 non-goals (no SIEM-style search, no case management) remain binding on this screen.
+- **Responsive-policy change of record:** §17 revises v0.1's mobile-parity requirement for this phase only, per explicit product direction received for this documentation task. This is a UX-scope decision within this document's own authority (front matter) and does not alter any Phase 0 requirement, acceptance criterion, or persona definition — mobile/phone use of the platform was never a Phase 0 functional requirement in the first place (no FR-### specifies a viewport or device class).
