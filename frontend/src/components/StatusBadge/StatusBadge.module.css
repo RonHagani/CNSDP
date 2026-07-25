@@ -18,19 +18,19 @@
   line-height: 1;
 }
 
-.badge[data-tone="signal"] {
+.badge[data-tone="intact"] {
   color: var(--cnsdp-signal);
   border-color: var(--cnsdp-signal-dim);
   background: var(--cnsdp-signal-surface);
 }
 
-.badge[data-tone="branch"] {
+.badge[data-tone="warning"] {
   color: var(--cnsdp-branch);
   border-color: var(--cnsdp-branch-dim);
   background: var(--cnsdp-branch-surface);
 }
 
-.badge[data-tone="severed"] {
+.badge[data-tone="broken"] {
   color: var(--cnsdp-severed);
   border-color: var(--cnsdp-severed-dim);
   background: var(--cnsdp-severed-surface);

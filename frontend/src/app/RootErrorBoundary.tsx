@@ -17,7 +17,7 @@ export function RootErrorBoundary() {
 
   return (
     <div className={styles.root} role="alert">
-      <p className={styles.eyebrow}>CNSDP — Signal Path</p>
+      <p className={styles.eyebrow}>CNSDP</p>
       <h1 className={styles.heading}>The investigation console could not render.</h1>
       <p className={styles.message}>{message}</p>
     </div>

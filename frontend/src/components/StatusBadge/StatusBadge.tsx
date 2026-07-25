@@ -1,12 +1,12 @@
 import type { ReactNode } from "react";
 import styles from "./StatusBadge.module.css";
 
-export type StatusTone = "signal" | "branch" | "severed" | "neutral";
+export type StatusTone = "intact" | "warning" | "broken" | "neutral";
 
 const TONE_GLYPH: Record<StatusTone, string> = {
-  signal: "✓", // check — intact / normal
-  branch: "⚠", // triangle warning — genuine branch point
-  severed: "✕", // cross — severed / unavailable
+  intact: "✓", // check — intact / normal
+  warning: "⚠", // triangle warning — a genuine warning state
+  broken: "✕", // cross — broken / unavailable
   neutral: "–", // en dash — no status claim
 };
 

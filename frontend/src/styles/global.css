@@ -1,10 +1,3 @@
-/* Self-hosted, not CDN-loaded — the display serif ships in the production
-   bundle so the hero headline never depends on a third-party font request. */
-@import "@fontsource/fraunces/300.css";
-@import "@fontsource/fraunces/500.css";
-@import "@fontsource/fraunces/600.css";
-@import "@fontsource/fraunces/600-italic.css";
-@import "@fontsource/fraunces/900.css";
 @import "./tokens.css";
 
 *,

@@ -11,8 +11,7 @@
 
 .title {
   margin: 0;
-  font-family: var(--cnsdp-font-display);
-  font-style: italic;
+  font-family: var(--cnsdp-font-sans);
   font-weight: 600;
   font-size: var(--cnsdp-display-sm);
   color: var(--cnsdp-text-primary);

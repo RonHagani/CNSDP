@@ -12,7 +12,7 @@ function Screen({
   eyebrow: string;
   title: string;
   message: string;
-  tone: "severed" | "branch" | "neutral";
+  tone: "broken" | "warning" | "neutral";
   action?: { label: string; onClick: () => void };
 }) {
   const reduceMotion = useReducedMotion();
@@ -53,7 +53,7 @@ export function UnauthorizedScreen() {
   return (
     <Screen
       eyebrow="401 Unauthorized"
-      tone="severed"
+      tone="broken"
       title="Authentication required"
       message="The bearer token was missing or did not match the platform's configured API_TOKEN (NFR-012, NFR-013). Every product-exposed path — including this one — denies unauthenticated or unauthorized access."
     />
@@ -64,7 +64,7 @@ export function UnavailableScreen({ onRetry }: { onRetry: () => void }) {
   return (
     <Screen
       eyebrow="Backend unavailable"
-      tone="severed"
+      tone="broken"
       title="The investigation backend could not be reached"
       message="No internal error detail is available for display — a platform fault is reported without leaking implementation detail (NFR-022)."
       action={{ label: "Retry", onClick: onRetry }}
@@ -76,7 +76,7 @@ export function NotFoundScreen({ alertId }: { alertId: string }) {
   return (
     <Screen
       eyebrow="404 Not found"
-      tone="branch"
+      tone="warning"
       title={`No alert exists with id ${alertId}`}
       message="This mirrors the real backend's documented behavior for a nonexistent alert id — a distinct, visible outcome, never a silently empty investigation."
     />

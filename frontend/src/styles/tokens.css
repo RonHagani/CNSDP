@@ -1,12 +1,14 @@
 /**
- * CNSDP Signal Path design tokens.
+ * CNSDP design tokens.
  *
  * A deliberate, single committed theme — an instrument-panel dark surface,
  * not a light/dark toggle. Exactly three semantic status hues are defined
- * (signal / branch / severed); nothing else in this file may be reused to
- * mean "status" (product-experience-brief.md §7). Status is never carried
- * by color alone — every status token is paired with a required icon/label
- * convention enforced at the component level, not here.
+ * (signal / branch / severed — the token names in this file; StatusBadge's
+ * own public tone vocabulary is intact/warning/broken/neutral); nothing
+ * else in this file may be reused to mean "status" (product-experience-brief.md
+ * §7). Status is never carried by color alone — every status token is
+ * paired with a required icon/label convention enforced at the component
+ * level, not here.
  */
 
 :root {
@@ -44,16 +46,14 @@
   --cnsdp-severed-surface: rgba(242, 84, 91, 0.12);
 
   /* ---- Typography ----
-     Two working families plus one signature display face. The display
-     serif (Fraunces, self-hosted via @fontsource — no runtime CDN
-     dependency) exists for exactly one job: the case headline and section
-     openers that give this screen an editorial, authored identity instead
-     of a dashboard's uniform UI type. It is never used for data or status
-     text — those stay in the mono/sans working pair, unchanged. */
+     Two working families: sans-serif for interface headings and prose,
+     monospace for identifiers, technical values, codes, and metadata. No
+     serif face and no italic-as-visual-identity anywhere (UX spec §18) —
+     the earlier signature display serif this file once defined has been
+     retired along with the presentation it existed for. */
   --cnsdp-font-mono:
     "JetBrains Mono", "Cascadia Code", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --cnsdp-font-sans: "Inter", "Segoe UI", ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --cnsdp-font-display: "Fraunces", "Iowan Old Style", "Georgia", serif;
 
   --cnsdp-text-2xs: 0.6875rem;
   --cnsdp-text-xs: 0.75rem;
