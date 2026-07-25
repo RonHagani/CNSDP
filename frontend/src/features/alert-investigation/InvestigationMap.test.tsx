@@ -10,6 +10,31 @@ import {
   fixtureScenario2Intact,
   fixtureScenario3Intact,
 } from "@/fixtures/alert-investigation/v1";
+import type { AlertInvestigationResponse } from "@/types/contract";
+
+/**
+ * A `requires_any` group only needs "at least one" declared option
+ * satisfied for a match to exist (UX spec §2) — a response naming fewer
+ * than all five of scenario 2's declared characteristics as satisfied is
+ * therefore a legitimate, contract-representable shape. No real captured
+ * backend testdata exercises this today (implementation plan §8), so —
+ * per the plan's own documented fallback — this is a scoped, hand-built
+ * response object for this test file alone (see concordance.test.ts's own
+ * copy of this same object for the domain-level tests).
+ */
+const fixtureScenario2MixedSatisfaction: AlertInvestigationResponse = {
+  ...fixtureScenario2Intact,
+  detectionResult: {
+    available: true,
+    matchReason: {
+      ...fixtureScenario2Intact.detectionResult.matchReason!,
+      satisfiedCharacteristics: fixtureScenario2Intact.detectionResult.matchReason!.satisfiedCharacteristics.slice(
+        0,
+        2,
+      ),
+    },
+  },
+};
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -96,6 +121,67 @@ describe("InvestigationMap — scenario 3", () => {
     render(<InvestigationMap data={fixtureScenario3Intact} />);
     expect(screen.getByRole("button", { name: /role_ref_cluster_admin/ })).toBeInTheDocument();
     expect(screen.queryByText(/stdin_streaming/)).not.toBeInTheDocument();
+  });
+
+  it("selecting its one declared characteristic works correctly with only a single declared characteristic present", async () => {
+    const user = userEvent.setup();
+    render(<InvestigationMap data={fixtureScenario3Intact} />);
+    const pin = screen.getByRole("button", { name: /role_ref_cluster_admin/ });
+    expect(pin).toHaveAttribute("aria-pressed", "false");
+
+    await user.click(pin);
+    expect(pin).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("group", { name: /Provenance record/i })).toBeInTheDocument();
+
+    await user.click(pin);
+    expect(pin).toHaveAttribute("aria-pressed", "false");
+    expect(screen.queryByRole("group", { name: /Provenance record/i })).not.toBeInTheDocument();
+  });
+});
+
+describe("InvestigationMap — declared but unsatisfied selection (satisfied and unsatisfied coexisting)", () => {
+  it("renders both satisfied and declared-only pins simultaneously, distinguishably", () => {
+    render(<InvestigationMap data={fixtureScenario2MixedSatisfaction} />);
+    expect(screen.getByRole("button", { name: /privileged_container/ })).toHaveAttribute(
+      "data-satisfied",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: /host_pid/ })).toHaveAttribute("data-satisfied", "false");
+  });
+
+  it("selecting a declared-but-unsatisfied pin reveals the plain declared-only statement, never a fabricated provenance record", async () => {
+    const user = userEvent.setup();
+    render(<InvestigationMap data={fixtureScenario2MixedSatisfaction} />);
+    await user.click(screen.getByRole("button", { name: /host_pid/ }));
+    const record = screen.getByRole("group", { name: /Provenance record/i });
+    expect(within(record).getByText("Declared, not satisfied")).toBeInTheDocument();
+    expect(within(record).queryByText(/Verified/)).not.toBeInTheDocument();
+    expect(within(record).queryByText(/Partial/)).not.toBeInTheDocument();
+  });
+
+  it("re-selecting the same declared-only pin toggles the annotation closed", async () => {
+    const user = userEvent.setup();
+    render(<InvestigationMap data={fixtureScenario2MixedSatisfaction} />);
+    const pin = screen.getByRole("button", { name: /host_pid/ });
+    await user.click(pin);
+    expect(screen.getByRole("group", { name: /Provenance record/i })).toBeInTheDocument();
+    await user.click(pin);
+    expect(screen.queryByRole("group", { name: /Provenance record/i })).not.toBeInTheDocument();
+  });
+
+  it("does not carry a stale declared-only selection when the same instance receives a different alert response", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<InvestigationMap data={fixtureScenario2MixedSatisfaction} />);
+    await user.click(screen.getByRole("button", { name: /host_pid/ }));
+    expect(screen.getByRole("group", { name: /Provenance record/i })).toBeInTheDocument();
+
+    rerender(<InvestigationMap data={fixtureScenario3Intact} />);
+
+    expect(screen.queryByRole("group", { name: /Provenance record/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /role_ref_cluster_admin/ })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
   });
 });
 

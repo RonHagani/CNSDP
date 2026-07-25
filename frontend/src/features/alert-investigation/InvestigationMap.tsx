@@ -17,18 +17,18 @@ import {
 import styles from "./components/evidence-map/evidence-map.module.css";
 
 /**
- * The Dark Evidence Map orchestrator (Track B, Pass 1 — implementation
- * plan §5's `InvestigationMap`). Builds the existing, unmodified
- * `buildInvestigationViewModel(data)` exactly once per response — the
- * same root view model `InvestigationDossier` (the live Folio) already
- * consumes — and owns the one piece of interaction state UX spec §12
- * requires: which satisfied characteristic is currently selected.
+ * The Dark Evidence Map orchestrator (Track B — implementation plan §5's
+ * `InvestigationMap`). Builds `buildInvestigationViewModel(data)` exactly
+ * once per response — the same root view model `InvestigationDossier` (the
+ * live Folio) already consumes — and owns the one piece of interaction
+ * state UX spec §12 requires: which declared characteristic (satisfied or
+ * declared-only) is currently selected.
  *
- * Not wired into any route in this pass (`AlertInvestigationPage.tsx` is
- * untouched): this component is built and tested in isolation, per the
- * task's Pass 1 scope. It exists so the presentational component tree can
- * be reviewed and verified before any live swap, exactly mirroring the
- * discipline `InvestigationDossier` itself was built under.
+ * Not wired into any route yet (`AlertInvestigationPage.tsx` is untouched):
+ * this component is built and tested in isolation. It exists so the
+ * presentational component tree can be reviewed and verified before any
+ * live swap, exactly mirroring the discipline `InvestigationDossier` itself
+ * was built under.
  *
  * Selecting a pin toggles it off on re-selection, matching the isolated
  * prototype's own toggle behavior (UX spec §12; implementation plan §6).
@@ -42,7 +42,9 @@ export function InvestigationMap({ data }: { data: AlertInvestigationResponse })
     : undefined;
 
   const highlightedPath =
-    selectedRow?.provenance.kind === "verified" || selectedRow?.provenance.kind === "partial"
+    selectedRow &&
+    selectedRow.satisfied &&
+    (selectedRow.provenance.kind === "verified" || selectedRow.provenance.kind === "partial")
       ? selectedRow.provenance.normalizedPath
       : undefined;
 
@@ -72,7 +74,7 @@ export function InvestigationMap({ data }: { data: AlertInvestigationResponse })
               selectedConditionKey={selectedConditionKey}
               onSelectCondition={handleSelectCondition}
             />
-            {selectedRow && <ProvenanceAnnotation provenance={selectedRow.provenance} />}
+            {selectedRow && <ProvenanceAnnotation row={selectedRow} />}
           </>
         }
         result={

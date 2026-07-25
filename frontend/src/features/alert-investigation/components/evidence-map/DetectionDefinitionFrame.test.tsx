@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { DetectionDefinitionFrame } from "./DetectionDefinitionFrame";
 import { buildInvestigationViewModel } from "@/features/alert-investigation/lib/investigationViewModel";
 import { fixtureIntact, fixturePartial, fixtureScenario2Intact } from "@/fixtures/alert-investigation/v1";
+import type { AlertInvestigationResponse } from "@/types/contract";
 
 describe("DetectionDefinitionFrame — scenario 1", () => {
   it("renders the real definition name, description, operation clause, and both satisfied pins", () => {
@@ -50,6 +51,44 @@ describe("DetectionDefinitionFrame — scenario 2", () => {
     for (const id of ["privileged_container", "host_network", "host_pid", "host_ipc", "host_path_volume"]) {
       expect(screen.getByRole("button", { name: new RegExp(id) })).toBeInTheDocument();
     }
+  });
+});
+
+describe("DetectionDefinitionFrame — declared but unsatisfied", () => {
+  /**
+   * See concordance.test.ts's own doc comment for why this hand-built
+   * response object (varying only `satisfiedCharacteristics`, per the
+   * implementation plan §8's documented fallback) is a legitimate,
+   * contract-representable shape.
+   */
+  const withUnsatisfiedOption: AlertInvestigationResponse = {
+    ...fixtureScenario2Intact,
+    detectionResult: {
+      available: true,
+      matchReason: {
+        ...fixtureScenario2Intact.detectionResult.matchReason!,
+        satisfiedCharacteristics: fixtureScenario2Intact.detectionResult.matchReason!.satisfiedCharacteristics.slice(
+          0,
+          2,
+        ),
+      },
+    },
+  };
+
+  it("renders both satisfied and declared-only pins, distinguishably, none discarded", () => {
+    const vm = buildInvestigationViewModel(withUnsatisfiedOption);
+    render(
+      <DetectionDefinitionFrame
+        detectionDefinition={vm.artifacts.detectionDefinition}
+        concordance={vm.concordance}
+        selectedConditionKey={null}
+        onSelectCondition={vi.fn()}
+      />,
+    );
+    for (const id of ["privileged_container", "host_network", "host_pid", "host_ipc", "host_path_volume"]) {
+      expect(screen.getByRole("button", { name: new RegExp(id) })).toBeInTheDocument();
+    }
+    expect(screen.getAllByText("Declared, not satisfied").length).toBe(3);
   });
 });
 

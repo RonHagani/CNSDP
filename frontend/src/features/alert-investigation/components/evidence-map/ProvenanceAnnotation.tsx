@@ -1,21 +1,46 @@
+import type { CharacteristicConcordanceRow } from "@/features/alert-investigation/lib/concordance";
 import type { ProvenanceState } from "@/features/alert-investigation/lib/provenance";
 import styles from "./evidence-map.module.css";
 
 /**
  * The anchored provenance annotation for the currently selected
  * characteristic (UX spec §12 step 4, §13). Renders exactly one of the
- * three states `provenance.ts` produces; nothing here computes or
- * reinterprets which state applies, and no raw path or value is ever
- * fabricated for the Partial/Unavailable cases (UX spec §13's binding
- * rule).
+ * three provenance states `provenance.ts` produces for a satisfied
+ * characteristic, or — per this component's own implementation-plan
+ * specification (§5's component table: "`ProvenanceState` of the selected
+ * characteristic, or the declared-only statement") — the plain
+ * declared-only fact for a characteristic that was declared but not
+ * satisfied. Nothing here computes or reinterprets which state applies,
+ * and no raw path or value is ever fabricated for the Partial/Unavailable/
+ * declared-only cases (UX spec §13's binding rule, §8's declared-vs-
+ * satisfied rule).
  *
- * Pass 1 scope: rendered as a docked panel beneath the characteristic bus
- * rather than a leader-line-anchored callout positioned at the trace's
- * exact landing point (UX spec §12 step 4's full spatial requirement) —
- * the leader-line anchoring mechanism is deferred to a later refinement
- * pass; see the migration report.
+ * Pass 1 scope note (still applicable): rendered as a docked panel beneath
+ * the characteristic bus rather than a leader-line-anchored callout
+ * positioned at the trace's exact landing point (UX spec §12 step 4's full
+ * spatial requirement) — the leader-line anchoring mechanism is deferred
+ * to a later refinement pass.
  */
-export function ProvenanceAnnotation({ provenance }: { provenance: ProvenanceState }) {
+export function ProvenanceAnnotation({ row }: { row: CharacteristicConcordanceRow }) {
+  if (!row.satisfied) {
+    return (
+      <div
+        className={styles.annotation}
+        data-kind="declared-only"
+        role="group"
+        aria-label="Provenance record"
+      >
+        <p className={styles.annotationKind}>Declared, not satisfied</p>
+        <p className={`${styles.annotationLine} ${styles.wrapLongValue}`}>{row.description}</p>
+        <p className={styles.annotationLine}>
+          Declared in this definition; not satisfied by this alert&apos;s recorded event.
+        </p>
+      </div>
+    );
+  }
+
+  const { provenance } = row;
+
   return (
     <div className={styles.annotation} data-kind={provenance.kind} role="group" aria-label="Provenance record">
       <p className={styles.annotationKind}>{kindLabel(provenance.kind)}</p>

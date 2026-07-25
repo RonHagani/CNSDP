@@ -9,14 +9,14 @@ import styles from "./evidence-map.module.css";
  * definition's reviewable content (name, description, operation clause,
  * outcome clause when declared) and a bus of characteristic pins.
  *
- * Pass 1 scope: the bus renders satisfied characteristics only
- * (`concordance.rows`, unmodified `concordance.ts` output) — see
- * `CharacteristicPin`'s own doc comment for why declared-but-unsatisfied
- * pins are a deferred gap in this pass. Subgroup clustering (UX spec §8,
- * e.g. scenario 2's host-access/privilege grouping) requires the new
- * `lib/characteristicGroups.ts` the implementation plan's Pass 2
- * describes — also not added in this pass; all satisfied characteristics
- * render on one ungrouped bus for now.
+ * The bus renders every declared characteristic row `concordance.ts`
+ * produces — satisfied and declared-but-unsatisfied alike (UX spec §8;
+ * `CharacteristicPin` renders each row's own state). Each row also carries
+ * a `group` label (`lib/characteristicGroups.ts`) for the later visual
+ * clustering pass (UX spec §8's subgroup brackets, e.g. scenario 2's
+ * host-access/privilege split); this pass exposes that data but does not
+ * yet render a visual cluster boundary — all rows render on one bus,
+ * ordered as `concordance.ts` returns them.
  */
 export function DetectionDefinitionFrame({
   detectionDefinition,
@@ -65,7 +65,7 @@ export function DetectionDefinitionFrame({
       )}
 
       {characteristicRows.length > 0 && (
-        <div className={styles.bus} role="group" aria-label="Satisfied characteristics">
+        <div className={styles.bus} role="group" aria-label="Declared characteristics">
           {characteristicRows.map((row) => (
             <CharacteristicPin
               key={row.id}

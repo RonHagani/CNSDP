@@ -1,5 +1,6 @@
 import {
   isCharacteristicRow,
+  isSatisfiedCharacteristicRow,
   type EvidenceConcordance as EvidenceConcordanceModel,
   type OperationConcordanceRow,
   type OutcomeConcordanceRow,
@@ -11,13 +12,18 @@ import styles from "./dossier.module.css";
  * Renders the complete Evidence Concordance (UX spec §3.3), recomposed
  * as an ADMISSION THRESHOLD followed by one EVIDENTIARY CLAUSE per
  * matched characteristic (Composition Reset §3–§4) — never a three-column
- * table, never a repeated label/value block. Every row already comes
- * pre-filtered to satisfied conditions only by Step 1 (`concordance.ts`)
- * — this component renders whatever `rows` it is given, in order, with no
- * assumption about how many characteristics there are (zero, one, two,
- * five, or more) and no scenario-specific branch. Selection is fully
- * controlled: this component owns no state of its own and never derives
- * provenance — each row already carries its own provenance state.
+ * table, never a repeated label/value block. This retired presentation
+ * (superseded by the Dark Evidence Map's characteristic bus, `docs/frontend/
+ * alert-investigation-ux-spec.md` §8) never itself grew a declared-but-
+ * unsatisfied rendering, so it filters to satisfied characteristics only —
+ * `concordance.ts` now retains every declared row (satisfied or not, per
+ * the same UX spec §8), so this filter is this component's own, explicit
+ * responsibility rather than an upstream side effect. This component
+ * renders whatever satisfied rows result, in order, with no assumption
+ * about how many characteristics there are (zero, one, two, five, or more)
+ * and no scenario-specific branch. Selection is fully controlled: this
+ * component owns no state of its own and never derives provenance — each
+ * row already carries its own provenance state.
  */
 export function EvidenceConcordance({
   concordance,
@@ -49,7 +55,7 @@ export function EvidenceConcordance({
     (row): row is OperationConcordanceRow => row.kind === "operation",
   );
   const outcome = concordance.rows.find((row): row is OutcomeConcordanceRow => row.kind === "outcome");
-  const characteristicRows = concordance.rows.filter(isCharacteristicRow);
+  const characteristicRows = concordance.rows.filter(isCharacteristicRow).filter(isSatisfiedCharacteristicRow);
 
   return (
     <section

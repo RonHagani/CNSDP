@@ -1,4 +1,4 @@
-import type { CharacteristicConcordanceRow } from "@/features/alert-investigation/lib/concordance";
+import type { SatisfiedCharacteristicRow } from "@/features/alert-investigation/lib/concordance";
 import type { ProvenanceState } from "@/features/alert-investigation/lib/provenance";
 import { ProvenanceRecord } from "./ProvenanceRecord";
 import styles from "./dossier.module.css";
@@ -24,10 +24,20 @@ export function ConcordanceConditionRow({
   selected,
   onSelect,
 }: {
-  row: CharacteristicConcordanceRow;
+  // `EvidenceConcordance` (the caller) narrows to `SatisfiedCharacteristicRow`
+  // via `isSatisfiedCharacteristicRow` before rendering this component —
+  // `concordance.ts` itself now retains declared-but-unsatisfied rows too
+  // (UX spec §8), but this retired presentation was never extended to
+  // render that state. Typing this prop as the satisfied-only member (not
+  // the full `CharacteristicConcordanceRow` union) means `row.provenance`
+  // is guaranteed present by the type system itself — no cast or non-null
+  // assertion needed anywhere in this component.
+  row: SatisfiedCharacteristicRow;
   selected?: boolean;
   onSelect?: (conditionKey: string) => void;
 }) {
+  const { provenance } = row;
+
   const content = (
     <div className={styles.folioSplit}>
       <div>
@@ -35,19 +45,19 @@ export function ConcordanceConditionRow({
           <span className={`${styles.technical} ${styles.characteristicId} ${styles.wrapLongValue}`}>
             {row.id}
           </span>{" "}
-          was satisfied by <ObservedFactInline provenance={row.provenance} />
+          was satisfied by <ObservedFactInline provenance={provenance} />
         </p>
         <p className={`${styles.proseSecondary} ${styles.clauseDescription}`}>{row.description}</p>
 
         {selected && (
           <div className={styles.clauseExpansion}>
-            <ProvenanceRecord provenance={row.provenance} />
+            <ProvenanceRecord provenance={provenance} />
           </div>
         )}
       </div>
 
       <div>
-        <SourceEvidenceSummary provenance={row.provenance} />
+        <SourceEvidenceSummary provenance={provenance} />
       </div>
     </div>
   );

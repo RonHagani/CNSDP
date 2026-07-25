@@ -2,20 +2,20 @@ import type { CharacteristicConcordanceRow } from "@/features/alert-investigatio
 import styles from "./evidence-map.module.css";
 
 /**
- * One satisfied-characteristic pin on the Detection Definition's
- * characteristic bus (UX spec §8, §12). Pass 1 scope: only satisfied
- * characteristics are rendered as pins — `row` always carries a real
- * `ProvenanceState` (Step 1's `concordance.ts` only produces rows for
- * satisfied characteristics today). Declared-but-unsatisfied pins are a
- * known, deferred gap (see the migration report) pending the domain-layer
- * change to `concordance.ts` the implementation plan's Pass 2 describes —
- * not made in this pass.
+ * One characteristic pin on the Detection Definition's characteristic bus
+ * (UX spec §8, §12) — satisfied or declared-only. A satisfied row
+ * (`row.satisfied`) always carries a real `ProvenanceState` and renders its
+ * provenance kind as a visible text label plus a `data-provenance` accent,
+ * so Verified/Partial/Unavailable are never distinguished by color alone.
+ * A declared-but-unsatisfied row carries no `provenance` (never fabricated,
+ * UX spec §8) and instead renders the plain, honest "Declared, not
+ * satisfied" label — distinguished from satisfied pins structurally via
+ * `data-satisfied`, not by color alone. It remains independently selectable
+ * either way (FR-022) — selecting it is `InvestigationMap`'s/
+ * `ProvenanceAnnotation`'s job to resolve into the correct annotation.
  *
  * A native, keyboard-operable `<button>` (UX spec §16): reachable by Tab,
- * activated by Enter/Space, `aria-pressed` reflects selection. Provenance
- * state is carried by a text label (`pinState`) in addition to the
- * `data-provenance` accent, so Verified/Partial/Unavailable are never
- * distinguished by color alone.
+ * activated by Enter/Space, `aria-pressed` reflects selection.
  */
 export function CharacteristicPin({
   row,
@@ -30,13 +30,16 @@ export function CharacteristicPin({
     <button
       type="button"
       className={styles.pin}
-      data-provenance={row.provenance.kind}
+      data-satisfied={row.satisfied}
+      data-provenance={row.satisfied ? row.provenance.kind : undefined}
       data-selected={selected || undefined}
       aria-pressed={selected}
       onClick={() => onSelect(row.id)}
     >
       <span className={`${styles.pinId} ${styles.wrapLongValue}`}>{row.id}</span>
-      <span className={styles.pinState}>{provenanceLabel(row.provenance.kind)}</span>
+      <span className={styles.pinState}>
+        {row.satisfied ? provenanceLabel(row.provenance.kind) : "Declared, not satisfied"}
+      </span>
     </button>
   );
 }

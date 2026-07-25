@@ -1,26 +1,24 @@
 import type { AlertInvestigationResponse } from "@/types/contract";
+import { characteristicGroup } from "./characteristicGroups";
 import { buildDeclaredConditions, type ConditionGroupKind } from "./detectionConditions";
 import { deriveProvenanceState, type ProvenanceState } from "./provenance";
 
 /**
- * The Evidence Concordance row model (UX spec §3.3): the CLAIM's
- * DOCUMENTED CONDITION → OBSERVED FACT record. Contains only conditions
- * actually satisfied by the current detection result — it is a record of
- * matched evidence, not a rendering of the full definition (that full
- * text, satisfied or not, is `detectionConditions.ts`'s job, consumed
- * separately by the Detection Definition Inspection Leaf).
+ * The Evidence Concordance row model (UX spec §3.3, §8): the CLAIM's
+ * DOCUMENTED CONDITION → OBSERVED FACT record. Every declared
+ * `requires_any`/`requires_all` characteristic produces a row — satisfied
+ * or not — since UX spec §8 requires a declared-but-unsatisfied
+ * `requires_any` option to render in its own recessed, still-selectable
+ * state, never silently discarded (FR-022). A row's own `satisfied` field
+ * is what distinguishes matched evidence from a declared-only fact; only
+ * matched evidence may be traced to source (UX spec §12), so `provenance`
+ * is present only when `satisfied` is `true` — never fabricated for an
+ * unsatisfied option.
  *
  * Rows are a flat array; each row self-identifies its origin via `kind`,
  * so a consumer that wants requires_any and requires_all rendered as two
  * separately labeled groups can do so by filtering on `kind` — no nested
  * grouping structure is imposed here.
- *
- * Only characteristic rows (`requires_any` / `requires_all`) carry a
- * ProvenanceState. Operation and outcome rows are structural facts about
- * which operation and outcome this definition requires — real content,
- * but not a characteristic with its own `{id, description}` identity in
- * the contract, so they are represented distinctly rather than being
- * forced into the same shape.
  */
 
 export interface OperationConcordanceRow {
@@ -36,12 +34,42 @@ export interface OutcomeConcordanceRow {
   recordedOutcomeCode?: number;
 }
 
-export interface CharacteristicConcordanceRow {
+/** Fields every declared characteristic row carries regardless of whether
+ *  it was satisfied — `group` (`lib/characteristicGroups.ts`) is a property
+ *  of the characteristic's own identity, not of whether it matched, so it
+ *  belongs here rather than on only one union member. */
+interface CharacteristicConcordanceRowBase {
   kind: ConditionGroupKind;
   id: string;
   description: string;
+  group: string;
+}
+
+/** A declared characteristic the detection result actually matched.
+ *  `provenance` is mandatory here — matched evidence always has a real,
+ *  derived provenance record (UX spec §12, §13). */
+export interface SatisfiedCharacteristicRow extends CharacteristicConcordanceRowBase {
+  satisfied: true;
   provenance: ProvenanceState;
 }
+
+/** A declared characteristic (only possible within a `requires_any` group,
+ *  FR-022) the detection result did not match. `provenance` is not a
+ *  representable field on this member at all — there is no matched
+ *  evidence to derive a raw origin from, so the type itself forbids
+ *  fabricating one (UX spec §8, §12's "only matched evidence may be traced
+ *  to source"). */
+export interface UnsatisfiedCharacteristicRow extends CharacteristicConcordanceRowBase {
+  satisfied: false;
+}
+
+/** Every declared `requires_any`/`requires_all` characteristic produces a
+ *  row — satisfied or not (UX spec §8; FR-022) — and the two are a proper
+ *  discriminated union on `satisfied`: a consumer that narrows on
+ *  `row.satisfied` gets `row.provenance` typed correctly (mandatory when
+ *  `true`, absent entirely when `false`) with no cast or non-null
+ *  assertion required anywhere. */
+export type CharacteristicConcordanceRow = SatisfiedCharacteristicRow | UnsatisfiedCharacteristicRow;
 
 export type ConcordanceRow =
   | OperationConcordanceRow
@@ -50,6 +78,15 @@ export type ConcordanceRow =
 
 export function isCharacteristicRow(row: ConcordanceRow): row is CharacteristicConcordanceRow {
   return row.kind === "requires_any" || row.kind === "requires_all";
+}
+
+/** Narrows a `CharacteristicConcordanceRow` to its satisfied member — the
+ *  one place a consumer should test satisfaction, rather than
+ *  independently checking whether `provenance` happens to be present. */
+export function isSatisfiedCharacteristicRow(
+  row: CharacteristicConcordanceRow,
+): row is SatisfiedCharacteristicRow {
+  return row.satisfied;
 }
 
 export interface EvidenceConcordance {
@@ -103,20 +140,24 @@ export function buildEvidenceConcordance(data: AlertInvestigationResponse): Evid
   for (const group of [declared.requiresAny, declared.requiresAll]) {
     if (!group) continue;
     for (const c of group.characteristics) {
-      if (!c.satisfied) continue; // never render an unsatisfied declared characteristic as matched evidence
-      rows.push({
+      const shared = {
         kind: group.kind,
         id: c.id,
         description: c.description,
-        provenance: deriveProvenanceState(c, data),
-      });
+        group: characteristicGroup(c.id),
+      };
+      rows.push(
+        c.satisfied
+          ? { ...shared, satisfied: true, provenance: deriveProvenanceState(c, data) }
+          : { ...shared, satisfied: false },
+      );
     }
   }
 
   const declaredCharacteristicCount =
     (declared.requiresAny?.characteristics.length ?? 0) +
     (declared.requiresAll?.characteristics.length ?? 0);
-  const satisfiedCharacteristicCount = rows.filter(isCharacteristicRow).length;
+  const satisfiedCharacteristicCount = rows.filter(isCharacteristicRow).filter((r) => r.satisfied).length;
 
   return {
     available: true,
