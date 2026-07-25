@@ -5,6 +5,7 @@ import { InvestigationMap } from "./InvestigationMap";
 import * as investigationViewModelModule from "./lib/investigationViewModel";
 import {
   fixtureBrokenTraceability,
+  fixtureBrokenTraceabilitySourceKey,
   fixtureIntact,
   fixturePartial,
   fixtureScenario2Intact,
@@ -198,10 +199,16 @@ describe("InvestigationMap — traceability", () => {
     expect(container.querySelector('[data-broken="true"]')).toBeNull();
   });
 
-  it("broken: renders the specific failed link and its localized segment", () => {
+  it("broken (raw_event_sha256): renders the specific failed link and its localized segment", () => {
     render(<InvestigationMap data={fixtureBrokenTraceability} />);
     expect(screen.getByTestId("rail-segment-0")).toHaveAttribute("data-broken", "true");
     expect(screen.getByText(/recorded integrity digest/)).toBeInTheDocument();
+  });
+
+  it("broken (source_key): renders the specific failed link localized to the same segment as raw_event_sha256", () => {
+    render(<InvestigationMap data={fixtureBrokenTraceabilitySourceKey} />);
+    expect(screen.getByTestId("rail-segment-0")).toHaveAttribute("data-broken", "true");
+    expect(screen.getByText(/source identity/)).toBeInTheDocument();
   });
 });
 

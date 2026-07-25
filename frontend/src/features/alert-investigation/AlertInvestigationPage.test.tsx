@@ -60,6 +60,13 @@ describe("AlertInvestigationPage — required route-level states", () => {
     await waitFor(() => expect(screen.getByText("Failed link: raw_event_sha256")).toBeInTheDocument());
   });
 
+  it("renders broken traceability (source_key) with the specific failed link named", async () => {
+    renderAt("/alerts/6");
+    await screen.findAllByText(/Alert #6\b/);
+    await screen.findByText("Traceability broken.");
+    await waitFor(() => expect(screen.getByText("Failed link: source_key")).toBeInTheDocument());
+  });
+
   it("renders a not-found state for an unknown alert id", async () => {
     renderAt("/alerts/999");
     await waitFor(() =>

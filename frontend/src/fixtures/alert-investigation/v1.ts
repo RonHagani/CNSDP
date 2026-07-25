@@ -42,9 +42,10 @@
  *     Scenario 1 demonstration ("on a fresh database, the first alert is
  *     1").
  *
- * The `partial availability` (id: 2) and `broken traceability` (id: 3)
- * variants reuse the same underlying event and definition content, varying
- * only the fields the real backend contract allows to vary independently:
+ * The `partial availability` (id: 2), `broken traceability` (id: 3), and
+ * `broken traceability, source_key` (id: 6) variants reuse the same
+ * underlying event and definition content, varying only the fields the
+ * real backend contract allows to vary independently:
  *   - id 3's traceability failure mode (`failedLink: "raw_event_sha256"`,
  *     all six artifacts still available) mirrors, field for field, the real
  *     backend behavior proven by
@@ -55,6 +56,12 @@
  *     contract documented in internal/evidence/evidence.go's `Compose`,
  *     which independently marks each of the six artifacts unavailable
  *     rather than aborting the whole response (FR-035).
+ *   - id 6's traceability failure mode (`failedLink: "source_key"`, all six
+ *     artifacts still available) mirrors, at the unit level,
+ *     `TestVerifyAlert_AuditIdentityChangedWithoutSourceKeyUpdate` in
+ *     internal/traceability/traceability_integration_test.go — see its own
+ *     definition below for why the third contract-permitted value,
+ *     `"alert"`, deliberately has no corresponding fixture.
  *
  * Provenance for the scenario-2 (id: 4) and scenario-3 (id: 5) fixtures,
  * added to exercise the second and third approved detection scenarios
@@ -572,10 +579,45 @@ export const fixtureScenario3Intact: AlertInvestigationResponse = {
   traceability: { intact: true },
 };
 
+/**
+ * id: 6 — broken traceability, source_key. Mirrors, at the unit level,
+ * `TestVerifyAlert_AuditIdentityChangedWithoutSourceKeyUpdate`
+ * (internal/traceability/traceability_integration_test.go): the
+ * submission's audit identity (audit_id/audit_stage) was changed directly
+ * in storage without updating source_key to match, so `VerifyAlert`'s
+ * re-derived source_key no longer matches the stored one. This check runs
+ * strictly after the chain's join already resolved, and independently of
+ * every other read `evidence.Compose` performs (submission, validation,
+ * normalized event, detection result/definition, alert) — so, exactly as
+ * `TestServeHTTP_TamperedChain_Returns200WithGapVisible` proves for
+ * `raw_event_sha256`, all six artifacts remain available; only the
+ * traceability chain reports the mismatch.
+ *
+ * A fixture for the third contract-permitted `failedLink` value, "alert",
+ * is deliberately NOT added. Direct inspection of
+ * internal/traceability/traceability.go's `VerifyAlert` shows
+ * `FailedLink: "alert"` is returned only when the alert's own join query
+ * finds no rows (`sql.ErrNoRows`) — and `internal/evidence.Compose` calls
+ * the identical join (`traceability.Locate`) *before* reading any artifact,
+ * returning `evidence.ErrNotFound` (mapped to a 404 by
+ * `internal/retrieval`, `TestServeHTTP_NonexistentAlert_Returns404`) in
+ * that exact same case. A response with `failedLink: "alert"` and all six
+ * artifacts marked available is therefore not a state the real backend can
+ * ever produce — the frontend's existing not-found route state already
+ * correctly represents what `failedLink: "alert"` means in practice, so a
+ * separate fixture for it would misrepresent the contract.
+ */
+export const fixtureBrokenTraceabilitySourceKey: AlertInvestigationResponse = {
+  ...fixtureIntact,
+  alertId: 6,
+  traceability: { intact: false, failedLink: "source_key" },
+};
+
 export const fixturesById: Record<string, AlertInvestigationResponse> = {
   "1": fixtureIntact,
   "2": fixturePartial,
   "3": fixtureBrokenTraceability,
   "4": fixtureScenario2Intact,
   "5": fixtureScenario3Intact,
+  "6": fixtureBrokenTraceabilitySourceKey,
 };
