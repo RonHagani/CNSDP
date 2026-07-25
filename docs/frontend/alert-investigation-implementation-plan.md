@@ -160,7 +160,7 @@ No component branches on scenario identity anywhere (spec §7, §19 item 10). Th
 **[Finding]** `frontend/src/fixtures/alert-investigation/v1.ts` today provides five fixtures: scenario-1 intact, scenario-1 partial-availability (detection definition unavailable), scenario-1 broken-traceability (`raw_event_sha256` only), scenario-2 intact, scenario-3 intact. Two real gaps exist against this plan's required verification surface (§7, §9):
 
 1. **No fixture exercises a declared-but-unsatisfied `requires_any` characteristic.** All three scenarios' real committed fixtures happen to satisfy every declared option. A new fixture (or a scoped hand-built object for `lib/concordance.test.ts` alone, if a fully honest end-to-end fixture cannot be sourced from real backend testdata) is required to verify spec §8's declared-only pin rendering and §12's declared-only selection behavior. Any new fixture content must follow `v1.ts`'s own established provenance discipline (cited source, real backend testdata reference) — never hand-invented event content presented as if it were real.
-2. **Only one of the three `failedLink` values has a fixture.** `raw_event_sha256` is covered; `alert` and `source_key` are not. Two additional broken-traceability fixture variants are required to verify spec §11's per-segment localization for all three named failure values, not just one.
+2. **Two of the three `failedLink` values have a fixture; the third cannot.** `raw_event_sha256` (id 3) is covered, and `source_key` is the one additional broken-traceability fixture variant required to verify spec §11's per-segment localization beyond `raw_event_sha256` — additive to `v1.ts`. **[Finding, established during Pass 1's execution]** The third named value, `alert`, cannot be added as a real `v1.ts` fixture: direct inspection of the current Go backend shows `internal/traceability/traceability.go`'s `VerifyAlert` returns `FailedLink: "alert"` only when the alert's join query finds no rows — the exact condition under which `internal/evidence/evidence.go`'s `Compose` (which resolves the identical join via `traceability.Locate` before reading any artifact) already returns `ErrNotFound`, mapped by `internal/retrieval` to a 404 before any response body exists. A six-artifact-available response with `failedLink: "alert"` is therefore not producible by the current backend — a backend-reachability limitation, not grounds to drop the contract value or its frontend handling. `alert` remains a valid `FailedLink` contract value, fully supported by the frontend's rail/localization logic (spec §11); its existing synthetic, hand-built-model coverage (`lib/traceability.test.ts`; `TraceabilityRail.test.tsx`'s dedicated unit-level test) remains the correct and sufficient verification for it, and no fixture is fabricated to fill this gap.
 
 Both gaps are additive to `v1.ts`, not a change to any existing fixture — the existing five remain valid and unmodified.
 
@@ -173,7 +173,7 @@ Each pass is independently reviewable, leaves the repository runnable and testab
 - Verify: full test suite green (`npm run test`); `npm run typecheck`; `npm run lint`; `npm run build`.
 
 **Pass 1 — Close fixture/test gaps (§8).**
-- Add the declared-but-unsatisfied characteristic case and the two missing broken-traceability fixture variants to `v1.ts`, following its existing documentation-header discipline.
+- Add the declared-but-unsatisfied characteristic case and the one addable broken-traceability fixture variant (`source_key`) to `v1.ts`, following its existing documentation-header discipline. The third named `failedLink` value, `alert`, has no corresponding `v1.ts` fixture, for the backend-reachability reason §8 documents; its existing synthetic coverage is the correct verification for it.
 - Verify: `lib/alertSource.test.ts` and fixture-consuming tests still pass unmodified against the additive fixtures; a new assertion resolves each new fixture id.
 
 **Pass 2 — Domain-layer adjustments (§3).**
@@ -227,7 +227,7 @@ Every pass above states its own scoped verification; this section is the full ga
 | Vocabulary sweep | Repository-wide text search for every term in UX spec §21 | Pass 7 |
 | Zero console errors | Manual dev-build check across the full interaction flow | Pass 6 |
 
-**State coverage required at Pass 6 (spec §19's full acceptance surface):** Scenario 1, Scenario 2, and Scenario 3 (each with a satisfied-pin selection); the declared-but-unsatisfied pin case (Pass 1's new fixture); partial artifact availability (existing fixture 2); broken traceability for **each** of the three `failedLink` values individually (Pass 1 closes the two missing variants); loading; not-found; unauthorized; unavailable-with-retry.
+**State coverage required at Pass 6 (spec §19's full acceptance surface):** Scenario 1, Scenario 2, and Scenario 3 (each with a satisfied-pin selection); the declared-but-unsatisfied pin case (Pass 1's new fixture); partial artifact availability (existing fixture 2); broken traceability for **each** of the three `failedLink` values individually (Pass 1 adds the `source_key` fixture; `alert` is verified through its existing synthetic coverage, §8, since no real fixture for it exists); loading; not-found; unauthorized; unavailable-with-retry.
 
 ## 11. Cleanup inventory
 
