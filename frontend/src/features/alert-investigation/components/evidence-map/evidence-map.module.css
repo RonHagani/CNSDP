@@ -1,19 +1,24 @@
 /*
- * Dark Evidence Map — shared style module (Track B, Pass 1).
+ * Dark Evidence Map — shared style module (Track B; layout and connector
+ * routing extended by Pass 7 Category A, "Canvas topology and density").
  *
  * A self-contained token set, deliberately independent of dossier.module.css's
  * `--dossier-*` tokens and global.css's `--cnsdp-*` tokens — both belong to
  * presentation systems this document supersedes (UX spec front matter) and
  * are scheduled for retirement alongside the Folio (implementation plan
- * Pass 7). Nothing in this file is copied from the isolated prototype's CSS
- * (frontend/review-artifacts/dark-evidence-map/prototype.css) — only the
- * visual-language constraints in UX spec §18 are followed.
+ * Pass 8, gated on this document's own Pass 7 Structural Fidelity
+ * Completion). Nothing in this file is copied from the isolated
+ * prototype's CSS (frontend/review-artifacts/dark-evidence-map/prototype.css)
+ * — only the visual-language constraints in UX spec §18 are followed.
  *
- * Pass 1 scope note: this pass establishes correct structure, states, and
- * accessible interaction. Exact spacing, density, connector-line routing,
- * and typography scale are explicitly deferred to a later refinement pass
- * (see the migration report's "known gaps" list) — nothing here should be
- * read as final visual polish.
+ * Connector routing (the source/validation stub, source->normalized,
+ * normalized->definition, definition->result, result->alert — UX spec §3,
+ * §6, §18) is CSS Grid gutter cells, never absolute-positioned or
+ * JS-measured coordinates — see "Layout shell" below. This keeps the
+ * routing correct as artifact content height changes, with no per-viewport
+ * tuning. Remaining Pass 7 work — characteristic-bus branching (Category
+ * B), selection dimming and anchored provenance (Category C), raw-payload
+ * substring marking (Category D) — is not yet done here.
  */
 
 .mapRoot {
@@ -44,6 +49,11 @@
   --map-space-4: 1rem;
   --map-space-5: 1.5rem;
   --map-space-6: 2rem;
+
+  /* The Validation stamp's fixed diameter (§6: a small, compact checkpoint
+     of known size, never content-driven) — shared with the stub-attached
+     block's total height below, so the two can never silently drift apart. */
+  --map-validation-size: 6rem;
 
   background: var(--map-bg);
   color: var(--map-text);
@@ -83,16 +93,35 @@
 
 /* ---- Layout shell (EvidenceCanvas) ---- */
 
+/*
+ * Five-column grid: source, normalized, and rightStack (Definition +
+ * Result + Alert, as one self-contained flex column — see
+ * `.canvasRightStack` below) each occupy the one content row, interleaved
+ * with two narrow connector-gutter tracks. None of the three spans
+ * further rows: the prior version spanned Source/Normalized across two
+ * rows, which forced the Result/Alert row to grow to match their height
+ * even though Result and Alert are compact, fixed-shape objects — that
+ * forced growth was the excessive empty band between Detection Result/
+ * Generated Alert and the Traceability Rail (implementation plan §1's
+ * Pass 7 finding). Because rightStack sizes itself from its own content
+ * alone, Definition, Result, and Alert keep their real, natural spacing —
+ * including the Definition -> Result connector — regardless of how tall
+ * Source's content is; any leftover space from a height mismatch between
+ * columns sits beside the shorter column, not as a full-width dead band
+ * before the rail.
+ */
 .canvas {
   display: grid;
-  gap: var(--map-space-5);
+  gap: var(--map-space-5) 0;
   padding: var(--map-space-5);
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns:
+    minmax(0, 1fr) var(--map-space-4)
+    minmax(0, 1fr) var(--map-space-4)
+    minmax(0, 1fr);
   grid-template-areas:
-    "header header header header"
-    "source normalized definition definition"
-    "source normalized result alert"
-    "rail rail rail rail";
+    "header header               header     header                   header"
+    "source wireSourceNormalized normalized wireNormalizedDefinition rightStack"
+    "rail   rail                 rail       rail                     rail";
 }
 
 .canvasHeader {
@@ -100,21 +129,166 @@
 }
 .canvasSource {
   grid-area: source;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.validationGroup {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 0 0 auto;
 }
 .canvasNormalized {
   grid-area: normalized;
-}
-.canvasDefinition {
-  grid-area: definition;
-}
-.canvasResult {
-  grid-area: result;
-}
-.canvasAlert {
-  grid-area: alert;
+  min-width: 0;
 }
 .canvasRail {
   grid-area: rail;
+}
+
+/*
+ * Definition, its connector down to Result, and the Result/Alert row,
+ * nested together as one flex column so their spacing is relative to
+ * each other's real height alone — never to Source's height (see the
+ * `.canvas` comment above).
+ */
+.canvasRightStack {
+  grid-area: rightStack;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.canvasDefinition {
+  min-width: 0;
+}
+.resultAlertRow {
+  display: flex;
+  align-items: flex-start;
+}
+.canvasResult {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.canvasAlert {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/*
+ * Connector lines (UX spec §3, §18): each lives in its own dedicated,
+ * non-overlapping cell or flex gap — never absolute-positioned across
+ * artifact boundaries — so a connector can never render on top of, or be
+ * clipped by, artifact content, and the routing keeps working unchanged
+ * if an artifact's own content height changes. Purely decorative:
+ * `aria-hidden`, no interactive role, no effect on tab order.
+ */
+.wireSourceNormalized {
+  grid-area: wireSourceNormalized;
+}
+.wireNormalizedDefinition {
+  grid-area: wireNormalizedDefinition;
+}
+
+.wireHorizontal {
+  position: relative;
+  align-self: start;
+  margin-top: var(--map-space-6);
+  width: 100%;
+  height: 2px;
+  background: var(--map-rule-strong);
+}
+.wireHorizontal::before,
+.wireHorizontal::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  background: var(--map-bg);
+  border: 1.5px solid var(--map-rule-strong);
+  transform: translate(-50%, -50%);
+}
+.wireHorizontal::before {
+  left: 0;
+}
+.wireHorizontal::after {
+  left: 100%;
+}
+
+/*
+ * Source's own specimen box does not begin at the row's top edge like
+ * Normalized's does — the Validation stamp and its stub (`.validationGroup`,
+ * unspanned, no gap between them) sit above it first. Anchoring this one
+ * connector at the shared `--map-space-6` default (correct for every other
+ * horizontal connector, whose left- and right-hand artifacts both start at
+ * the row top) would land it beside Validation instead of Source. Add that
+ * exact, non-content-dependent block height — never a guessed constant —
+ * so the connector visibly falls within Source's own box on both widths.
+ * The combined selector (not source order) guarantees this wins over
+ * `.wireHorizontal`'s own `margin-top` regardless of rule order below.
+ */
+.wireSourceNormalized.wireHorizontal {
+  margin-top: calc(var(--map-validation-size) + var(--map-space-4) + var(--map-space-6));
+}
+
+.wireDefinitionResult {
+  align-self: center;
+  width: 2px;
+  height: var(--map-space-5);
+  background: var(--map-rule-strong);
+  position: relative;
+}
+.wireDefinitionResult::before,
+.wireDefinitionResult::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  background: var(--map-bg);
+  border: 1.5px solid var(--map-rule-strong);
+  transform: translate(-50%, -50%);
+}
+.wireDefinitionResult::before {
+  top: 0;
+}
+.wireDefinitionResult::after {
+  top: 100%;
+}
+
+.wireResultAlert {
+  flex: 0 0 var(--map-space-4);
+  align-self: center;
+  height: 2px;
+  background: var(--map-rule-strong);
+  position: relative;
+}
+.wireResultAlert::before,
+.wireResultAlert::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  background: var(--map-bg);
+  border: 1.5px solid var(--map-rule-strong);
+  transform: translate(-50%, -50%);
+}
+.wireResultAlert::before {
+  left: 0;
+}
+.wireResultAlert::after {
+  left: 100%;
+}
+
+/* The Source Submission <-> Validation Outcome stub (UX spec §6): a short
+   structural attachment, not the full junctioned wire treatment above —
+   Validation is a small checkpoint on the Source object, not a peer node. */
+.wireStub {
+  width: 2px;
+  height: var(--map-space-4);
+  background: var(--map-rule-strong);
 }
 
 @media (max-width: 1023px) {
@@ -128,6 +302,31 @@
       "result"
       "alert"
       "rail";
+  }
+
+  /* Unwrap the desktop-only nesting so Definition, Result, and Alert each
+     become their own direct, individually-named grid row again, in the
+     same causal order — not a dedicated mobile composition, the same
+     single-column fallback this breakpoint has always used (spec §17). */
+  .canvasRightStack,
+  .resultAlertRow {
+    display: contents;
+  }
+  .canvasDefinition {
+    grid-area: definition;
+  }
+  .canvasResult {
+    grid-area: result;
+  }
+  .canvasAlert {
+    grid-area: alert;
+  }
+
+  .wireSourceNormalized,
+  .wireNormalizedDefinition,
+  .wireDefinitionResult,
+  .wireResultAlert {
+    display: none;
   }
 }
 
@@ -228,8 +427,8 @@
   align-items: center;
   justify-content: center;
   gap: var(--map-space-1);
-  width: 6rem;
-  height: 6rem;
+  width: var(--map-validation-size);
+  height: var(--map-validation-size);
   border: 2px solid var(--map-verified);
   border-radius: 50%;
   color: var(--map-verified);

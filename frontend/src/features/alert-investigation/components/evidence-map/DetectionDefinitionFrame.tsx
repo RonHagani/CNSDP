@@ -9,6 +9,14 @@ import styles from "./evidence-map.module.css";
  * definition's reviewable content (name, description, operation clause,
  * outcome clause when declared) and a bus of characteristic pins.
  *
+ * Deliberately renders `.ruleFrame` alone, never `.artifactShape` (the
+ * shared background+border treatment every other artifact uses): the
+ * approved prototype (`dark-evidence-map/prototype.css`'s `.ruleframe`)
+ * and UX spec §8 ("never a filled card") both show this frame with no
+ * fill and no border — only the two corner brackets. Applying
+ * `.artifactShape` here (corrected by this pass) had rendered it as a
+ * solid bordered box, contradicting both.
+ *
  * The bus renders every declared characteristic row `concordance.ts`
  * produces — satisfied and declared-but-unsatisfied alike (UX spec §8;
  * `CharacteristicPin` renders each row's own state). Each row also carries
@@ -31,7 +39,7 @@ export function DetectionDefinitionFrame({
 }) {
   if (!detectionDefinition.available) {
     return (
-      <section className={`${styles.artifactShape} ${styles.ruleFrame}`} aria-labelledby="definition-heading">
+      <section className={styles.ruleFrame} aria-labelledby="definition-heading">
         <h2 id="definition-heading" className={styles.eyebrow}>
           Detection definition
         </h2>
@@ -46,7 +54,7 @@ export function DetectionDefinitionFrame({
   const characteristicRows = concordance.available ? concordance.rows.filter(isCharacteristicRow) : [];
 
   return (
-    <section className={`${styles.artifactShape} ${styles.ruleFrame}`} aria-labelledby="definition-heading">
+    <section className={styles.ruleFrame} aria-labelledby="definition-heading">
       <h2 id="definition-heading" className={styles.eyebrow}>
         Detection definition
       </h2>
