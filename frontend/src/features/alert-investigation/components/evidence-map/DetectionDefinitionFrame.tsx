@@ -1,5 +1,6 @@
 import type { DetectionDefinitionInspection } from "@/features/alert-investigation/lib/artifactInspection";
 import { isCharacteristicRow, type EvidenceConcordance } from "@/features/alert-investigation/lib/concordance";
+import { buildBusLayout } from "./characteristicBusLayout";
 import { CharacteristicPin } from "./CharacteristicPin";
 import styles from "./evidence-map.module.css";
 
@@ -19,12 +20,19 @@ import styles from "./evidence-map.module.css";
  *
  * The bus renders every declared characteristic row `concordance.ts`
  * produces — satisfied and declared-but-unsatisfied alike (UX spec §8;
- * `CharacteristicPin` renders each row's own state). Each row also carries
- * a `group` label (`lib/characteristicGroups.ts`) for the later visual
- * clustering pass (UX spec §8's subgroup brackets, e.g. scenario 2's
- * host-access/privilege split); this pass exposes that data but does not
- * yet render a visual cluster boundary — all rows render on one bus,
- * ordered as `concordance.ts` returns them.
+ * `CharacteristicPin` renders each row's own state) — as pins branching
+ * left/right off a shared central spine (`characteristicBusLayout.ts`'s
+ * `buildBusLayout`, Pass 7 Category B), never a stacked list. Each pin
+ * alternates side by its position in the declared order (a plain array
+ * index, not JS-measured geometry); subgroup boundaries (UX spec §8's
+ * "Subgroup clustering," e.g. scenario 2's host-access/privilege split)
+ * are rendered as a full-width label wherever the row's existing `group`
+ * field (`lib/characteristicGroups.ts`) changes between adjacent rows —
+ * consumed as-is, never inferred from scenario/fixture identity or
+ * description text. A response where every row shares one group (today:
+ * scenarios 1 and 3) renders with no label at all, matching §8's "None,
+ * below the two-clustering-cases threshold." `CharacteristicPin` itself is
+ * unmodified by this pass — only its position on the bus changed.
  */
 export function DetectionDefinitionFrame({
   detectionDefinition,
@@ -74,14 +82,25 @@ export function DetectionDefinitionFrame({
 
       {characteristicRows.length > 0 && (
         <div className={styles.bus} role="group" aria-label="Declared characteristics">
-          {characteristicRows.map((row) => (
-            <CharacteristicPin
-              key={row.id}
-              row={row}
-              selected={row.id === selectedConditionKey}
-              onSelect={onSelectCondition}
-            />
-          ))}
+          <div className={styles.busSpine} aria-hidden="true" />
+          {buildBusLayout(characteristicRows).map((item) =>
+            item.kind === "label" ? (
+              <p key={item.key} className={styles.busGroupLabel}>
+                {item.group}
+              </p>
+            ) : (
+              <div
+                key={item.key}
+                className={item.side === "left" ? styles.pinSlotLeft : styles.pinSlotRight}
+              >
+                <CharacteristicPin
+                  row={item.row}
+                  selected={item.row.id === selectedConditionKey}
+                  onSelect={onSelectCondition}
+                />
+              </div>
+            ),
+          )}
         </div>
       )}
     </section>

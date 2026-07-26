@@ -248,3 +248,199 @@ test.describe("Alert Investigation — structural integrity", () => {
     expect(messages).toEqual([]);
   });
 });
+
+/*
+ * Real-browser geometry coverage for the characteristic bus (Track B Pass
+ * 7B follow-up): the DESKTOP_VIEWPORTS loop above only ever visits
+ * /alerts/1 (scenario 1 — two ungrouped characteristics, a single row),
+ * which cannot exercise the multi-row, grouped bus scenario 2 renders.
+ * jsdom-based component tests can't verify this either — jsdom never
+ * computes real layout, so a completely disconnected or zero-height bus
+ * spine would pass every unit test unnoticed, exactly as it did in this
+ * feature's first pass (confirmed by direct measurement against a
+ * running build: `.busSpine`'s `grid-row: 1 / -1` resolved to zero
+ * height, because `.bus` declares no explicit `grid-template-rows` for
+ * `-1` to span against). These tests assert real, browser-computed
+ * bounding boxes — never a screenshot's mere existence, never a
+ * viewport-specific hardcoded coordinate — against the real Scenario 2
+ * fixture (/alerts/4), at every required desktop width plus the
+ * below-1024px fallback.
+ */
+test.describe("Alert Investigation — characteristic bus geometry (scenario 2)", () => {
+  const SCENARIO2_DESKTOP_VIEWPORTS = [
+    ["1600px", { width: 1600, height: 1000 }],
+    ["1440px", { width: 1440, height: 960 }],
+    ["1280px", { width: 1280, height: 960 }],
+    ["1024px (viewport floor)", { width: 1024, height: 960 }],
+  ] as const;
+
+  const SCENARIO2_CHARACTERISTIC_IDS = [
+    "host_ipc",
+    "host_network",
+    "host_path_volume",
+    "host_pid",
+    "privileged_container",
+  ];
+
+  for (const [label, viewport] of SCENARIO2_DESKTOP_VIEWPORTS) {
+    test(`renders a genuinely continuous branching bus at ${label}: real spine geometry, both groups, all five characteristics, no overflow`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(viewport);
+      await page.goto("/alerts/4");
+      await expect(page.getByText("Alert #4", { exact: false }).first()).toBeVisible();
+
+      const bus = page.getByRole("group", { name: "Declared characteristics" });
+      await expect(bus).toBeVisible();
+
+      // All five real Scenario 2 characteristics, present exactly once —
+      // never dropped, never duplicated.
+      for (const id of SCENARIO2_CHARACTERISTIC_IDS) {
+        await expect(page.getByRole("button", { name: new RegExp(id) })).toHaveCount(1);
+      }
+
+      // Both real declared groups are visible, derived from the row's own
+      // `group` field — never a scenario/fixture-id check. Exact text
+      // match: "Privilege" is otherwise a substring match inside the
+      // privileged_container pin's own accessible name.
+      await expect(bus.getByText("Host access", { exact: true })).toBeVisible();
+      await expect(bus.getByText("Privilege", { exact: true })).toBeVisible();
+
+      // The spine's real, browser-computed geometry: visible, materially
+      // tall (relative to the real measured pin span — never a hardcoded
+      // viewport-specific pixel value), and covering every row from the
+      // first pin through the last.
+      const geometry = await page.evaluate(() => {
+        const busEl = document.querySelector('[aria-label="Declared characteristics"]') as HTMLElement;
+        const spine = busEl.firstElementChild as HTMLElement;
+        const pins = Array.from(busEl.querySelectorAll("button"));
+        const labels = Array.from(busEl.querySelectorAll("p"));
+        const rectOf = (el: Element) => {
+          const r = el.getBoundingClientRect();
+          return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, height: r.height };
+        };
+        // The stem itself: a `::after` pseudo-element on the pin's slot
+        // wrapper, not a real DOM node — `getBoundingClientRect` can't see
+        // it at all, so proving it is actually drawn (not merely that the
+        // pin sits near the spine, which stays true even if the stem were
+        // hidden entirely) requires reading its own computed style
+        // directly via `getComputedStyle(element, "::after")`.
+        const stemInfoFor = (characteristicId: string) => {
+          const pin = pins.find((p) => p.textContent?.includes(characteristicId));
+          const slot = pin?.parentElement;
+          if (!slot) return null;
+          const cs = getComputedStyle(slot, "::after");
+          return {
+            slotSide: slot.className.includes("pinSlotLeft") ? "left" : "right",
+            display: cs.display,
+            width: cs.width,
+            backgroundColor: cs.backgroundColor,
+          };
+        };
+        return {
+          spineDisplay: getComputedStyle(spine).display,
+          spineRect: rectOf(spine),
+          pinRects: pins.map(rectOf),
+          labelRects: labels.map(rectOf),
+          // host_ipc (declared first, index 0) is always the left side;
+          // host_network (declared second, index 1) is always the right
+          // side — a structural fact of `buildBusLayout`'s alternation,
+          // not a coincidence of current styling.
+          leftStem: stemInfoFor("host_ipc"),
+          rightStem: stemInfoFor("host_network"),
+        };
+      });
+
+      expect(geometry.spineDisplay).not.toBe("none");
+
+      const firstPinTop = Math.min(...geometry.pinRects.map((r) => r.top));
+      const lastPinBottom = Math.max(...geometry.pinRects.map((r) => r.bottom));
+      const realPinSpan = lastPinBottom - firstPinTop;
+      const TOLERANCE = 6; // px — documented rounding tolerance, not a fixture-specific measurement
+
+      // Materially greater than zero: within a fraction of the real
+      // measured content span, not a token sliver (the exact zero-height
+      // regression this test exists to catch).
+      expect(geometry.spineRect.height).toBeGreaterThan(realPinSpan * 0.8);
+      // Spans from the first pin row through the final pin row.
+      expect(geometry.spineRect.top).toBeLessThanOrEqual(firstPinTop + TOLERANCE);
+      expect(geometry.spineRect.bottom).toBeGreaterThanOrEqual(lastPinBottom - TOLERANCE);
+
+      // Every pin sits within a small, bounded gap of the spine — close
+      // enough that a real connecting stem bridges it, never detached.
+      const STEM_MAX_GAP = 32; // px — a generous upper bound on the fixed stem-gutter token; a much larger gap means a detached stem
+      for (const r of geometry.pinRects) {
+        const gap = r.right <= geometry.spineRect.left ? geometry.spineRect.left - r.right : r.left - geometry.spineRect.right;
+        expect(gap).toBeGreaterThanOrEqual(0);
+        expect(gap).toBeLessThanOrEqual(STEM_MAX_GAP);
+      }
+
+      // The stem itself — not just pin-to-spine proximity — is genuinely
+      // rendered on both sides. A pin sitting close to the spine (checked
+      // above) stays true even if its connecting stem were hidden or
+      // removed entirely, since that check only measures the pin's own
+      // position; this is the one assertion that would fail if a real
+      // stem stopped being drawn, on either side.
+      for (const stem of [geometry.leftStem, geometry.rightStem]) {
+        expect(stem).not.toBeNull();
+        expect(stem!.display).not.toBe("none");
+        expect(parseFloat(stem!.width)).toBeGreaterThan(0);
+        expect(stem!.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+        expect(stem!.backgroundColor).not.toBe("transparent");
+      }
+      expect(geometry.leftStem?.slotSide).toBe("left");
+      expect(geometry.rightStem?.slotSide).toBe("right");
+
+      // No group label vertically overlaps a characteristic pin.
+      for (const label of geometry.labelRects) {
+        for (const pin of geometry.pinRects) {
+          const overlaps = !(
+            label.right <= pin.left ||
+            label.left >= pin.right ||
+            label.bottom <= pin.top ||
+            label.top >= pin.bottom
+          );
+          expect(overlaps).toBe(false);
+        }
+      }
+
+      const hasHorizontalOverflow = await page.evaluate(
+        () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+      );
+      expect(hasHorizontalOverflow).toBe(false);
+    });
+  }
+
+  test("below 1024px: the desktop spine is hidden, the readable single-column fallback remains, all five characteristics and both groups stay reachable, no overflow", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 768, height: 1000 });
+    await page.goto("/alerts/4");
+    await expect(page.getByText("Alert #4", { exact: false }).first()).toBeVisible();
+
+    const bus = page.getByRole("group", { name: "Declared characteristics" });
+    await expect(bus).toBeVisible();
+
+    const layout = await page.evaluate(() => {
+      const busEl = document.querySelector('[aria-label="Declared characteristics"]') as HTMLElement;
+      const spine = busEl.firstElementChild as HTMLElement;
+      return {
+        spineDisplay: getComputedStyle(spine).display,
+        busDisplay: getComputedStyle(busEl).display,
+      };
+    });
+    expect(layout.spineDisplay).toBe("none");
+    expect(layout.busDisplay).toBe("flex");
+
+    for (const id of SCENARIO2_CHARACTERISTIC_IDS) {
+      await expect(page.getByRole("button", { name: new RegExp(id) })).toBeVisible();
+    }
+    await expect(bus.getByText("Host access", { exact: true })).toBeVisible();
+    await expect(bus.getByText("Privilege", { exact: true })).toBeVisible();
+
+    const hasHorizontalOverflow = await page.evaluate(
+      () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    );
+    expect(hasHorizontalOverflow).toBe(false);
+  });
+});

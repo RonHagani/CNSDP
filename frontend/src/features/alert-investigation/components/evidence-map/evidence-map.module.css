@@ -524,13 +524,134 @@
   font-size: 0.85em;
 }
 
+/*
+ * The characteristic bus (UX spec §8): a branching structure, never a
+ * stacked list. Five columns — left pin / stem gutter / spine / stem
+ * gutter / right pin — let CSS Grid's own sparse auto-placement pack
+ * pins two-per-row when both sides have room and advance a row only when
+ * a column is already taken; a full-width label item (`.busGroupLabel`)
+ * always forces a clean row break, so subgroup boundaries never land
+ * ambiguously mid-row regardless of how a real declared list splits
+ * between groups. No row or column is computed in JS — `buildBusLayout`
+ * only decides left/right (a plain array-index parity check) and where a
+ * label belongs; the browser's own grid placement does the rest.
+ */
 .bus {
+  position: relative;
   margin-top: var(--map-space-4);
-  display: flex;
-  flex-direction: column;
-  gap: var(--map-space-2);
-  border-left: 2px solid var(--map-rule-strong);
-  padding-left: var(--map-space-4);
+  display: grid;
+  grid-template-columns: 1fr var(--map-space-4) 2px var(--map-space-4) 1fr;
+  row-gap: var(--map-space-3);
+}
+
+/*
+ * The spine cannot be a grid item spanning `grid-row: 1 / -1`: `.bus`
+ * declares only `grid-template-columns`, so its explicit grid has zero
+ * row tracks, and `-1` resolves against that explicit grid — the span
+ * collapses to nothing regardless of how many rows the real pin content
+ * generates (confirmed by direct measurement against a running build:
+ * the spine rendered at zero height). Grid can't answer "span every row
+ * there turns out to be" without knowing the row count up front, which
+ * only the browser's own auto-placement determines here — by design,
+ * nothing in this file computes or hardcodes a row count.
+ *
+ * Positioning it instead as a plain absolutely-positioned box anchored to
+ * `.bus` itself (not the overall canvas, not an individual pin, not a
+ * JS-measured coordinate) sidesteps the row-count problem entirely: `top:
+ * 0; bottom: 0` stretches it to the bus container's own full rendered
+ * height, whatever that height ends up being once every real row has laid
+ * out. `left: 50%` plus a `-1px` shift centers it on the container's
+ * horizontal midpoint — which, because the two `1fr` tracks and two
+ * `var(--map-space-4)` gutters are symmetric, is provably the exact
+ * center of the 2px spine column the grid template still reserves for it
+ * (left edge at `50% - 1px`, right edge at `50% + 1px`, for any container
+ * width). The stems below still meet this same column boundary — they
+ * were never the broken part.
+ */
+.busSpine {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-1px);
+  background: var(--map-rule-strong);
+  pointer-events: none;
+}
+
+.busGroupLabel {
+  /* `position: relative` (default z-index: auto) puts this in the same
+     "positioned descendants" paint bucket as `.busSpine` above, so their
+     shared parent's DOM order — this label after the spine — decides
+     paint order between them, same as it always did when both were
+     ordinary in-flow grid items: the label's opaque background still
+     paints over the spine wherever they occupy the same row, so the
+     spine never visibly crosses this label's text. */
+  position: relative;
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: var(--map-space-1) 0;
+  background: var(--map-bg);
+  text-align: center;
+  font-family: var(--map-font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--map-text-tertiary);
+}
+
+.pinSlotLeft,
+.pinSlotRight {
+  position: relative;
+  min-width: 0;
+}
+.pinSlotLeft {
+  grid-column: 1;
+}
+.pinSlotRight {
+  grid-column: 5;
+}
+
+/* The stem: a short local connector from the pin's inner edge to the
+   spine, sized to exactly fill its own gutter column — the same locally-
+   scoped absolute-positioning technique the canvas connectors already use
+   (Pass 7 Category A), never positioned relative to the overall canvas. */
+.pinSlotLeft::after,
+.pinSlotRight::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: var(--map-space-4);
+  height: 2px;
+  background: var(--map-rule-strong);
+}
+.pinSlotLeft::after {
+  left: 100%;
+}
+.pinSlotRight::after {
+  right: 100%;
+}
+
+@media (max-width: 1023px) {
+  .bus {
+    display: flex;
+    flex-direction: column;
+    gap: var(--map-space-2);
+    border-left: 2px solid var(--map-rule-strong);
+    padding-left: var(--map-space-4);
+  }
+  .busSpine {
+    display: none;
+  }
+  .busGroupLabel {
+    background: none;
+    text-align: left;
+    padding: var(--map-space-1) 0 0;
+  }
+  .pinSlotLeft::after,
+  .pinSlotRight::after {
+    display: none;
+  }
 }
 
 .pin {
