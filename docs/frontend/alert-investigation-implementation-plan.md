@@ -3,12 +3,14 @@
 | Field | Value |
 | --- | --- |
 | Document | CNSDP Alert Investigation UX Implementation Plan |
-| Version | 0.2 |
+| Version | 0.3 |
 | Status | Approved — Phase 1.5 implementation baseline |
 | Phase | Phase 1.5 — Security Investigation Experience |
 | Identifier | Not assigned. Outside the closed PC-015 namespace. Referenced by path only: `docs/frontend/alert-investigation-implementation-plan.md`. |
 | Authoritative sources | `../product.md`, `../personas.md`, `../use-cases.md`, `../scope.md`, `../functional-requirements.md`, `../non-functional-requirements.md`, `../acceptance-criteria.md`, `../architecture.md`, `../reference-environment.md`, and — for this document's UX authority — `alert-investigation-ux-spec.md` v0.2 in full. `product-experience-brief.md` and this file's own v0.1 predecessor are superseded historical direction, cited below only to identify what must not be reintroduced. |
 | Relationship to baseline | This document proposes no new product scope, requirement, or acceptance criterion, and no backend change. It is an implementation plan only: it translates `alert-investigation-ux-spec.md` v0.2 into a concrete, phased build plan against the current codebase as it actually exists today (confirmed by direct inspection during this planning pass, cited as **[Finding]** below). |
+
+**Supersession (v0.3).** In-place revision of v0.2, not a new direction. v0.2's Track B build sequence (§5–§9) is unchanged in substance; this revision inserts one new mandatory pass — **Pass 7, Track B Structural Fidelity Completion** — between the former Pass 6 and Pass 7, renumbers the former Pass 7 ("Retire Track B") to Pass 8 and the former Pass 8 ("Rewrite the Playwright suite") to Pass 9, and updates every cross-reference in §1, §10, §11, §12, and §13 accordingly. No UX decision changes: every requirement the new Pass 7 delivers is already specified in `alert-investigation-ux-spec.md` v0.2, which is not itself revised by this document — see §1's added finding for why.
 
 **Scope discipline, restated as binding constraints on this plan:** no backend change; no alert index, search, or detection-definition catalog; no severity, confidence, case status, assignment, or disposition; no new telemetry source family; no dedicated mobile/phone investigation experience (UX spec §17); nothing already built is preserved merely because it exists — every retained file below is retained for a stated, specific reason. **This plan performs no deletion, staging, commit, or push.** It defines the sequence a later implementation task must follow.
 
@@ -24,6 +26,8 @@
 2. **Track B — live-but-superseded code** (the Forensic Case Folio presentation layer): must be replaced by the new Dark Evidence Map presentation, and only removed after its replacement is built and verified — never deleted first.
 
 The sound domain/view-model layer beneath both is unaffected by either track and is preserved through this plan almost entirely unchanged (§3).
+
+**[Finding, v0.3]** Track B's build (§5–§9) executed through Pass 6 and shipped the Dark Evidence Map on the live route. A subsequent product-shell and live-fidelity audit — comparing the running build directly against the approved prototype screenshots and the UX spec's binding visual-language and interaction requirements (§18, §8, §12) — found the shipped screen content-correct (every artifact renders real, contract-faithful data, and the full automated suite passes) but not yet structurally faithful: no connector line renders anywhere on the canvas; the characteristic bus renders as a stacked list of bordered rows rather than a branching structure; Scenario 2's "Host access"/"Privilege" subgroup clustering is computed (`lib/characteristicGroups.ts`) but never rendered; no unrelated-content dimming exists on selection; the provenance annotation is a docked panel, not a leader-line-anchored callout; no raw-payload substring marking exists for Verified provenance; and an excessive empty canvas band remains between the Detection Result/Generated Alert row and the Traceability Rail. None of this is a new requirement — every item above is already specified in `alert-investigation-ux-spec.md` v0.2; it was simply not yet delivered, and most of it is self-noted as deferred in the shipping components' own comments (`EvidenceCanvas.tsx`, `NormalizedEventSurface.tsx`, `DetectionResultResolution.tsx`, `ValidationStamp.tsx`, `SourceSubmissionSpecimen.tsx`, and `ProvenanceAnnotation.tsx` each carry a "Pass 1 scope" comment deferring some part of this work to "a later refinement pass"). This revision inserts that pass — **Pass 7, Track B Structural Fidelity Completion** (§9) — and moves the legacy Folio deletion (formerly Pass 7, renumbered Pass 8) behind an explicit gate: deletion may not begin until Pass 7's acceptance criteria are confirmed against the running build. The vocabulary/typography portion of the former Pass 7 (the `StatusTone` rename, the `RootErrorBoundary` text fix, the Fraunces font removal) had already been executed and committed as its own independent, narrower checkpoint before this audit, since none of it touches the dossier tree or the evidence-map component tree and it required no such gate — see Pass 8's note, below.
 
 ## 2. What the new implementation must accomplish
 
@@ -201,13 +205,34 @@ Each pass is independently reviewable, leaves the repository runnable and testab
 - Manual keyboard-only walkthrough of all three scenarios and every failure state.
 - Verify: every criterion in spec §19 confirmed against the running build before any deletion happens.
 
-**Pass 7 — Retire Track B (the now-verified-dead Folio files) and sweep vocabulary.**
+**Pass 7 — Track B Structural Fidelity Completion.**
+
+**[Finding, v0.3]** A post-implementation product-shell and live-fidelity audit found the shipped Dark Evidence Map content-correct but not yet structurally faithful to `alert-investigation-ux-spec.md` v0.2's binding visual-language and interaction requirements (§1's added finding, above, has the full detail). This pass delivers exactly what the UX spec already specifies — no new product, UX, or contract decision is made here — and **gates Pass 8**: the legacy Folio may not be deleted until every criterion below is confirmed against the running build.
+
+*A. Canvas topology.* Render literal orthogonal connector lines (§3, §18) between: Source Submission ↔ Validation Outcome (a short structural stub, §6 — not proximity alone, as `EvidenceCanvas.tsx`/`ValidationStamp.tsx` render today); Source Submission → Normalized Event; Normalized Event → Detection Definition; the characteristic bus → Detection Result; Detection Result → Generated Alert. The existing, already-correct localized broken-traceability rendering in `TraceabilityRail.tsx` is unchanged — the Traceability Rail and these canvas connectors are two independent mechanisms (§14) and remain so. Primary files: `components/evidence-map/EvidenceCanvas.tsx`, `evidence-map.module.css`.
+
+*B. Characteristic bus.* Replace `DetectionDefinitionFrame.tsx`'s current vertical stack of bordered `CharacteristicPin` rows with a branching bus (§8: "never a stacked list, never a repeated label/value/description block"). Use each row's existing `group` field (`lib/concordance.ts`, `lib/characteristicGroups.ts`) so Scenario 2 visibly separates "Host access" from "Privilege"; `UNGROUPED_LABEL` scenarios (1 and 3) continue rendering as one undivided bus. `CharacteristicPin.tsx`'s declared-but-unsatisfied rendering (`data-satisfied="false"`, "Declared, not satisfied") is unchanged — this pass alters bus geometry only, never `concordance.ts`'s data or satisfied/declared-only branching.
+
+*C. Selection and provenance.* Add the dim treatment §12 step 3 requires: unrelated pins, rows, artifacts, and connectors recede to a visible-but-quiet opacity whenever a characteristic is selected, while the selected pin and its corresponding Normalized Event row remain full-opacity and dominant. Render the selection-triggered row-to-pin trace §12 step 2 requires as an accent along the existing Normalized Event → Detection Definition connector from Category A: on selection, the segment of that connector between the selected characteristic's Normalized Event field row and its pin renders at full opacity in its provenance status accent (§13 — turquoise/blue-green for Verified, amber for Partial), distinct from that connector's own dimmed resting state elsewhere under the same selection, from the selected pin's separate warm-neutral shape-marker (§12 step 5), and from the `ProvenanceAnnotation` leader line below. This is an interaction overlay on an existing artifact-level connector, not a sixth connector relationship — Category A's five connector relationships remain unchanged. Reposition `ProvenanceAnnotation.tsx` from its current docked-panel placement to a leader-line-anchored callout landing at the selected pin's trace terminus (§12 step 4), requiring `InvestigationMap.tsx`/`EvidenceCanvas.tsx` to know the selected pin's rendered position. For Partial provenance, render the structural interruption/gap marker §13 requires on the new source-side connector from Category A — never on a connector that doesn't otherwise exist. No raw source path is ever fabricated for Partial or Unavailable provenance (§13's binding rule, unchanged); this pass only adds a visual gap marker to an already-honest data state.
+
+*D. Raw evidence fidelity.* For Verified provenance (today: Scenario 1's `stdin_streaming`/`tty_allocation`, both parsed from `requestURI`), mark the exact supporting substring within `SourceSubmissionSpecimen.tsx`'s raw payload display (§5's substring-marking requirement; §13's Verified-state definition), computed from the concrete raw field path `lib/provenance.ts`'s `ProvenanceState` already carries (`rawPath`/`rawValue`) — never invented in the presentation layer. Scenario 2/3's Partial provenance (`requestObject` typed `unknown`, UX spec §22 item 6) has no truthful substring span to mark and must not be given one; the existing honest limitation sentence remains the correct treatment for those two scenarios (§13's binding no-fabrication rule).
+
+*E. Density and balance.* Close the empty canvas band between the Detection Result/Generated Alert row and the Traceability Rail (`evidence-map.module.css`'s `.canvas` grid-template-areas) by tightening row-track sizing, not by introducing a seventh artifact or any fabricated content. The result remains a causal map: no card-grid reflow, no KPI-tile treatment, no rounded dashboard-card styling introduced anywhere by this pass (§18, restated).
+
+*F. Verification.* Full spatial experience (connectors, bus branching, dimming, anchored annotation, density fix) verified at 1600px, 1440px, 1280px, and 1024px (spec §17's full four-width requirement, restated — matching Pass 6 and this document's own §10 gate table). Below 1024px, retain exactly the existing single-column readable fallback (`evidence-map.module.css`'s `@media (max-width: 1023px)` block, already confirmed spec-compliant) — no phone/mobile carousel, swipe navigation, or dedicated mobile composition is added (UX spec §17's binding retirement of that requirement, restated). New or updated coverage required before this pass can close: unit/component tests for the dim-on-selection state, the branching bus's Scenario 2 subgroup rendering, the anchored-annotation positioning, the new connector layer's presence (including the row-to-pin trace accent, Category C), and Verified-provenance substring marking — asserting the rendered marked span is derived exactly from `lib/provenance.ts`'s `rawPath`/`rawValue` for the correct characteristic, and that no synthetic span, guessed path, or fabricated raw evidence is ever rendered for Partial or Unavailable provenance, where the existing data does not support one; Playwright coverage for connector-line visibility, subgroup rendering, each of the three `failedLink` localizations, keyboard-only operation of the new dimming/anchoring behavior, and absence of horizontal overflow at 1600/1440/1280/1024px. Fresh running-build screenshots required at 1600px, 1440px, 1280px, and 1024px each, for: Scenario 1 default; Scenario 1 with a Verified condition selected; Scenario 2 with a Partial condition selected; Scenario 3; broken traceability (`raw_event_sha256`); broken traceability (`source_key`).
+
+**Acceptance gate:** every item in A–F confirmed against the running build, plus a clean re-run of `typecheck`/`lint`/`test`/`build`/`e2e`. **Pass 8 may not begin until this gate is met.**
+
+**Pass 8 — Retire Track B (the now-verified-dead Folio files) and finish the vocabulary sweep.**
+
+**[Finding, v0.3]** Part of this pass's original scope has already been executed and committed independently, ahead of Folio deletion, as its own narrower checkpoint (commit `28a7cf0`, `fix(frontend): remove serif typography and retire Signal Path tone vocabulary`): `components/StatusBadge/StatusBadge.tsx` and `components/StateScreens.tsx` already use `"intact" | "warning" | "broken" | "neutral"`; `app/RootErrorBoundary.tsx`'s eyebrow no longer reads "Signal Path"; `styles/global.css`'s Fraunces `@import` lines and `styles/tokens.css`'s `--cnsdp-font-display` token are already removed. That checkpoint touches none of the dossier tree or the evidence-map component tree, so it required no prerequisite and is not gated by Pass 7. **This pass's remaining scope, and this pass itself, may not begin until Pass 7's acceptance gate (above) is met.**
+
 - Delete: `components/dossier/CaseOpening.tsx`, `EvidenceConcordance.tsx`, `ConcordanceConditionRow.tsx`, `ProvenanceRecord.tsx`, `EvidenceRegister.tsx`, `EvidenceRegisterEntry.tsx`, `InspectionLeaf.tsx`, `TraceabilityProof.tsx`, `dossier.module.css`, `dossier/index.ts`, `dossier/types.ts`, and the six `dossier/artifacts/*.tsx` views (superseded by §5's new artifact components — confirm each new component's replacement is in place and verified before deleting its predecessor).
-- Modify: `contract.ts` (remove the dead `SignalPathStageId` export, §3 of the UX spec); `styles/tokens.css`/`global.css` (remove the Fraunces import and any remaining Signal-Path-era token names — confirmed still present today, §11); `package.json` (fix the `"description"` field, still literally *"CNSDP Phase 1.5 — The Signal Path..."* today, §11; remove `@fontsource/fraunces` once confirmed unimported); `components/StatusBadge/StatusBadge.tsx` and `components/StateScreens.tsx` (replace the live `"signal" | "branch" | "severed" | "neutral"` `StatusTone` vocabulary with names matching the UX spec's own real vocabulary, e.g. `"intact" | "warning" | "broken" | "neutral"`, §11); `app/RootErrorBoundary.tsx` (**[Finding]** its rendered eyebrow text is the literal live string `"CNSDP — Signal Path"`, line 20 — a one-line text change, distinct from the dossier tree entirely, but still a real, currently-shipped instance of the retired term).
+- Modify: `contract.ts` (remove the dead `SignalPathStageId` export, §3 of the UX spec); `package.json` (fix the `"description"` field, still literally *"CNSDP Phase 1.5 — The Signal Path..."* today, §11; remove `@fontsource/fraunces` once confirmed unimported).
 - Verify: full suite green after deletion (catches any straggling import); repository-wide search for every retired term in UX spec §21 returns zero hits outside historical documentation and version-control history.
 
-**Pass 8 — Rewrite the Playwright suite.**
-- `e2e/flagship.spec.ts` rewritten against the new DOM, covering the full checklist in §10.
+**Pass 9 — Rewrite the Playwright suite.**
+- `e2e/flagship.spec.ts` rewritten against the new DOM (post-Pass-8 deletion), covering the full checklist in §10.
 - Verify: `npm run e2e` green, desktop viewports only (1600/1440/1280/1024 — no mobile viewport per spec §17).
 
 ## 10. Verification gates
@@ -219,13 +244,14 @@ Every pass above states its own scoped verification; this section is the full ga
 | Typecheck | `npm run typecheck` | Every pass that touches a `.ts`/`.tsx` file |
 | Lint | `npm run lint` | Every pass that touches a `.ts`/`.tsx` file |
 | Unit tests | `npm run test` | Every pass |
-| Production build | `npm run build` | Passes 0, 2, 5, 6, 7 (structural risk points) |
-| Playwright e2e | `npm run e2e` | Pass 8, and re-run after Pass 7's deletions |
-| Manual keyboard-only walkthrough | All three scenarios, every failure state, Tab/Enter/Space only, visible focus confirmed at every step | Pass 6 |
-| Desktop viewport check | 1600px, 1440px, 1280px, 1024px — no horizontal scroll, no dropped content | Pass 6 |
-| Below-1024px fallback check | Manual — confirm readable, non-catastrophic, no hidden artifact/traceability state (spec §17) | Pass 6 |
-| Vocabulary sweep | Repository-wide text search for every term in UX spec §21 | Pass 7 |
-| Zero console errors | Manual dev-build check across the full interaction flow | Pass 6 |
+| Production build | `npm run build` | Passes 0, 2, 5, 6, 7, 8 (structural risk points) |
+| Playwright e2e | `npm run e2e` | Pass 7 (new/updated connector, subgroup, and broken-link coverage), Pass 9 (full suite rewrite), and re-run after Pass 8's deletions |
+| Manual keyboard-only walkthrough | All three scenarios, every failure state, Tab/Enter/Space only, visible focus confirmed at every step | Pass 6, Pass 7 |
+| Desktop viewport check | 1600px, 1440px, 1280px, 1024px — no horizontal scroll, no dropped content | Pass 6, Pass 7 |
+| Below-1024px fallback check | Manual — confirm readable, non-catastrophic, no hidden artifact/traceability state (spec §17) | Pass 6, Pass 7 |
+| Structural fidelity gate | Every criterion in Pass 7's A–F confirmed against the running build | Gates Pass 8 — Folio deletion may not begin until this passes |
+| Vocabulary sweep | Repository-wide text search for every term in UX spec §21 | Pass 8 |
+| Zero console errors | Manual dev-build check across the full interaction flow | Pass 6, Pass 7 |
 
 **State coverage required at Pass 6 (spec §19's full acceptance surface):** Scenario 1, Scenario 2, and Scenario 3 (each with a satisfied-pin selection); the declared-but-unsatisfied pin case (Pass 1's new fixture); partial artifact availability (existing fixture 2); broken traceability for **each** of the three `failedLink` values individually (Pass 1 adds the `source_key` fixture; `alert` is verified through its existing synthetic coverage, §8, since no real fixture for it exists); loading; not-found; unauthorized; unavailable-with-retry.
 
@@ -248,7 +274,7 @@ Restated here as one consolidated list for the final report, cross-referencing w
 - `lib/InvestigationUIContext.tsx`
 - `src/test/renderWithProviders.tsx`
 
-**Safe to remove only after its named replacement is built and verified (Track B, §5, §9 Pass 7):**
+**Safe to remove only after its named replacement is built and verified, AND only after Pass 7's Structural Fidelity Completion acceptance gate is met (Track B, §5, §9 Pass 8):**
 
 - `components/dossier/CaseOpening.tsx` — after `AlertIdentityHeader` ships.
 - `components/dossier/EvidenceConcordance.tsx`, `ConcordanceConditionRow.tsx` — after `DetectionDefinitionFrame`/`CharacteristicPin` ship.
@@ -274,7 +300,7 @@ Restated here as one consolidated list for the final report, cross-referencing w
 - `AlertInvestigationPage.tsx`'s route/query/error-branching logic (only its success-branch composition changes).
 - `app/router.tsx`.
 - `src/fixtures/alert-investigation/v1.ts`'s five existing fixtures (extended, never replaced, §8).
-- `src/types/contract.ts` (minus the one dead `SignalPathStageId` export, §9 Pass 7).
+- `src/types/contract.ts` (minus the one dead `SignalPathStageId` export, §9 Pass 8).
 
 ## 12. Risk controls and rollback
 
@@ -282,18 +308,22 @@ Restated here as one consolidated list for the final report, cross-referencing w
 - **Avoiding invented telemetry.** Pass 1's new fixtures must follow `v1.ts`'s own established provenance discipline — cited real backend testdata, never hand-imagined field content.
 - **Protecting current lineage/provenance/traceability behavior.** `lineage.ts`, `provenance.ts`, and `traceability.ts` are explicitly unmodified (§3); their existing test suites must continue passing, unedited, through every pass as a regression guard.
 - **Preventing scenario-specific architecture.** `lib/concordance.ts`'s modification (§3) and every new component in §5 are unit/component-tested against all three scenarios' real declared-condition shapes from the moment each is written, not retrofitted afterward.
-- **Sequencing deletion after verification, never before.** Track A (§4) is deletable immediately because it is *already* dead — this is a factual claim, not a migration outcome. Track B (§9 Pass 7) is deletable only after Pass 6's full verification, mirroring the same discipline.
+- **Sequencing deletion after verification, never before.** Track A (§4) is deletable immediately because it is *already* dead — this is a factual claim, not a migration outcome. Track B (§9 Pass 8) is deletable only after Pass 6's full verification **and** Pass 7's Structural Fidelity Completion acceptance gate are both met, mirroring the same discipline against a now-explicit structural bar, not just a functional one.
 - **Never mixing visual systems in a reviewable state.** Pass 5 is the one pass where shipped behavior changes, and it must land as a single reviewable unit (§9), exactly as the prior plan required for its own equivalent step.
-- **Rollback.** Passes 0–4 are independently revertible with no effect on the live page (Pass 0 removes only dead code; Passes 1–4 are additive/isolated). Rollback after Pass 5 but before Pass 7 is a single revert of Pass 5's commit, since nothing has been deleted yet. Rollback after Pass 7 depends on ordinary version-control history, since `frontend/` is a tracked directory today (confirmed by this session's `git status`), unlike the untracked state a prior planning pass once flagged as a risk — that specific risk no longer applies, but standard care around force-pushes and history rewrites still does.
+- **Rollback.** Passes 0–4 are independently revertible with no effect on the live page (Pass 0 removes only dead code; Passes 1–4 are additive/isolated). Pass 7 is additive to the still-live evidence-map tree (connectors, bus geometry, dimming, annotation anchoring, density) and is independently revertible the same way, since it deletes nothing. Rollback after Pass 5 but before Pass 8 is a single revert of the relevant commit(s), since nothing has been deleted yet. Rollback after Pass 8 depends on ordinary version-control history, since `frontend/` is a tracked directory today (confirmed by this session's `git status`), unlike the untracked state a prior planning pass once flagged as a risk — that specific risk no longer applies, but standard care around force-pushes and history rewrites still does.
 
 ## 13. Definition of implementation readiness
 
-**Passes 0–6 can begin immediately upon this plan's approval.** They depend on no unresolved product, UX, or architecture decision:
+**Passes 0–7 can begin immediately upon this plan's approval.** They depend on no unresolved product, UX, or architecture decision:
 
 - `alert-investigation-ux-spec.md` v0.2 is approved and internally consistent with this plan's component design.
 - Every declared-condition shape needed for §7's verification matrix has been directly confirmed against the real, committed fixtures (`frontend/src/fixtures/alert-investigation/v1.ts`) during this planning pass.
 - The two fixture/test gaps (§8) are known, scoped, and additive — not blockers to starting, only to completing Pass 6's full verification.
+- Pass 7's Structural Fidelity Completion requirements (A–F) are entirely a restatement of `alert-investigation-ux-spec.md` v0.2 sections already approved (§3, §5, §6, §8, §9, §12, §13, §17, §18) — no new UX decision is made by that pass, so it needs no separate approval to begin.
 
-**One item gates only Pass 7, not the start of implementation:** each Track B file's replacement (§11) must be independently confirmed shipped and verified before that specific file is deleted — this is a sequencing rule within Pass 7 itself, not an external blocker.
+**Two items gate only Pass 8, not the start of implementation:**
+
+1. Each Track B file's replacement (§11) must be independently confirmed shipped and verified before that specific file is deleted — a sequencing rule within Pass 8 itself, not an external blocker.
+2. **[v0.3]** Pass 7's Structural Fidelity Completion acceptance gate (§9) must be met. This is a new sequencing rule established by this revision: the post-implementation audit that produced v0.3 found Pass 6's functional verification alone insufficient to confirm the UX spec's structural and interaction requirements were actually delivered, so a second, explicit gate now sits between Pass 6 and Pass 8.
 
 No other blocker was found. In particular: no backend change is required or proposed anywhere in this plan; no alert index, search, detection catalog, severity, confidence, case-management, assignment, or disposition concept is introduced anywhere in §5–§10; no new telemetry family or dedicated mobile experience is proposed (spec §17); and every file classified "preserve" in §3 and §11 is preserved for the specific, stated reason in its row, not by default.
