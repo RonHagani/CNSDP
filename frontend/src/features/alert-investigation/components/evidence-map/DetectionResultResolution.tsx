@@ -1,3 +1,4 @@
+import type { Ref } from "react";
 import type { DetectionResultInspection } from "@/features/alert-investigation/lib/artifactInspection";
 import type { EvidenceConcordance } from "@/features/alert-investigation/lib/concordance";
 import styles from "./evidence-map.module.css";
@@ -19,13 +20,22 @@ import styles from "./evidence-map.module.css";
 export function DetectionResultResolution({
   detectionResult,
   concordance,
+  sectionRef,
 }: {
   detectionResult: DetectionResultInspection;
   concordance: EvidenceConcordance;
+  /** Attaches this artifact's own root node so the bus convergence overlay
+   *  can measure where its rays should land — this object is the shared
+   *  destination every declared characteristic's ray converges on. */
+  sectionRef?: Ref<HTMLElement>;
 }) {
   if (!detectionResult.available) {
     return (
-      <section className={`${styles.artifactShape} ${styles.resultWedge}`} aria-labelledby="result-heading">
+      <section
+        ref={sectionRef}
+        className={`${styles.artifactShape} ${styles.resultWedge}`}
+        aria-labelledby="result-heading"
+      >
         <h2 id="result-heading" className={styles.eyebrow}>
           Detection result
         </h2>
@@ -35,13 +45,19 @@ export function DetectionResultResolution({
   }
 
   return (
-    <section className={`${styles.artifactShape} ${styles.resultWedge}`} aria-labelledby="result-heading">
-      <h2 id="result-heading" className={styles.eyebrow}>
-        Detection result
-      </h2>
-      <p>Resolved match</p>
+    <section
+      ref={sectionRef}
+      className={`${styles.artifactShape} ${styles.resultWedge}`}
+      aria-labelledby="result-heading"
+    >
+      <div>
+        <h2 id="result-heading" className={styles.eyebrow}>
+          Detection result
+        </h2>
+        <p>Resolved match</p>
+      </div>
       {concordance.showCharacteristicCount && (
-        <>
+        <div className={styles.resultBody}>
           <div className={styles.resultTally} aria-hidden="true">
             {Array.from({ length: concordance.declaredCharacteristicCount }).map((_, i) => (
               <span
@@ -51,11 +67,14 @@ export function DetectionResultResolution({
               />
             ))}
           </div>
-          <p className={styles.resultCount}>
-            {concordance.satisfiedCharacteristicCount}/{concordance.declaredCharacteristicCount}
-          </p>
-          <p className={styles.eyebrow}>satisfied</p>
-        </>
+          <div className={styles.resultDivider} aria-hidden="true" />
+          <div className={styles.resultInner}>
+            <p className={styles.resultCount}>
+              {concordance.satisfiedCharacteristicCount}/{concordance.declaredCharacteristicCount}
+            </p>
+            <p className={`${styles.eyebrow} ${styles.resultLabel}`}>satisfied</p>
+          </div>
+        </div>
       )}
     </section>
   );

@@ -17,3 +17,5 @@ export { DetectionResultResolution } from "./DetectionResultResolution";
 export { GeneratedAlertMarker } from "./GeneratedAlertMarker";
 export { ProvenanceAnnotation } from "./ProvenanceAnnotation";
 export { TraceabilityRail } from "./TraceabilityRail";
+export { SelectionTraceOverlay } from "./SelectionTraceOverlay";
+export { BusConvergenceOverlay } from "./BusConvergenceOverlay";

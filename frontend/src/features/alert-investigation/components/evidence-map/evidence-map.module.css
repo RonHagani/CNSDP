@@ -1,30 +1,26 @@
 /*
- * Dark Evidence Map — shared style module (Track B; layout and connector
- * routing extended by Pass 7 Category A, "Canvas topology and density").
+ * Dark Evidence Map — shared style module (Track B baseline; Track C —
+ * "Dark Evidence Map Visual Fidelity Reset" — brings the canvas
+ * composition, artifact silhouettes, characteristic-bus branching,
+ * selection interaction, and typography/density into line with the
+ * approved screenshots at frontend/review-artifacts/dark-evidence-map/).
  *
  * A self-contained token set, deliberately independent of dossier.module.css's
- * `--dossier-*` tokens and global.css's `--cnsdp-*` tokens — both belong to
- * presentation systems this document supersedes (UX spec front matter) and
- * are scheduled for retirement alongside the Folio (implementation plan
- * Pass 8, gated on this document's own Pass 7 Structural Fidelity
- * Completion). Nothing in this file is copied from the isolated
- * prototype's CSS (frontend/review-artifacts/dark-evidence-map/prototype.css)
- * — only the visual-language constraints in UX spec §18 are followed.
- *
- * Connector routing (the source/validation stub, source->normalized,
- * normalized->definition, definition->result, result->alert — UX spec §3,
- * §6, §18) is CSS Grid gutter cells, never absolute-positioned or
- * JS-measured coordinates — see "Layout shell" below. This keeps the
- * routing correct as artifact content height changes, with no per-viewport
- * tuning. Remaining Pass 7 work — characteristic-bus branching (Category
- * B), selection dimming and anchored provenance (Category C), raw-payload
- * substring marking (Category D) — is not yet done here.
+ * `--dossier-*` tokens and global.css's `--cnsdp-*` tokens. Nothing in this
+ * file is copied from the isolated prototype's DOM or absolute pixel
+ * coordinates — only its visual language and spatial relationships are
+ * reproduced, through CSS Grid, data-driven layout, and (for the one
+ * genuinely dynamic relationship — the selection trace between an
+ * arbitrary Normalized Event row and an arbitrary characteristic pin) a
+ * small measured SVG overlay. The characteristic bus itself stays pure
+ * CSS/data-driven, as before.
  */
 
 .mapRoot {
   --map-bg: #12161c;
   --map-surface: #181d25;
   --map-surface-2: #212832;
+  --map-surface-3: #2a323d;
   --map-rule: rgba(233, 237, 241, 0.14);
   --map-rule-strong: rgba(233, 237, 241, 0.28);
 
@@ -54,6 +50,31 @@
      of known size, never content-driven) — shared with the stub-attached
      block's total height below, so the two can never silently drift apart. */
   --map-validation-size: 6rem;
+
+  /* Track C map-specific tokens (canvas composition + density). Definition
+     gets meaningfully more than an equal fifth: it is the one column whose
+     own children (characteristic pins) need real breathing room to avoid
+     wrapping mid-word at the narrowest required breakpoint (1024px), and
+     it is the widest artifact in the approved screenshots — an open frame
+     plus a full branching bus, not a single field surface. Normalized can
+     afford to give up width in return: its own rows already truncate to a
+     single line with a `title` tooltip (`.truncate`), which degrades
+     gracefully at any width. Source cannot make that same trade — its raw
+     payload is a real `JsonTree` for scenario 2/3 fixtures, whose own grid
+     (`JsonTree.module.css`) wraps values `overflow-wrap: anywhere` with no
+     truncation and no tooltip fallback; below a real minimum width that
+     degrades into unreadable one-character-per-line wrapping (a confirmed
+     regression at the old 130px floor), not a graceful truncation. Source's
+     floor is sized to keep that raw JsonTree legible; Definition/Result/
+     Alert's floors are unchanged from their own already-verified minimums
+     (`characteristic bus geometry` / `Result -> Alert connector geometry`
+     e2e coverage). */
+  --map-dim-opacity: 0.5;
+  --map-canvas-col-source: 22fr;
+  --map-canvas-col-normalized: 14fr;
+  --map-canvas-col-definition: 42fr;
+  --map-canvas-col-result: 12fr;
+  --map-canvas-col-alert: 10fr;
 
   background: var(--map-bg);
   color: var(--map-text);
@@ -86,42 +107,95 @@
   overflow-wrap: anywhere;
 }
 
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .plainButton {
   all: unset;
   cursor: pointer;
 }
 
+/* Shared "recede without disappearing" treatment for unselected content
+   while a characteristic is selected (UX requirement: dim unrelated
+   artifacts/rows/pins/connectors, never hide them). */
+.dim {
+  opacity: var(--map-dim-opacity);
+  transition: opacity 160ms ease;
+}
+
 /* ---- Layout shell (EvidenceCanvas) ---- */
 
 /*
- * Five-column grid: source, normalized, and rightStack (Definition +
- * Result + Alert, as one self-contained flex column — see
- * `.canvasRightStack` below) each occupy the one content row, interleaved
- * with two narrow connector-gutter tracks. None of the three spans
- * further rows: the prior version spanned Source/Normalized across two
- * rows, which forced the Result/Alert row to grow to match their height
- * even though Result and Alert are compact, fixed-shape objects — that
- * forced growth was the excessive empty band between Detection Result/
- * Generated Alert and the Traceability Rail (implementation plan §1's
- * Pass 7 finding). Because rightStack sizes itself from its own content
- * alone, Definition, Result, and Alert keep their real, natural spacing —
- * including the Definition -> Result connector — regardless of how tall
- * Source's content is; any leftover space from a height mismatch between
- * columns sits beside the shorter column, not as a full-width dead band
- * before the rail.
+ * Nine-column grid, one real content row: Source (+ its attached
+ * Validation checkpoint), Normalized Event, Detection Definition, Detection
+ * Result, and Generated Alert sit left-to-right as five real tracks,
+ * proportioned to the approved canvas's own relative widths
+ * (--map-canvas-col-*), interleaved with four narrow connector-gutter
+ * tracks. Source/Normalized/Definition are content-height and top-aligned;
+ * Result and Alert are compact, fixed-shape objects and sit vertically
+ * centered against whichever column ends up tallest (almost always
+ * Definition, once its characteristic bus has more than a couple of pins)
+ * — this is what gives the canvas the approved screenshots' "open forensic
+ * canvas" read rather than a uniform card grid, and is why Result/Alert are
+ * real siblings of Definition here, not nested below it.
  */
 .canvas {
+  position: relative;
   display: grid;
   gap: var(--map-space-5) 0;
   padding: var(--map-space-5);
+  /* `minmax(floor, fr)`, not a bare `fr`: Definition's fr share is
+     deliberately large (it needs the room, see the token comment above),
+     which at 1024px would otherwise starve Result and Alert down to a
+     width narrower than their own fixed-shape content — a real, observed
+     regression (tally/count text silently clipped by the wedge's own
+     `clip-path`, "Alert #N" wrapping mid-phrase). Each floor is the
+     narrowest px width that artifact's real content needs at any declared
+     characteristic count; above that, the fr weights above still decide
+     how any extra space splits. Source's floor (215px) is sized the same
+     way, against its own real worst case — the scenario 2/3 `JsonTree` raw
+     payload — not against any one fixture or viewport; Normalized gives up
+     the matching width because its own content degrades safely (ellipsis +
+     title) at any floor, which the raw `JsonTree` cannot. The five floors
+     below sum to 890px, always under this row's real content width at the
+     1024px viewport floor (976px padding-box − 80px of gutters = 896px),
+     so no combination of real content ever forces horizontal overflow. */
   grid-template-columns:
-    minmax(0, 1fr) var(--map-space-4)
-    minmax(0, 1fr) var(--map-space-4)
-    minmax(0, 1fr);
+    minmax(215px, var(--map-canvas-col-source)) var(--map-space-5)
+    minmax(115px, var(--map-canvas-col-normalized)) var(--map-space-5)
+    minmax(250px, var(--map-canvas-col-definition)) var(--map-space-4)
+    minmax(160px, var(--map-canvas-col-result)) var(--map-space-4)
+    minmax(150px, var(--map-canvas-col-alert));
+  /* No `brokenCallout` row by default: an explicit grid row still consumes
+     its own two flanking `gap`s even when empty (auto-sized to 0px content
+     height), which on every intact-traceability alert silently doubled the
+     space between the main artifact row and the Traceability Rail. The
+     `:has()` rule directly below reinstates the row — and only the row's
+     own single extra gap, never a permanent reservation — for the one
+     real case that needs it. */
   grid-template-areas:
-    "header header               header     header                   header"
-    "source wireSourceNormalized normalized wireNormalizedDefinition rightStack"
-    "rail   rail                 rail       rail                     rail";
+    "header header header header header header header header header"
+    "source wireSourceNormalized normalized wireNormalizedDefinition definition wireDefinitionResult result wireResultAlert alert"
+    "rail rail rail rail rail rail rail rail rail";
+  background-image: linear-gradient(var(--map-rule) 1px, transparent 1px),
+    linear-gradient(90deg, var(--map-rule) 1px, transparent 1px);
+  background-size: 2.5rem 2.5rem;
+  background-position: 0 0;
+}
+
+/* Data-driven, not a JS-toggled class: whether `.canvasBrokenCallout` is an
+   actual rendered child is exactly the same real fact `EvidenceCanvas.tsx`
+   already gates it on (`{brokenCallout && <div className={styles.canvasBrokenCallout}>...}`),
+   so `:has()` reflects it without any additional prop plumbing. */
+.canvas:has(.canvasBrokenCallout) {
+  grid-template-areas:
+    "header header header header header header header header header"
+    "source wireSourceNormalized normalized wireNormalizedDefinition definition wireDefinitionResult result wireResultAlert alert"
+    "brokenCallout brokenCallout brokenCallout brokenCallout . . . . ."
+    "rail rail rail rail rail rail rail rail rail";
 }
 
 .canvasHeader {
@@ -131,6 +205,7 @@
   grid-area: source;
   display: flex;
   flex-direction: column;
+  align-self: start;
   min-width: 0;
 }
 .validationGroup {
@@ -141,53 +216,75 @@
 }
 .canvasNormalized {
   grid-area: normalized;
+  align-self: start;
   min-width: 0;
+}
+/* Stretched, not top-aligned like Source/Normalized: Definition's own
+   rule frame grows to match whichever column ends up tallest (almost
+   always Source), then internally spreads its characteristic bus across
+   that full height (see `.bus`'s `align-content: space-between` below).
+   This is what lets Result/Alert's own vertical centering land on a
+   *meaningful* midpoint — the middle of the pin spread — instead of an
+   arbitrary empty region, and is the single biggest fix for the "top-
+   aligned cards over a dead canvas" reading this pass corrects. */
+.canvasDefinition {
+  grid-area: definition;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.canvasResult {
+  grid-area: result;
+  align-self: center;
+  min-width: 0;
+}
+.canvasAlert {
+  grid-area: alert;
+  align-self: center;
+  min-width: 0;
+}
+.canvasBrokenCallout {
+  grid-area: brokenCallout;
 }
 .canvasRail {
   grid-area: rail;
 }
 
-/*
- * Definition, its connector down to Result, and the Result/Alert row,
- * nested together as one flex column so their spacing is relative to
- * each other's real height alone — never to Source's height (see the
- * `.canvas` comment above).
- */
-.canvasRightStack {
-  grid-area: rightStack;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-.canvasDefinition {
-  min-width: 0;
-}
-.resultAlertRow {
-  display: flex;
-  align-items: flex-start;
-}
-.canvasResult {
-  flex: 1 1 0;
-  min-width: 0;
-}
-.canvasAlert {
-  flex: 1 1 0;
-  min-width: 0;
+/* Whole-artifact dimming (UX requirement: Validation, Detection Result, and
+   Generated Alert recede as a unit while a characteristic is selected — the
+   opacity toggle here, applied at the wrapper level, never needs the leaf
+   components themselves to know about selection). Source and Normalized
+   are never wrapped with this attribute — they stay structurally relevant
+   and fully legible regardless of selection. */
+.canvasSource[data-dim="true"] .validationGroup,
+.canvasResult[data-dim="true"],
+.canvasAlert[data-dim="true"] {
+  opacity: var(--map-dim-opacity);
+  transition: opacity 160ms ease;
 }
 
 /*
- * Connector lines (UX spec §3, §18): each lives in its own dedicated,
- * non-overlapping cell or flex gap — never absolute-positioned across
- * artifact boundaries — so a connector can never render on top of, or be
- * clipped by, artifact content, and the routing keeps working unchanged
- * if an artifact's own content height changes. Purely decorative:
- * `aria-hidden`, no interactive role, no effect on tab order.
+ * Connector lines: each lives in its own dedicated, non-overlapping cell —
+ * never absolute-positioned across artifact boundaries — so a connector can
+ * never render on top of, or be clipped by, artifact content, and the
+ * routing keeps working unchanged if an artifact's own content height
+ * changes. Purely decorative: `aria-hidden`, no interactive role, no effect
+ * on tab order.
  */
 .wireSourceNormalized {
   grid-area: wireSourceNormalized;
 }
 .wireNormalizedDefinition {
   grid-area: wireNormalizedDefinition;
+}
+.wireDefinitionResult {
+  grid-area: wireDefinitionResult;
+  align-self: center;
+}
+.wireResultAlert {
+  grid-area: wireResultAlert;
+  align-self: center;
 }
 
 .wireHorizontal {
@@ -216,70 +313,31 @@
   left: 100%;
 }
 
-/*
- * Source's own specimen box does not begin at the row's top edge like
- * Normalized's does — the Validation stamp and its stub (`.validationGroup`,
- * unspanned, no gap between them) sit above it first. Anchoring this one
- * connector at the shared `--map-space-6` default (correct for every other
- * horizontal connector, whose left- and right-hand artifacts both start at
- * the row top) would land it beside Validation instead of Source. Add that
- * exact, non-content-dependent block height — never a guessed constant —
- * so the connector visibly falls within Source's own box on both widths.
- * The combined selector (not source order) guarantees this wins over
- * `.wireHorizontal`'s own `margin-top` regardless of rule order below.
- */
+/* Source's own specimen box does not begin at the row's top edge like
+   Normalized's does — the Validation stamp and its stub sit above it
+   first. Anchoring this one connector at the shared default would land it
+   beside Validation instead of Source; add that exact block height so the
+   connector visibly falls within Source's own box. */
 .wireSourceNormalized.wireHorizontal {
   margin-top: calc(var(--map-validation-size) + var(--map-space-4) + var(--map-space-6));
 }
 
-.wireDefinitionResult {
+/* Definition/Result/Alert now sit in one shared row (never a nested
+   flex-column) so Result and Alert can be vertically centered against it —
+   the two connectors between them are the same junctioned-dot style as the
+   other horizontal connectors, just centered instead of top-anchored.
+   `align-self: center` is repeated here, not left to `.wireDefinitionResult`/
+   `.wireResultAlert` alone: those single-class rules and `.wireHorizontal`'s
+   own `align-self: start` share equal (0,1,0) specificity, and
+   `.wireHorizontal` is declared later in this file, so on its own it would
+   win the cascade tie and silently pull both connectors back to the top of
+   the row — this compound selector's higher (0,2,0) specificity is what
+   actually has to carry the override, and previously carried only
+   `margin-top`, leaving `align-self` unintentionally still `start`. */
+.wireDefinitionResult.wireHorizontal,
+.wireResultAlert.wireHorizontal {
+  margin-top: 0;
   align-self: center;
-  width: 2px;
-  height: var(--map-space-5);
-  background: var(--map-rule-strong);
-  position: relative;
-}
-.wireDefinitionResult::before,
-.wireDefinitionResult::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  width: 6px;
-  height: 6px;
-  background: var(--map-bg);
-  border: 1.5px solid var(--map-rule-strong);
-  transform: translate(-50%, -50%);
-}
-.wireDefinitionResult::before {
-  top: 0;
-}
-.wireDefinitionResult::after {
-  top: 100%;
-}
-
-.wireResultAlert {
-  flex: 0 0 var(--map-space-4);
-  align-self: center;
-  height: 2px;
-  background: var(--map-rule-strong);
-  position: relative;
-}
-.wireResultAlert::before,
-.wireResultAlert::after {
-  content: "";
-  position: absolute;
-  top: 50%;
-  width: 6px;
-  height: 6px;
-  background: var(--map-bg);
-  border: 1.5px solid var(--map-rule-strong);
-  transform: translate(-50%, -50%);
-}
-.wireResultAlert::before {
-  left: 0;
-}
-.wireResultAlert::after {
-  left: 100%;
 }
 
 /* The Source Submission <-> Validation Outcome stub (UX spec §6): a short
@@ -289,6 +347,88 @@
   width: 2px;
   height: var(--map-space-4);
   background: var(--map-rule-strong);
+}
+
+/*
+ * The Source -> Normalized connector doubles as the visible provenance
+ * chain's source-side segment: it recolors to the active trace kind while
+ * a characteristic is selected (never a new, separately-fabricated line —
+ * this *is* the real, permanent source-to-normalized relationship), and it
+ * is the one connector that localizes a broken-traceability failure on the
+ * canvas itself (never just on the Traceability Rail below).
+ */
+.wireSourceNormalized[data-state="verified"] {
+  background: var(--map-verified);
+}
+.wireSourceNormalized[data-state="verified"]::before,
+.wireSourceNormalized[data-state="verified"]::after {
+  border-color: var(--map-verified);
+}
+.wireSourceNormalized[data-state="partial"] {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--map-partial),
+    var(--map-partial) 6px,
+    transparent 6px,
+    transparent 12px
+  );
+}
+.wireSourceNormalized[data-state="partial"]::before,
+.wireSourceNormalized[data-state="partial"]::after {
+  border-color: var(--map-partial);
+}
+/* Generic broken-segment treatment — shared by whichever canvas connector
+   actually corresponds to the response's real `failedLink` (source ->
+   normalized for raw_event_sha256/source_key, result -> alert for
+   `alert`), never applied speculatively to a healthy segment. */
+.wireHorizontal[data-state="broken"] {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--map-broken),
+    var(--map-broken) 6px,
+    transparent 6px,
+    transparent 12px
+  );
+}
+.wireHorizontal[data-state="broken"]::before,
+.wireHorizontal[data-state="broken"]::after {
+  border-color: var(--map-broken);
+}
+
+/*
+ * These glyphs sit inside a narrow connector-gutter track (--map-space-5 /
+ * --map-space-4 wide — 16-24px), flanked on both sides by opaque artifact
+ * boxes. Kept to a single compact character (never a trailing word) so
+ * they can never need to overflow past their own gutter and risk being
+ * painted over by a neighboring box; the full explanation always lives in
+ * the anchored callout (broken) or provenance annotation (partial) next to
+ * it, never only in this glyph.
+ */
+.wireGapGlyph,
+.wireBreakGlyph {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 1.25rem;
+  height: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--map-bg);
+  font-family: var(--map-font-mono);
+  font-size: 0.75rem;
+  line-height: 1;
+}
+.wireGapGlyph {
+  color: var(--map-partial);
+  border: 1px solid var(--map-partial);
+}
+.wireBreakGlyph {
+  color: var(--map-broken);
+  border: 1px solid var(--map-broken);
 }
 
 @media (max-width: 1023px) {
@@ -302,30 +442,44 @@
       "result"
       "alert"
       "rail";
+    background-size: 1.5rem 1.5rem;
   }
 
-  /* Unwrap the desktop-only nesting so Definition, Result, and Alert each
-     become their own direct, individually-named grid row again, in the
-     same causal order — not a dedicated mobile composition, the same
-     single-column fallback this breakpoint has always used (spec §17). */
-  .canvasRightStack,
-  .resultAlertRow {
-    display: contents;
+  .canvas:has(.canvasBrokenCallout) {
+    grid-template-areas:
+      "header"
+      "source"
+      "normalized"
+      "brokenCallout"
+      "definition"
+      "result"
+      "alert"
+      "rail";
   }
-  .canvasDefinition {
-    grid-area: definition;
-  }
-  .canvasResult {
-    grid-area: result;
-  }
+
+  .canvasNormalized,
+  .canvasDefinition,
+  .canvasResult,
   .canvasAlert {
-    grid-area: alert;
+    align-self: stretch;
   }
 
   .wireSourceNormalized,
   .wireNormalizedDefinition,
   .wireDefinitionResult,
   .wireResultAlert {
+    display: none;
+  }
+
+  /* Both measured-SVG overlays are hidden below the desktop breakpoint —
+     not just `.traceOverlay`. Their geometry is always computed against
+     the desktop grid's pin/row/result positions; once the single-column
+     fallback stacks every artifact into one flow, those same coordinates
+     no longer describe adjacent content, and the rays/trace would cut
+     across unrelated stacked sections as stray diagonal lines instead of
+     disappearing along with the desktop layout they were measured for. */
+  .traceOverlay,
+  .convergenceOverlay {
     display: none;
   }
 }
@@ -336,6 +490,58 @@
   min-width: 0;
 }
 
+/* ---- Selection trace overlay ----
+ * The one relationship in this canvas that is inherently dynamic (an
+ * arbitrary Normalized Event row to an arbitrary characteristic pin,
+ * depending purely on which pin is selected) rather than structural — the
+ * static artifact-to-artifact wires above stay pure CSS Grid gutters, and
+ * the characteristic bus's own pin geometry stays pure CSS/data-driven
+ * (characteristicBusLayout.ts); only this selection-driven overlay measures
+ * DOM positions, the same way any interactive tooltip/connector overlay
+ * would. Purely decorative and non-interactive.
+ */
+.traceOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  overflow: visible;
+}
+.traceLine {
+  fill: none;
+  stroke-width: 2;
+}
+.traceLine[data-kind="verified"] {
+  stroke: var(--map-verified);
+}
+.traceLine[data-kind="partial"] {
+  stroke: var(--map-partial);
+  stroke-dasharray: 6 4;
+}
+
+/* ---- Bus convergence overlay ----
+ * Sits below the selection trace overlay (lower z-index) so a Verified/
+ * Partial trace line always reads as the more prominent, foreground line
+ * when both are visible at once — matching the approved screenshots,
+ * where the permanent convergence rays are faint background structure and
+ * the selection trace is the one bold, colored line.
+ */
+.convergenceOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  overflow: visible;
+  transition: opacity 160ms ease;
+}
+.convergenceOverlay[data-dim="true"] {
+  opacity: var(--map-dim-opacity);
+}
+.convergenceLine {
+  stroke: var(--map-rule-strong);
+  stroke-width: 1;
+}
+
 /* ---- Alert identity header (§4) ---- */
 
 .header {
@@ -343,7 +549,7 @@
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--map-space-2) var(--map-space-4);
-  padding: var(--map-space-4) var(--map-space-5);
+  padding: var(--map-space-3) var(--map-space-5);
   border-bottom: 1px solid var(--map-rule-strong);
 }
 
@@ -378,14 +584,38 @@
   border-color: var(--map-broken);
 }
 
-/* ---- Source Submission specimen (§5) ---- */
+/* ---- Source Submission specimen (§5) ----
+ * A narrow, tall specimen strip: a clipped bottom-right notch (a tag/label
+ * silhouette, not a plain rectangle) and a tick-marked technical spine down
+ * the left edge — both purely decorative (aria-hidden via the pseudo
+ * elements themselves carrying no content).
+ */
 
 .specimen {
-  padding: var(--map-space-4);
+  position: relative;
+  padding: var(--map-space-4) var(--map-space-3) var(--map-space-4) var(--map-space-5);
   display: flex;
   flex-direction: column;
   gap: var(--map-space-3);
-  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 1.25rem), calc(100% - 1.25rem) 100%, 0 100%);
+}
+
+.specimen::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  background-repeat: repeat-y;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    var(--map-text-tertiary) 0px,
+    var(--map-text-tertiary) 2px,
+    transparent 2px,
+    transparent 7px
+  );
+  opacity: 0.5;
 }
 
 .specimenTier1 {
@@ -394,6 +624,10 @@
   gap: var(--map-space-2);
   border-bottom: 1px solid var(--map-rule);
   padding-bottom: var(--map-space-3);
+  font-size: 0.95em;
+}
+.specimenTier1 .technical {
+  font-weight: 600;
 }
 
 .specimenTier2 {
@@ -401,7 +635,7 @@
   flex-direction: column;
   gap: var(--map-space-1);
   opacity: 0.86;
-  font-size: 0.85em;
+  font-size: 0.8em;
 }
 
 .specimenTier3 {
@@ -419,6 +653,33 @@
   overflow: auto;
 }
 
+/* Scoped correction for the shared `JsonTree`'s nested-object rendering,
+   inside this raw-payload box only (never touching JsonTree's own module —
+   the legacy dossier also renders it). `JsonTree.module.css`'s own
+   `.list .list { grid-column: 1 / -1 }` rule can never match: a nested
+   object's <dl> lives inside the outer field's <dd>, so it is a
+   grandchild of the outer grid, not one of its direct items — only the
+   <dd> itself is an actual grid item. Left alone, that <dd> stays sized to
+   the value column's own share (roughly half of an already-narrow raw box),
+   so any object nested inside it (e.g. requestObject's `metadata`) is
+   squeezed into a fraction of a fraction, collapsing into one-character-
+   per-line wrapping regardless of how wide the raw box itself is. Widening
+   only the <dd> that directly wraps a nested list — never a plain scalar
+   field, which `:has(> dl)` excludes — to the row's full width is the real
+   fix; the nested list then lays out its own key/value columns against
+   that full width instead of a sliver of it. */
+.specimenRawBox dd:has(> dl) {
+  grid-column: 1 / -1;
+}
+
+.specimenRawHighlight {
+  background: transparent;
+  color: var(--map-verified);
+  border-bottom: 2px solid currentColor;
+  padding: 0 1px;
+  font-weight: 600;
+}
+
 /* ---- Validation checkpoint (§6) ---- */
 
 .validationStamp {
@@ -433,6 +694,16 @@
   border-radius: 50%;
   color: var(--map-verified);
   text-align: center;
+  transform: rotate(-6deg);
+  position: relative;
+}
+.validationStamp::before {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border: 1px solid var(--map-verified);
+  border-radius: 50%;
+  opacity: 0.5;
 }
 
 .validationStamp[data-outcome="invalid"],
@@ -441,18 +712,43 @@
   border-color: var(--map-broken);
   color: var(--map-broken);
 }
+.validationStamp[data-outcome="invalid"]::before,
+.validationStamp[data-outcome="incomplete"]::before,
+.validationStamp[data-outcome="unsupported"]::before {
+  border-color: var(--map-broken);
+}
 
 .validationStampLabel {
   font-family: var(--map-font-mono);
   font-size: 0.7rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  position: relative;
 }
 
 /* ---- Normalized Event field surface (§7) ---- */
 
 .fieldSurface {
+  position: relative;
   padding: var(--map-space-4);
+}
+
+.fieldSurface::before,
+.fieldSurface::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: 10px;
+  height: 10px;
+  border-top: 2px solid var(--map-text);
+}
+.fieldSurface::before {
+  left: 0;
+  border-left: 2px solid var(--map-text);
+}
+.fieldSurface::after {
+  right: 0;
+  border-right: 2px solid var(--map-text);
 }
 
 .fieldSurfaceHeading {
@@ -462,27 +758,27 @@
 }
 
 .fieldRow {
+  position: relative;
   display: grid;
-  grid-template-columns: 43% 57%;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
   gap: var(--map-space-2);
   padding: var(--map-space-1) 0;
-  border-bottom: 1px solid var(--map-rule);
+  border-bottom: 1px dotted var(--map-rule);
 }
 
 .fieldRow[data-highlighted="true"] {
   background: var(--map-verified-surface);
   outline: 1px solid var(--map-verified);
 }
+.fieldRow[data-highlighted="true"][data-highlight-kind="partial"] {
+  background: var(--map-partial-surface);
+  outline-color: var(--map-partial);
+}
 
 .fieldRowKey {
   color: var(--map-text-secondary);
   font-family: var(--map-font-mono);
   font-size: 0.8em;
-  /* Long dot-path field names (e.g. operation.requestURI) have no natural
-     break point and otherwise overflow past this 43%-width column into
-     the value column at narrower desktop widths (1024px) — matching the
-     same wrap behavior `.wrapLongValue` already gives the value column. */
-  overflow-wrap: anywhere;
 }
 
 .fieldRowValue {
@@ -495,6 +791,10 @@
 .ruleFrame {
   padding: var(--map-space-4);
   position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .ruleFrame::before,
@@ -518,6 +818,32 @@
   border-top: none;
 }
 
+.ruleFrameCornerTr,
+.ruleFrameCornerBl {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border: 1px solid var(--map-text-tertiary);
+  pointer-events: none;
+}
+.ruleFrameCornerTr {
+  top: 4px;
+  right: 4px;
+  border-left: none;
+  border-bottom: none;
+}
+.ruleFrameCornerBl {
+  bottom: 4px;
+  left: 4px;
+  border-right: none;
+  border-top: none;
+}
+
+.ruleFrameHeading {
+  flex: 0 0 auto;
+  transition: opacity 160ms ease;
+}
+
 .ruleFrameClause {
   margin: var(--map-space-1) 0;
   color: var(--map-text-secondary);
@@ -527,47 +853,34 @@
 /*
  * The characteristic bus (UX spec §8): a branching structure, never a
  * stacked list. Five columns — left pin / stem gutter / spine / stem
- * gutter / right pin — let CSS Grid's own sparse auto-placement pack
- * pins two-per-row when both sides have room and advance a row only when
- * a column is already taken; a full-width label item (`.busGroupLabel`)
+ * gutter / right pin — let CSS Grid's own sparse auto-placement pack pins
+ * two-per-row when both sides have room and advance a row only when a
+ * column is already taken; a full-width label item (`.busGroupLabel`)
  * always forces a clean row break, so subgroup boundaries never land
  * ambiguously mid-row regardless of how a real declared list splits
  * between groups. No row or column is computed in JS — `buildBusLayout`
  * only decides left/right (a plain array-index parity check) and where a
  * label belongs; the browser's own grid placement does the rest.
  */
+/* `flex: 1 1 auto` (inside `.ruleFrame`'s own flex column) lets the bus
+   claim whatever vertical space the heading above doesn't use; `align-
+   content: space-between` then spreads its rows evenly across that space
+   instead of packing them tight against the heading — the same generous,
+   filled-frame rhythm the approved screenshots show for both a two-pin and
+   a five-pin bus alike. `row-gap` is only the *minimum* spacing floor for
+   a densely-populated bus; it does not fight `space-between` when there is
+   room to spare. */
 .bus {
   position: relative;
   margin-top: var(--map-space-4);
+  flex: 1 1 auto;
+  min-height: 0;
   display: grid;
   grid-template-columns: 1fr var(--map-space-4) 2px var(--map-space-4) 1fr;
+  align-content: space-between;
   row-gap: var(--map-space-3);
 }
 
-/*
- * The spine cannot be a grid item spanning `grid-row: 1 / -1`: `.bus`
- * declares only `grid-template-columns`, so its explicit grid has zero
- * row tracks, and `-1` resolves against that explicit grid — the span
- * collapses to nothing regardless of how many rows the real pin content
- * generates (confirmed by direct measurement against a running build:
- * the spine rendered at zero height). Grid can't answer "span every row
- * there turns out to be" without knowing the row count up front, which
- * only the browser's own auto-placement determines here — by design,
- * nothing in this file computes or hardcodes a row count.
- *
- * Positioning it instead as a plain absolutely-positioned box anchored to
- * `.bus` itself (not the overall canvas, not an individual pin, not a
- * JS-measured coordinate) sidesteps the row-count problem entirely: `top:
- * 0; bottom: 0` stretches it to the bus container's own full rendered
- * height, whatever that height ends up being once every real row has laid
- * out. `left: 50%` plus a `-1px` shift centers it on the container's
- * horizontal midpoint — which, because the two `1fr` tracks and two
- * `var(--map-space-4)` gutters are symmetric, is provably the exact
- * center of the 2px spine column the grid template still reserves for it
- * (left edge at `50% - 1px`, right edge at `50% + 1px`, for any container
- * width). The stems below still meet this same column boundary — they
- * were never the broken part.
- */
 .busSpine {
   position: absolute;
   top: 0;
@@ -580,13 +893,6 @@
 }
 
 .busGroupLabel {
-  /* `position: relative` (default z-index: auto) puts this in the same
-     "positioned descendants" paint bucket as `.busSpine` above, so their
-     shared parent's DOM order — this label after the spine — decides
-     paint order between them, same as it always did when both were
-     ordinary in-flow grid items: the label's opaque background still
-     paints over the spine wherever they occupy the same row, so the
-     spine never visibly crosses this label's text. */
   position: relative;
   grid-column: 1 / -1;
   margin: 0;
@@ -612,10 +918,6 @@
   grid-column: 5;
 }
 
-/* The stem: a short local connector from the pin's inner edge to the
-   spine, sized to exactly fill its own gutter column — the same locally-
-   scoped absolute-positioning technique the canvas connectors already use
-   (Pass 7 Category A), never positioned relative to the overall canvas. */
 .pinSlotLeft::after,
 .pinSlotRight::after {
   content: "";
@@ -630,6 +932,23 @@
 }
 .pinSlotRight::after {
   right: 100%;
+}
+
+/* Invisible companions to each real pin slot, occupying the *opposite*
+   grid column in the same row. CSS Grid's own sparse auto-placement would
+   otherwise happily pack a left pin and the next right pin into one row
+   whenever both columns are free — reading as an ordinary two-up table
+   row rather than the approved bus's branching zigzag. Reserving the
+   unused column with an empty, contentless cell forces every following
+   pin onto its own row instead, with no JS row-counting required. Carries
+   no `aria-hidden` — it has no text and no role, so it is already inert to
+   assistive technology, and the bus's real spine remains the only
+   decorative element inside it. */
+.pinSlotFillerLeft {
+  grid-column: 1;
+}
+.pinSlotFillerRight {
+  grid-column: 5;
 }
 
 @media (max-width: 1023px) {
@@ -658,7 +977,7 @@
   display: block;
   width: 100%;
   text-align: left;
-  padding: var(--map-space-2) var(--map-space-3);
+  padding: var(--map-space-2);
   background: var(--map-surface-2);
   border: 1px solid var(--map-rule);
   border-left: 3px solid transparent;
@@ -676,6 +995,8 @@
 
 .pin[data-selected="true"] {
   border-color: var(--map-selected);
+  border-left-color: var(--map-selected);
+  background: var(--map-surface-3);
   position: relative;
 }
 .pin[data-selected="true"]::after {
@@ -691,7 +1012,13 @@
 .pinId {
   font-family: var(--map-font-mono);
   font-size: 0.85em;
+  font-weight: 600;
   display: block;
+  /* `break-word`, not the `wrapLongValue` utility's `anywhere` — only
+     forces a mid-word break when a single token genuinely has nowhere
+     else to go at the narrowest required breakpoint, instead of breaking
+     early/eagerly the way `anywhere` does. */
+  overflow-wrap: break-word;
 }
 
 .pinState {
@@ -701,63 +1028,142 @@
   margin-top: 2px;
 }
 
-/* ---- Detection Result convergence (§9) ---- */
+/* ---- Detection Result convergence (§9) ----
+ * A wedge that narrows left-to-right: one tally tick per declared
+ * characteristic, stacked vertically on the wide left edge (filled per
+ * satisfiedCount), a resolution divider, and the settled count on the
+ * narrow right side feeding the Alert connector.
+ */
 
 .resultWedge {
-  /* Extra top and bottom clearance (beyond the other artifacts' shared
-     space-4/space-5 padding) so the eyebrow heading and the "satisfied"
-     caption clear the clip-path's diagonal top/bottom edges instead of
-     being cut by them — the wedge is short enough that the default
-     padding alone isn't sufficient headroom at either end. */
-  padding: calc(var(--map-space-4) + 1.25rem) var(--map-space-5) calc(var(--map-space-4) + 1.25rem);
+  position: relative;
+  padding: calc(var(--map-space-4) + 1.25rem) var(--map-space-4) calc(var(--map-space-4) + 1.25rem)
+    var(--map-space-5);
   display: flex;
   flex-direction: column;
-  align-items: center;
   justify-content: center;
-  gap: var(--map-space-2);
+  gap: var(--map-space-3);
   clip-path: polygon(0 0, 100% 18%, 100% 82%, 0 100%);
-  text-align: center;
+  min-height: 9rem;
+}
+
+/* Normal document flow, not absolutely positioned — at the narrowest
+   required desktop breakpoint (1024px) this column is narrow enough that
+   the heading can wrap to more than one line, and an absolutely positioned
+   heading with a fixed reserved height would then overlap the tally row
+   beneath it. Stacking both in flow means the box simply grows taller
+   instead, which is safe here since Result sits vertically centered
+   against a much taller row anyway. */
+.resultBody {
+  display: flex;
+  align-items: center;
+  gap: var(--map-space-2);
+  min-width: 0;
 }
 
 .resultTally {
   display: flex;
-  gap: 4px;
+  flex-direction: column;
+  gap: 3px;
+  flex: 0 0 auto;
 }
 
 .resultTallyTick {
-  width: 8px;
-  height: 8px;
-  border: 1px solid var(--map-text-secondary);
+  width: 0.85rem;
+  height: 2px;
+  background: var(--map-rule-strong);
 }
 .resultTallyTick[data-filled="true"] {
-  background: var(--map-text);
-  border-color: var(--map-text);
+  background: var(--map-verified);
+}
+
+.resultDivider {
+  align-self: stretch;
+  width: 1px;
+  background: var(--map-rule-strong);
+  flex: 0 0 auto;
+}
+
+.resultInner {
+  text-align: center;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .resultCount {
   font-family: var(--map-font-mono);
-  font-size: 1.5rem;
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1;
 }
 
-/* ---- Generated Alert marker (§10) ---- */
+.resultLabel {
+  margin-top: var(--map-space-1);
+}
+
+/* ---- Generated Alert marker (§10) ----
+ * A flat left edge with a single chevron notch on the right — a terminal
+ * output chip, never a hexagon/both-sides notch.
+ */
 
 .alertMarker {
-  padding: var(--map-space-3) var(--map-space-4);
-  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%, 10px 50%);
+  padding: var(--map-space-4) var(--map-space-6) var(--map-space-4) var(--map-space-4);
+  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 50%, calc(100% - 14px) 100%, 0 100%);
+  background: #101418;
+  min-height: 9rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--map-space-2);
 }
 
 .alertMarkerPrompt {
   font-family: var(--map-font-mono);
-  color: var(--map-text-tertiary);
+  color: var(--map-verified);
 }
 
-/* ---- Provenance annotation (§12-13) ---- */
+.alertMarkerId {
+  color: var(--map-verified);
+  font-weight: 700;
+}
+
+/* ---- Provenance annotation (§12-13) ----
+ * An anchored callout, not an ordinary full-width block: constrained width,
+ * pinned to the side of the bus its selected pin sits on, with a small
+ * tail pointing back up toward the bus.
+ */
 
 .annotation {
+  position: relative;
+  width: min(22rem, 100%);
   padding: var(--map-space-3) var(--map-space-4);
   border: 1px solid var(--map-rule-strong);
   background: var(--map-surface-2);
-  margin-top: var(--map-space-2);
+  margin-top: var(--map-space-4);
+}
+
+.annotation[data-side="left"] {
+  margin-right: auto;
+}
+.annotation[data-side="right"] {
+  margin-left: auto;
+}
+
+.annotation::before {
+  content: "";
+  position: absolute;
+  top: -8px;
+  width: 0;
+  height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-bottom: 8px solid var(--map-rule-strong);
+}
+.annotation[data-side="left"]::before {
+  left: 1.25rem;
+}
+.annotation[data-side="right"]::before {
+  right: 1.25rem;
 }
 
 .annotation[data-kind="verified"] {
@@ -788,6 +1194,48 @@
 
 .annotationLine {
   margin: var(--map-space-1) 0 0;
+  font-size: 0.85em;
+}
+
+@media (max-width: 1023px) {
+  .annotation {
+    width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+  }
+  .annotation::before {
+    display: none;
+  }
+}
+
+/* ---- Broken traceability callout (canvas-level, §7 of the visual-reset
+   requirements): localizes the failure on the map itself, not only on the
+   Traceability Rail below. ---- */
+
+.brokenCallout {
+  width: min(28rem, 100%);
+  padding: var(--map-space-3) var(--map-space-4);
+  border: 1px solid var(--map-broken);
+  border-left: 3px solid var(--map-broken);
+  background: var(--map-surface-2);
+}
+
+.brokenCalloutKind {
+  font-family: var(--map-font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--map-broken);
+  margin: 0 0 var(--map-space-2);
+}
+
+.brokenCalloutBody {
+  margin: 0;
+  font-size: 0.85em;
+  color: var(--map-text-secondary);
+}
+.brokenCalloutBody code {
+  color: var(--map-text);
 }
 
 /* ---- Traceability rail (§11) ---- */

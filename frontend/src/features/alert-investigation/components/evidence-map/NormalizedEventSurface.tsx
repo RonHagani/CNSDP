@@ -20,9 +20,20 @@ import styles from "./evidence-map.module.css";
 export function NormalizedEventSurface({
   inspection,
   highlightedPath,
+  highlightKind,
+  registerHighlightedRowRef,
 }: {
   inspection: NormalizedEventInspection;
   highlightedPath?: string;
+  /** The selected characteristic's provenance kind, when it carries one
+   *  (Verified/Partial only — Unavailable and declared-only selections
+   *  have no field to highlight at all) — distinguishes the teal/amber
+   *  row treatment without introducing a second highlighting mechanism. */
+  highlightKind?: "verified" | "partial";
+  /** Attaches the highlighted row's own DOM node so the selection trace
+   *  overlay can measure where to route its line — only ever invoked for
+   *  the one row matching `highlightedPath`. */
+  registerHighlightedRowRef?: (el: HTMLDivElement | null) => void;
 }) {
   if (!inspection.available) {
     return (
@@ -84,12 +95,25 @@ export function NormalizedEventSurface({
       <h2 id="normalized-heading" className={`${styles.eyebrow} ${styles.fieldSurfaceHeading}`}>
         Normalized event
       </h2>
-      {rows.map(([key, value]) => (
-        <div key={key} className={styles.fieldRow} data-highlighted={key === highlightedPath || undefined}>
-          <span className={styles.fieldRowKey}>{key}</span>
-          <span className={`${styles.fieldRowValue} ${styles.wrapLongValue}`}>{value}</span>
-        </div>
-      ))}
+      {rows.map(([key, value]) => {
+        const isHighlighted = key === highlightedPath;
+        return (
+          <div
+            key={key}
+            ref={isHighlighted ? registerHighlightedRowRef : undefined}
+            className={styles.fieldRow}
+            data-highlighted={isHighlighted || undefined}
+            data-highlight-kind={isHighlighted ? highlightKind : undefined}
+          >
+            <span className={`${styles.fieldRowKey} ${styles.truncate}`} title={key}>
+              {key}
+            </span>
+            <span className={`${styles.fieldRowValue} ${styles.truncate}`} title={value}>
+              {value}
+            </span>
+          </div>
+        );
+      })}
     </section>
   );
 }

@@ -21,12 +21,22 @@ import styles from "./evidence-map.module.css";
  * spatial requirement) — the leader-line anchoring mechanism is deferred
  * to a later refinement pass.
  */
-export function ProvenanceAnnotation({ row }: { row: CharacteristicConcordanceRow }) {
+export function ProvenanceAnnotation({
+  row,
+  side = "left",
+}: {
+  row: CharacteristicConcordanceRow;
+  /** Which side of the characteristic bus the selected pin branches to
+   *  (`characteristicBusLayout.ts`'s own left/right assignment) — anchors
+   *  this callout near that pin instead of spanning the full frame width. */
+  side?: "left" | "right";
+}) {
   if (!row.satisfied) {
     return (
       <div
         className={styles.annotation}
         data-kind="declared-only"
+        data-side={side}
         role="group"
         aria-label="Provenance record"
       >
@@ -42,7 +52,13 @@ export function ProvenanceAnnotation({ row }: { row: CharacteristicConcordanceRo
   const { provenance } = row;
 
   return (
-    <div className={styles.annotation} data-kind={provenance.kind} role="group" aria-label="Provenance record">
+    <div
+      className={styles.annotation}
+      data-kind={provenance.kind}
+      data-side={side}
+      role="group"
+      aria-label="Provenance record"
+    >
       <p className={styles.annotationKind}>{kindLabel(provenance.kind)}</p>
       <p className={`${styles.annotationLine} ${styles.wrapLongValue}`}>{provenance.condition}</p>
 

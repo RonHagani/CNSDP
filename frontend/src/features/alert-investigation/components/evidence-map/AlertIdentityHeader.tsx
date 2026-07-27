@@ -26,7 +26,7 @@ export function AlertIdentityHeader({
   docketHeader: DocketHeaderViewModel;
   finding: FindingViewModel;
 }) {
-  const { alertId, matchedDefinitionName, pinnedRevision, traceabilityIntact } = docketHeader;
+  const { alertId, matchedDefinitionName, pinnedRevision, traceabilityIntact, failedLink } = docketHeader;
 
   return (
     <header className={`${styles.artifactShape} ${styles.header}`} aria-label="Alert identity">
@@ -56,6 +56,9 @@ export function AlertIdentityHeader({
           data-state={traceabilityIntact ? "intact" : "broken"}
         >
           {traceabilityIntact ? "Traceability intact" : "Traceability broken"}
+          {!traceabilityIntact && failedLink && (
+            <span className={styles.technical}>&nbsp;· {failedLink}</span>
+          )}
         </span>
       </div>
     </header>

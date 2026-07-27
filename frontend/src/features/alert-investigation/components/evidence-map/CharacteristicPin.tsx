@@ -21,22 +21,36 @@ export function CharacteristicPin({
   row,
   selected,
   onSelect,
+  dimmed = false,
+  registerRef,
 }: {
   row: CharacteristicConcordanceRow;
   selected: boolean;
   onSelect: (id: string) => void;
+  /** True while a *different* characteristic is selected (UX requirement:
+   *  keep the selected pin visually dominant while every other pin
+   *  recedes). Never true for the selected pin itself. */
+  dimmed?: boolean;
+  /** Attaches this pin's own DOM node. `DetectionDefinitionFrame` invokes
+   *  this for every rendered pin, not just the selected one — the
+   *  resulting nodes back two independent overlays: `BusConvergenceOverlay`
+   *  measures all of them at once for its permanent pin-to-Result rays,
+   *  while `SelectionTraceOverlay` reads back only whichever one is
+   *  currently selected to route its row-to-pin trace. */
+  registerRef?: (el: HTMLButtonElement | null) => void;
 }) {
   return (
     <button
       type="button"
-      className={styles.pin}
+      ref={registerRef}
+      className={`${styles.pin} ${dimmed ? styles.dim : ""}`}
       data-satisfied={row.satisfied}
       data-provenance={row.satisfied ? row.provenance.kind : undefined}
       data-selected={selected || undefined}
       aria-pressed={selected}
       onClick={() => onSelect(row.id)}
     >
-      <span className={`${styles.pinId} ${styles.wrapLongValue}`}>{row.id}</span>
+      <span className={styles.pinId}>{row.id}</span>
       <span className={styles.pinState}>
         {row.satisfied ? provenanceLabel(row.provenance.kind) : "Declared, not satisfied"}
       </span>

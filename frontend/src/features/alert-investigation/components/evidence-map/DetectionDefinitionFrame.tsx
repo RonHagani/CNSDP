@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import type { DetectionDefinitionInspection } from "@/features/alert-investigation/lib/artifactInspection";
 import { isCharacteristicRow, type EvidenceConcordance } from "@/features/alert-investigation/lib/concordance";
 import { buildBusLayout } from "./characteristicBusLayout";
@@ -39,11 +40,17 @@ export function DetectionDefinitionFrame({
   concordance,
   selectedConditionKey,
   onSelectCondition,
+  registerPinRef,
 }: {
   detectionDefinition: DetectionDefinitionInspection;
   concordance: EvidenceConcordance;
   selectedConditionKey: string | null;
   onSelectCondition: (id: string) => void;
+  /** Attaches every rendered pin's own DOM node, keyed by its row id — the
+   *  selection trace overlay reads back the currently-selected one, and
+   *  the bus convergence overlay measures every pin at once to route its
+   *  Definition -> Result rays. */
+  registerPinRef?: (id: string, el: HTMLButtonElement | null) => void;
 }) {
   if (!detectionDefinition.available) {
     return (
@@ -60,25 +67,31 @@ export function DetectionDefinitionFrame({
   const { operation, requires_outcome: requiresOutcome } = definition.conditions;
   const target = [operation.resource, operation.subresource].filter(Boolean).join("/");
   const characteristicRows = concordance.available ? concordance.rows.filter(isCharacteristicRow) : [];
+  const hasSelection = selectedConditionKey !== null;
 
   return (
     <section className={styles.ruleFrame} aria-labelledby="definition-heading">
-      <h2 id="definition-heading" className={styles.eyebrow}>
-        Detection definition
-      </h2>
-      <p>
-        <strong>{definition.name}</strong>
-      </p>
-      <p className={styles.ruleFrameClause}>{definition.description}</p>
-      <p className={`${styles.ruleFrameClause} ${styles.technical}`}>
-        operation {operation.verb ? `${operation.verb} ` : ""}
-        {target || "(any resource)"}
-      </p>
-      {requiresOutcome && (
-        <p className={`${styles.ruleFrameClause} ${styles.technical}`}>
-          requires_outcome: {requiresOutcome}
+      <span className={styles.ruleFrameCornerTr} aria-hidden="true" />
+      <span className={styles.ruleFrameCornerBl} aria-hidden="true" />
+
+      <div className={`${styles.ruleFrameHeading} ${hasSelection ? styles.dim : ""}`}>
+        <h2 id="definition-heading" className={styles.eyebrow}>
+          Detection definition
+        </h2>
+        <p>
+          <strong>{definition.name}</strong>
         </p>
-      )}
+        <p className={styles.ruleFrameClause}>{definition.description}</p>
+        <p className={`${styles.ruleFrameClause} ${styles.technical}`}>
+          operation {operation.verb ? `${operation.verb} ` : ""}
+          {target || "(any resource)"}
+        </p>
+        {requiresOutcome && (
+          <p className={`${styles.ruleFrameClause} ${styles.technical}`}>
+            requires_outcome: {requiresOutcome}
+          </p>
+        )}
+      </div>
 
       {characteristicRows.length > 0 && (
         <div className={styles.bus} role="group" aria-label="Declared characteristics">
@@ -89,16 +102,20 @@ export function DetectionDefinitionFrame({
                 {item.group}
               </p>
             ) : (
-              <div
-                key={item.key}
-                className={item.side === "left" ? styles.pinSlotLeft : styles.pinSlotRight}
-              >
-                <CharacteristicPin
-                  row={item.row}
-                  selected={item.row.id === selectedConditionKey}
-                  onSelect={onSelectCondition}
+              <Fragment key={item.key}>
+                <div className={item.side === "left" ? styles.pinSlotLeft : styles.pinSlotRight}>
+                  <CharacteristicPin
+                    row={item.row}
+                    selected={item.row.id === selectedConditionKey}
+                    onSelect={onSelectCondition}
+                    dimmed={hasSelection && item.row.id !== selectedConditionKey}
+                    registerRef={(el) => registerPinRef?.(item.row.id, el)}
+                  />
+                </div>
+                <div
+                  className={item.side === "left" ? styles.pinSlotFillerRight : styles.pinSlotFillerLeft}
                 />
-              </div>
+              </Fragment>
             ),
           )}
         </div>

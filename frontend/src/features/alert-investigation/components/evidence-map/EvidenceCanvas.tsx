@@ -1,53 +1,33 @@
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import styles from "./evidence-map.module.css";
 
+export type SourceNormalizedWireState = "default" | "verified" | "partial" | "broken";
+
 /**
- * The spatial map container (implementation plan §5; connector routing and
- * density added by Pass 7 Category A): owns layout only. Each of the six
- * artifacts and the rail is an explicit, named slot prop — not a generic
- * `children` array — so the causal-map's data relationships stay visible
- * in the component's own type signature, not just in CSS class names (the
- * "Avoid recreating the prototype as hardcoded absolute-positioned HTML"
- * requirement: geometry here is CSS Grid with named areas, never inline
- * absolute positioning or JS-measured coordinates).
+ * The spatial map container (Track B §5; Track C — Dark Evidence Map
+ * Visual Fidelity Reset — restores the approved canvas composition). Owns
+ * layout only. Each of the six artifacts and the rail is an explicit,
+ * named slot prop — not a generic `children` array — so the causal-map's
+ * data relationships stay visible in the component's own type signature,
+ * not just in CSS class names. Geometry is CSS Grid with named areas,
+ * never inline absolute positioning or JS-measured coordinates.
  *
- * Renders the five artifact-level connector relationships UX spec §3/§18
- * require — Source Submission <-> Validation Outcome (a short stub, §6),
- * Source Submission -> Normalized Event, Normalized Event -> Detection
- * Definition, Detection Definition -> Detection Result, Detection Result
- * -> Generated Alert — as dedicated, non-overlapping cells (see
- * evidence-map.module.css's "Layout shell"). Each connector is purely
- * decorative (`aria-hidden`, no interactive role): it carries no
- * selection, provenance, or traceability state. The Traceability Rail
- * remains the sole, independent mechanism for traceability state (UX spec
- * §14) — unchanged here. A future selected-row-to-pin trace (UX spec §12
- * step 2) is a selection-triggered interaction overlay, not a sixth
- * connector relationship, and is not implemented by this component.
+ * Source, Normalized, and Definition sit in the row as three content-height
+ * (top-aligned) columns; Result and Alert are real siblings of Definition
+ * on the same row, vertically centered — never nested below Definition —
+ * so the canvas reads as Source | Normalized | Definition | Result | Alert
+ * left to right, matching the approved screenshots, with Result/Alert
+ * floating at the row's vertical center rather than forcing a tall empty
+ * band beneath a short Definition or a short Source.
  *
- * Definition, its connector to Result, and the Result/Alert row are
- * nested together as one flex column (`canvasRightStack`) rather than
- * three independent grid cells sharing Source's row-track: Source's own
- * content (an unbounded raw-payload specimen) can be far taller than
- * Definition/Result/Alert combined, and letting that height force Result/
- * Alert's row to grow was exactly the "excessive empty band" the
- * implementation plan's Pass 7 finding identified. Nesting them means
- * their spacing — including the Definition -> Result connector — stays
- * relative to their own real height, never to Source's.
- *
- * The Source -> Normalized connector's vertical anchor accounts for the
- * Validation stamp/stub sitting above Source's own specimen (see
- * evidence-map.module.css's `.wireSourceNormalized.wireHorizontal`) —
- * without it, the connector would land beside Validation instead of
- * Source, since Normalized has no equivalent leading block above it.
- * `data-testid="source-validation-group"` on Source's own wrapper below
- * exists so a test can assert Validation stays nested inside it, not
- * promoted to an independent top-level sibling.
- *
- * Characteristic-bus branching, selection dimming, anchored provenance
- * annotation, and raw-substring marking (implementation plan §9 Pass 7
- * categories B-D) are not yet implemented — out of scope for this slice.
+ * `overlay` is an optional absolutely-positioned layer — the bus
+ * convergence rays (permanent) and the selection trace (selection-driven),
+ * both measured SVGs painted above every artifact but below nothing
+ * interactive — each is `aria-hidden`/`pointer-events: none` at its own
+ * definition site, not here.
  */
 export function EvidenceCanvas({
+  canvasRef,
   header,
   source,
   validation,
@@ -56,7 +36,13 @@ export function EvidenceCanvas({
   result,
   alert,
   rail,
+  brokenCallout,
+  overlay,
+  dimmed = false,
+  sourceNormalizedState = "default",
+  resultAlertBroken = false,
 }: {
+  canvasRef?: Ref<HTMLDivElement>;
   header: ReactNode;
   source: ReactNode;
   validation: ReactNode;
@@ -65,12 +51,25 @@ export function EvidenceCanvas({
   result: ReactNode;
   alert: ReactNode;
   rail: ReactNode;
+  brokenCallout?: ReactNode;
+  overlay?: ReactNode;
+  dimmed?: boolean;
+  sourceNormalizedState?: SourceNormalizedWireState;
+  /** True only when the response's real `failedLink` is `"alert"` — the
+   *  Detection Result -> Generated Alert segment localizes the break on
+   *  the canvas itself, matching whichever segment the Traceability Rail
+   *  also marks broken. */
+  resultAlertBroken?: boolean;
 }) {
   return (
-    <div className={styles.canvas}>
+    <div className={styles.canvas} ref={canvasRef}>
       <div className={styles.canvasHeader}>{header}</div>
 
-      <div className={styles.canvasSource} data-testid="source-validation-group">
+      <div
+        className={styles.canvasSource}
+        data-testid="source-validation-group"
+        data-dim={dimmed || undefined}
+      >
         <div className={styles.validationGroup}>
           {validation}
           <div className={styles.wireStub} data-wire="source-validation-stub" aria-hidden="true" />
@@ -81,32 +80,67 @@ export function EvidenceCanvas({
       <div
         className={`${styles.wireSourceNormalized} ${styles.wireHorizontal}`}
         data-wire="source-normalized"
+        data-state={sourceNormalizedState !== "default" ? sourceNormalizedState : undefined}
         aria-hidden="true"
-      />
+      >
+        {sourceNormalizedState === "partial" && (
+          <span className={styles.wireGapGlyph} title="Gap — source location not structurally identified">
+            ⋯
+          </span>
+        )}
+        {sourceNormalizedState === "broken" && (
+          <span className={styles.wireBreakGlyph} title="Broken link">
+            ✕
+          </span>
+        )}
+      </div>
 
       <div className={styles.canvasNormalized}>{normalized}</div>
 
       <div
-        className={`${styles.wireNormalizedDefinition} ${styles.wireHorizontal}`}
+        className={`${styles.wireNormalizedDefinition} ${styles.wireHorizontal} ${dimmed ? styles.dim : ""}`}
         data-wire="normalized-definition"
         aria-hidden="true"
       />
 
-      <div className={styles.canvasRightStack}>
-        <div className={styles.canvasDefinition}>{definition}</div>
+      <div className={styles.canvasDefinition}>{definition}</div>
 
-        <div className={styles.wireDefinitionResult} data-wire="definition-result" aria-hidden="true" />
+      {/* No `.wireHorizontal` line here — this segment is the one relationship
+          the bus convergence overlay (`overlay` prop) draws instead, as a ray
+          from every declared pin rather than one flat gutter line (matching
+          the approved screenshots, which show the same). The div itself stays,
+          purely to reserve the grid gutter's spacing and satisfy the "each
+          connector is a real DOM neighbor of its two artifacts" contract. */}
+      <div className={styles.wireDefinitionResult} data-wire="definition-result" aria-hidden="true" />
 
-        <div className={styles.resultAlertRow}>
-          <div className={styles.canvasResult}>{result}</div>
-
-          <div className={styles.wireResultAlert} data-wire="result-alert" aria-hidden="true" />
-
-          <div className={styles.canvasAlert}>{alert}</div>
-        </div>
+      <div className={styles.canvasResult} data-dim={dimmed || undefined}>
+        {result}
       </div>
 
+      <div
+        className={`${styles.wireResultAlert} ${styles.wireHorizontal} ${
+          dimmed && !resultAlertBroken ? styles.dim : ""
+        }`}
+        data-wire="result-alert"
+        data-state={resultAlertBroken ? "broken" : undefined}
+        aria-hidden="true"
+      >
+        {resultAlertBroken && (
+          <span className={styles.wireBreakGlyph} title="Broken link">
+            ✕
+          </span>
+        )}
+      </div>
+
+      <div className={styles.canvasAlert} data-dim={dimmed || undefined}>
+        {alert}
+      </div>
+
+      {brokenCallout && <div className={styles.canvasBrokenCallout}>{brokenCallout}</div>}
+
       <div className={styles.canvasRail}>{rail}</div>
+
+      {overlay}
     </div>
   );
 }

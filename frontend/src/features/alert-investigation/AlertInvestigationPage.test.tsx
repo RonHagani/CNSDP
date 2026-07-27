@@ -90,14 +90,20 @@ describe("AlertInvestigationPage — required route-level states", () => {
     renderAt("/alerts/3");
     await screen.findAllByText(/Alert #3\b/);
     await screen.findByText("Traceability broken");
-    await waitFor(() => expect(screen.getByText(/recorded integrity digest/)).toBeInTheDocument());
+    // Named on both the header chip / canvas callout and the Traceability
+    // Rail explanation (UX requirement: the canvas itself localizes the
+    // break, not only the rail below it) — so more than one match is
+    // correct here, not a duplication bug.
+    await waitFor(() => expect(screen.getAllByText(/recorded integrity digest/).length).toBeGreaterThan(0));
+    expect(screen.getAllByText("raw_event_sha256").length).toBeGreaterThan(0);
   });
 
   it("renders broken traceability (source_key) with the specific failed link named", async () => {
     renderAt("/alerts/6");
     await screen.findAllByText(/Alert #6\b/);
     await screen.findByText("Traceability broken");
-    await waitFor(() => expect(screen.getByText(/source identity/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByText(/source identity/).length).toBeGreaterThan(0));
+    expect(screen.getAllByText("source_key").length).toBeGreaterThan(0);
   });
 
   it("renders a not-found state for an unknown alert id", async () => {

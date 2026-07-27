@@ -202,13 +202,18 @@ describe("InvestigationMap — traceability", () => {
   it("broken (raw_event_sha256): renders the specific failed link and its localized segment", () => {
     render(<InvestigationMap data={fixtureBrokenTraceability} />);
     expect(screen.getByTestId("rail-segment-0")).toHaveAttribute("data-broken", "true");
-    expect(screen.getByText(/recorded integrity digest/)).toBeInTheDocument();
+    // The explanation now appears twice, by design (UX requirement: the
+    // canvas itself localizes the break, not only the Traceability Rail
+    // below it) — both occurrences carry the same real explanation text.
+    expect(screen.getAllByText(/recorded integrity digest/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("raw_event_sha256").length).toBeGreaterThan(0);
   });
 
   it("broken (source_key): renders the specific failed link localized to the same segment as raw_event_sha256", () => {
     render(<InvestigationMap data={fixtureBrokenTraceabilitySourceKey} />);
     expect(screen.getByTestId("rail-segment-0")).toHaveAttribute("data-broken", "true");
-    expect(screen.getByText(/source identity/)).toBeInTheDocument();
+    expect(screen.getAllByText(/source identity/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("source_key").length).toBeGreaterThan(0);
   });
 });
 

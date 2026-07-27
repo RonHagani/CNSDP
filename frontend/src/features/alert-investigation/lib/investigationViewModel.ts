@@ -1,4 +1,4 @@
-import type { AlertInvestigationResponse, EvidenceArtifactId } from "@/types/contract";
+import type { AlertInvestigationResponse, EvidenceArtifactId, FailedLink } from "@/types/contract";
 import { buildArtifactInspection, type ArtifactInspectionModel } from "./artifactInspection";
 import { buildEvidenceConcordance, type EvidenceConcordance } from "./concordance";
 import {
@@ -31,6 +31,10 @@ export interface DocketHeaderViewModel {
   matchedDefinitionName?: string;
   pinnedRevision?: string;
   traceabilityIntact: boolean;
+  /** The specific broken link (UX requirement: the canvas must name the
+   *  real failed link, not just say "broken") — absent whenever
+   *  `traceabilityIntact` is true. */
+  failedLink?: FailedLink;
 }
 
 export interface InvestigationViewModel {
@@ -54,6 +58,7 @@ function buildDocketHeader(
     matchedDefinitionName: finding.matchedDefinitionName,
     pinnedRevision: data.detectionDefinition.available ? data.detectionDefinition.revision : undefined,
     traceabilityIntact: data.traceability.intact,
+    failedLink: data.traceability.intact ? undefined : data.traceability.failedLink,
   };
 }
 

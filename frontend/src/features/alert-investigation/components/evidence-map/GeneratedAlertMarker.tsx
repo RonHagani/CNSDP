@@ -39,7 +39,7 @@ export function GeneratedAlertMarker({
         <span className={styles.alertMarkerPrompt} aria-hidden="true">
           {">"}
         </span>{" "}
-        Alert #{alertId}
+        <span className={styles.alertMarkerId}>Alert #{alertId}</span>
       </p>
       <p className={`${styles.technical} ${styles.wrapLongValue}`}>
         {summary.subject.username} {summary.operation.verb} {target}

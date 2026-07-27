@@ -19,6 +19,13 @@ export type ProvenanceState =
       kind: "verified";
       rawPath: string;
       rawValue: string;
+      /** The exact substring of `rawValue` this fact was parsed from, when
+       *  the transformation rule's own documented locator (a named query
+       *  parameter — see `CHARACTERISTIC_QUERY_PARAM` below) is present
+       *  verbatim in `rawValue`. Absent, never guessed, when it cannot be
+       *  located this way — the canvas must never mark a substring it
+       *  cannot honestly point to. */
+      rawHighlight?: string;
       behavior: string;
       normalizedPath: string;
       normalizedValue: string;
@@ -60,6 +67,29 @@ const CHARACTERISTIC_NORMALIZED_PATH: Record<string, string> = {
   host_path_volume: "podCreation.hostPathVolume",
   role_ref_cluster_admin: "clusterRoleBinding.roleRef.name",
 };
+
+/**
+ * The literal query-parameter name each requestURI-derived characteristic
+ * was parsed from (internal/normalization/normalization.go
+ * `execCharacteristics`, restated verbatim by the ADR-0003 Q1 reference
+ * already carried in `buildLineageLinks`' own label text above). Exists so
+ * the canvas can mark the exact substring of the raw requestURI a Verified
+ * fact came from — never a guess: a characteristic absent from this table
+ * (every current or future requestObject-derived one) simply never gets a
+ * `rawHighlight`, and one present here only gets one when that literal
+ * `param=value` text is actually found in the raw string.
+ */
+const CHARACTERISTIC_QUERY_PARAM: Record<string, string> = {
+  stdin_streaming: "stdin",
+  tty_allocation: "tty",
+};
+
+function findRawHighlight(rawValue: string, characteristicId: string, normalizedValue: string): string | undefined {
+  const param = CHARACTERISTIC_QUERY_PARAM[characteristicId];
+  if (!param) return undefined;
+  const marker = `${param}=${normalizedValue}`;
+  return rawValue.includes(marker) ? marker : undefined;
+}
 
 function readPath(obj: unknown, path: string): unknown {
   return path.split(".").reduce<unknown>((acc, key) => {
@@ -112,10 +142,12 @@ export function deriveProvenanceState(
     const links = buildLineageLinks(data.normalizedEvent.event, data.sourceEvent.rawEvent);
     const link = links.find((l) => l.normalizedPath === normalizedPath);
     if (link) {
+      const rawValue = formatValue(readPath(data.sourceEvent.rawEvent, link.rawPath));
       return {
         kind: "verified",
         rawPath: link.rawPath,
-        rawValue: formatValue(readPath(data.sourceEvent.rawEvent, link.rawPath)),
+        rawValue,
+        rawHighlight: findRawHighlight(rawValue, characteristic.id, normalizedValue),
         behavior: link.label,
         normalizedPath,
         normalizedValue,
