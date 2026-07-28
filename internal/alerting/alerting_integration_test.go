@@ -273,6 +273,58 @@ func TestAdvance_ConflictingExistingAlert_ReturnsErrorAndLeavesEvaluated(t *test
 	}
 }
 
+// --- List (alert inventory): the read path internal/evidence.ComposeList
+// uses to build the alert-inventory list, deliberately separate from Get's
+// single-alert-by-detection-result lookup.
+
+func TestList_EmptyRepository_ReturnsEmptySlice(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+
+	got, err := List(context.Background(), db)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("len(got) = %d, want 0", len(got))
+	}
+}
+
+// TestList_MultipleAlerts_ReturnsAllOrderedByIDAscending seeds two
+// separate alerted submissions (each seedEvaluated call produces its own
+// submission and normalized_events row, so both evaluate and alert
+// independently even though they carry the same event content) and proves
+// List returns both, in ascending id order -- a stable, deterministic
+// presentation order, not insertion-order-by-accident.
+func TestList_MultipleAlerts_ReturnsAllOrderedByIDAscending(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	if err := detection.Load(context.Background(), db); err != nil {
+		t.Fatalf("detection.Load: %v", err)
+	}
+	sub1 := seedEvaluated(t, db, validEventJSON)
+	if err := Advance(context.Background(), db, sub1); err != nil {
+		t.Fatalf("Advance sub1: %v", err)
+	}
+
+	sub2 := seedEvaluated(t, db, validEventJSON)
+	if err := Advance(context.Background(), db, sub2); err != nil {
+		t.Fatalf("Advance sub2: %v", err)
+	}
+
+	got, err := List(context.Background(), db)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len(got) = %d, want 2", len(got))
+	}
+	if got[0].ID >= got[1].ID {
+		t.Errorf("alert ids = [%d, %d], want strictly ascending", got[0].ID, got[1].ID)
+	}
+	if got[0].Summary.MatchReason.Scenario != "scenario-1" || got[1].Summary.MatchReason.Scenario != "scenario-1" {
+		t.Errorf("expected both alerts to carry scenario-1's summary, got %+v and %+v", got[0].Summary, got[1].Summary)
+	}
+}
+
 // TestAdvance_LaterDefinitionRevision_DoesNotAlterExistingAlert is the
 // AC-014 revision-pinning proof: after an alert has been generated, a
 // newer revision is loaded for the same scenario -- via an additional

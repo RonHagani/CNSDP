@@ -1,0 +1,115 @@
+/*
+ * Restrained production application shell — CNSDP's own app-chrome token
+ * set (styles/tokens.css, --cnsdp-*), the same set StatusBadge,
+ * RootErrorBoundary, and the global body background already use. This is
+ * deliberately not the Dark Evidence Map's own `--map-*` token set
+ * (evidence-map.module.css): the shell surrounds the product, the map
+ * stays a self-contained canvas the shell never restyles.
+ */
+
+.shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--cnsdp-surface-0);
+  color: var(--cnsdp-text-primary);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--cnsdp-space-6);
+  padding: var(--cnsdp-space-3) var(--cnsdp-space-5);
+  border-bottom: 1px solid var(--cnsdp-border-default);
+  background: var(--cnsdp-surface-1);
+}
+
+.identity {
+  display: flex;
+  align-items: baseline;
+  gap: var(--cnsdp-space-2);
+  white-space: nowrap;
+}
+
+.wordmark {
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-sm);
+  font-weight: 700;
+  letter-spacing: var(--cnsdp-tracking-label);
+  color: var(--cnsdp-text-primary);
+}
+
+.wordmarkSub {
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-2xs);
+  color: var(--cnsdp-text-tertiary);
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: var(--cnsdp-space-1);
+  flex: 1;
+}
+
+.navLink,
+.navDisabled {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cnsdp-space-1);
+  padding: var(--cnsdp-space-2) var(--cnsdp-space-3);
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-xs);
+  letter-spacing: var(--cnsdp-tracking-label);
+  text-transform: uppercase;
+  text-decoration: none;
+  border-radius: var(--cnsdp-radius-sm);
+  border: 1px solid transparent;
+}
+
+.navLink {
+  color: var(--cnsdp-text-secondary);
+}
+
+.navLink:hover {
+  color: var(--cnsdp-text-primary);
+  background: var(--cnsdp-surface-2);
+}
+
+.navLink[aria-current="page"] {
+  color: var(--cnsdp-signal);
+  border-color: var(--cnsdp-signal-dim);
+  background: var(--cnsdp-signal-surface);
+}
+
+.navDisabled {
+  color: var(--cnsdp-text-disabled);
+  cursor: default;
+}
+
+.navDisabledTag {
+  font-size: var(--cnsdp-text-2xs);
+  color: var(--cnsdp-text-disabled);
+  border: 1px solid var(--cnsdp-border-subtle);
+  border-radius: var(--cnsdp-radius-pill);
+  padding: 0 var(--cnsdp-space-1);
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 768px) {
+  .header {
+    flex-wrap: wrap;
+    row-gap: var(--cnsdp-space-2);
+  }
+
+  .wordmarkSub {
+    display: none;
+  }
+}

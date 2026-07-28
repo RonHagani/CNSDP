@@ -1,0 +1,289 @@
+.wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.toolbar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--cnsdp-space-4);
+  padding: var(--cnsdp-space-5) var(--cnsdp-space-5) var(--cnsdp-space-3);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--cnsdp-text-lg);
+  font-weight: 600;
+}
+
+.toolbarMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--cnsdp-space-3);
+}
+
+.count {
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-xs);
+  color: var(--cnsdp-text-tertiary);
+  letter-spacing: var(--cnsdp-tracking-label);
+  text-transform: uppercase;
+}
+
+/* Shown only while useHorizontalOverflow measures real overflow on the
+   table container — never rendered at all otherwise (React conditional
+   render, not a CSS visibility toggle), so it can never linger as a
+   permanent instruction once every column already fits. */
+.scrollHint {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cnsdp-space-1);
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-2xs);
+  letter-spacing: var(--cnsdp-tracking-label);
+  text-transform: uppercase;
+  color: var(--cnsdp-text-tertiary);
+  border: 1px solid var(--cnsdp-border-subtle);
+  border-radius: var(--cnsdp-radius-pill);
+  padding: 0.15rem var(--cnsdp-space-2);
+}
+
+.tableScroll {
+  flex: 1;
+  overflow-x: auto;
+  padding: 0 var(--cnsdp-space-5) var(--cnsdp-space-5);
+}
+
+/* WAI-ARIA scrollable-table pattern: when the table doesn't fit, the
+   scroll container itself becomes a keyboard-reachable region so arrow
+   keys can scroll it directly, not just the mouse/trackpad. */
+.tableScroll[tabindex="0"]:focus-visible {
+  outline: none;
+  box-shadow: var(--cnsdp-focus-ring);
+  border-radius: var(--cnsdp-radius-sm);
+}
+
+/* `border-collapse: separate` (not `collapse`) is required for the
+   sticky Alert-id column below to paint correctly: collapsed borders are
+   drawn by the table itself in a shared, adjacent-cell-merged model whose
+   interaction with `position: sticky` is inconsistently defined across
+   browsers — the concrete, observed symptom was Detection/Operation text
+   from the scrolling columns visibly bleeding through and to the left of
+   the sticky Alert cell once the table was scrolled. `border-spacing: 0`
+   keeps cells flush (no gap) the way `collapse` did. Every border in this
+   file is now a `box-shadow` (never a `border`), which paints within a
+   cell's own box in both models and never risks re-merging with a
+   neighbor. */
+.table {
+  width: 100%;
+  min-width: 920px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--cnsdp-text-sm);
+}
+
+.table thead th {
+  text-align: left;
+  padding: var(--cnsdp-space-2) var(--cnsdp-space-3);
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-2xs);
+  letter-spacing: var(--cnsdp-tracking-label);
+  text-transform: uppercase;
+  color: var(--cnsdp-text-tertiary);
+  box-shadow: inset 0 -1px 0 0 var(--cnsdp-border-default);
+  white-space: nowrap;
+  background: var(--cnsdp-surface-0);
+}
+
+/* Rows carry an explicit (not merely inherited-through-transparency)
+   background, so the sticky Alert-id column — which reads `background:
+   inherit` — stays opaque and in sync with hover/focus state as the rest
+   of the row scrolls underneath it. The row's own bottom separator lives
+   on each `td` (below), not here: `<tr>` does not reliably paint a
+   border of its own under `border-collapse: separate` in any browser. */
+.row {
+  position: relative;
+  background: var(--cnsdp-surface-0);
+}
+
+.row:hover {
+  background: var(--cnsdp-surface-1);
+}
+
+.row:focus-within {
+  background: var(--cnsdp-surface-2);
+  outline: 2px solid var(--cnsdp-signal);
+  outline-offset: -2px;
+}
+
+.table tbody td {
+  padding: var(--cnsdp-space-3);
+  vertical-align: middle;
+  color: var(--cnsdp-text-secondary);
+  box-shadow: inset 0 -1px 0 0 var(--cnsdp-border-subtle);
+}
+
+/* Sticky Alert-identity column: stays pinned to the left edge while the
+   remaining columns scroll underneath it, so the row's own identity is
+   never lost off-screen. Detection deliberately stays non-sticky —
+   detection names run long enough (up to ~40 characters even truncated)
+   that pinning it too would eat most of the viewport at 768px, leaving
+   almost nothing for the scrollable region it's supposed to coexist
+   with. `background: inherit` plus the shared `th`/`.row` backgrounds
+   above keep the pinned cell opaque and visually coherent with hover/
+   focus/selected row state — never a flat color that goes stale when the
+   row underneath it changes. The two `box-shadow` layers combine the
+   bottom rule every cell already carries with this cell's own right-edge
+   separator, so nothing needs a plain CSS `border` (see the `.table`
+   comment above for why that matters here specifically). */
+.cellAlertId {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: inherit;
+  box-shadow:
+    inset 0 -1px 0 0 var(--cnsdp-border-subtle),
+    inset -1px 0 0 0 var(--cnsdp-border-default);
+  font-family: var(--cnsdp-font-mono);
+  color: var(--cnsdp-text-primary);
+  white-space: nowrap;
+}
+
+.table thead th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  box-shadow:
+    inset 0 -1px 0 0 var(--cnsdp-border-default),
+    inset -1px 0 0 0 var(--cnsdp-border-default);
+}
+
+.cellDetection {
+  color: var(--cnsdp-text-primary);
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cellTechnical {
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-xs);
+  max-width: 20ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cellRequestTime {
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-xs);
+  color: var(--cnsdp-text-tertiary);
+  white-space: nowrap;
+  min-width: 11rem;
+}
+
+.cellTraceability {
+  min-width: 8rem;
+}
+
+/* The stretched-link pattern: one real anchor per row, covering the whole
+   row's clickable area via an absolutely positioned pseudo-element, so the
+   entire row is both a genuine keyboard-focusable link (native Enter/click
+   behavior, no custom key handling) and a single click/tap target. */
+.rowLink {
+  color: inherit;
+  text-decoration: none;
+}
+
+.rowLink::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.rowLink:focus-visible {
+  outline: none;
+}
+
+.state {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--cnsdp-space-3);
+  padding: var(--cnsdp-space-6) var(--cnsdp-space-5) var(--cnsdp-space-8);
+}
+
+.stateTitle {
+  margin: 0;
+  font-size: var(--cnsdp-text-md);
+  font-weight: 600;
+}
+
+.stateMessage {
+  margin: 0;
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-sm);
+  color: var(--cnsdp-text-secondary);
+  max-width: 56ch;
+}
+
+.retryButton {
+  padding: var(--cnsdp-space-2) var(--cnsdp-space-4);
+  border: 1px solid var(--cnsdp-border-strong);
+  border-radius: var(--cnsdp-radius-sm);
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-xs);
+  letter-spacing: var(--cnsdp-tracking-label);
+  text-transform: uppercase;
+  color: var(--cnsdp-text-primary);
+  background: var(--cnsdp-surface-2);
+}
+
+.retryButton:hover {
+  background: var(--cnsdp-surface-3);
+}
+
+.loadingRow {
+  height: 2.75rem;
+  border-radius: var(--cnsdp-radius-sm);
+  background: linear-gradient(
+    90deg,
+    var(--cnsdp-surface-1) 0%,
+    var(--cnsdp-surface-2) 50%,
+    var(--cnsdp-surface-1) 100%
+  );
+  background-size: 200% 100%;
+  animation: loadingShimmer 1.6s ease-in-out infinite;
+  margin-bottom: var(--cnsdp-space-2);
+}
+
+@keyframes loadingShimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loadingRow {
+    animation: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .toolbar {
+    padding: var(--cnsdp-space-4) var(--cnsdp-space-4) var(--cnsdp-space-2);
+  }
+
+  .tableScroll {
+    padding: 0 var(--cnsdp-space-4) var(--cnsdp-space-4);
+  }
+}

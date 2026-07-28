@@ -1,36 +1,39 @@
 # CNSDP frontend — Phase 1.5, Milestone 1
 
-The Signal Path — Alert Investigation flagship prototype. Implements
-`docs/frontend/product-experience-brief.md`. Runs entirely independently of
-the Go backend on real, versioned fixture data
-(`src/fixtures/alert-investigation/v1.ts`) — no backend process, database, or
-Docker Compose is required to run or review it.
+The Signal Path — Alert Investigation flagship experience, plus the alert
+inventory list (`/alerts`) that is its entry point. Implements
+`docs/frontend/product-experience-brief.md`. Talks to the real Go backend
+only — through this dev server's own same-origin `/api` proxy
+(`vite.config.ts`), never with a credential in browser code. There is no
+fixture-only runtime mode: `npm run dev` requires a real backend already
+running and reachable.
 
 ## Run it
 
+A running backend is a prerequisite — see the repository root's
+`docs/reference-environment.md` (Quick start) for the exact commands to
+bring up PostgreSQL + the Go API via Docker Compose and load development
+alerts. Once that backend is up:
+
 ```sh
+cp .env.example .env   # set API_PROXY_TOKEN to match the backend's API_TOKEN
 npm install
 npm run dev
 ```
 
-Open the printed local URL. The root route redirects to `/alerts/1` (the
-happy-path fixture — full evidence availability, intact traceability).
+Open the printed local URL. `/` redirects to `/alerts`, the alert
+inventory — real, backend-composed alerts render there once development
+data has been loaded (`../scripts/dev-seed-alerts.ps1` from the
+repository root). Selecting a row opens `/alerts/:alertId`, the full Dark
+Evidence Map investigation screen.
 
-Other fixture ids demonstrate the remaining required presentation states:
-
-| URL                           | State                                                            |
-| ----------------------------- | ---------------------------------------------------------------- |
-| `/alerts/1`                   | Full evidence availability, traceability intact                  |
-| `/alerts/2`                   | Partial artifact availability (detection definition unavailable) |
-| `/alerts/3`                   | Broken traceability (`raw_event_sha256`)                         |
-| `/alerts/999`                 | Alert not found                                                  |
-| `/alerts/1?demo=unauthorized` | Unauthorized (401)                                               |
-| `/alerts/1?demo=unavailable`  | Backend unavailable                                              |
-| `/alerts/1?demo=slow`         | Extended latency, to observe the loading state                   |
-
-The `?demo=` override exists only in this fixture harness — see
-`src/features/alert-investigation/lib/alertSource.ts` for why it has no real
-backend equivalent and will not survive the switch to a live API.
+Component tests and e2e specs still use real, versioned fixture data
+(`src/fixtures/alert-investigation/v1.ts`) — but only as test-time `fetch`
+mocking, never as an alternate runtime data source. See
+`src/features/alert-investigation/lib/alertSource.ts` and
+`e2e/support/` for how each layer mocks the API; `e2e/real-backend.spec.ts`
+is the one spec that intentionally installs no mock and requires the real
+backend instead.
 
 ## Checks
 
@@ -53,11 +56,5 @@ Playwright runs against the production preview build
 (`vite preview`), not the dev server — see `playwright.config.ts`.
 Screenshots and reports are written to `review-artifacts/` and
 `playwright-report/`, both gitignored; they are not committed.
-
-## Replacing fixtures with the real backend
-
-`src/features/alert-investigation/lib/alertSource.ts` is the one seam a real
-`fetch("/v1/alerts/" + id)` call replaces — every consumer only ever sees an
-`AlertInvestigationResponse` or an `AlertFetchError`, exactly the shape a
-real request against `GET /v1/alerts/{id}` would produce. No other file
-needs to change (product-experience-brief.md §10.1).
+`e2e/real-backend.spec.ts` additionally requires the real backend
+running with development alerts loaded (see "Run it" above).

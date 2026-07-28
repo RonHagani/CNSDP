@@ -161,6 +161,42 @@ type DB interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
+// List returns every persisted alert (FR-029), ordered by id ascending --
+// a stable, deterministic order for a presentation that lists every alert
+// rather than resolving one by id. It is the sanctioned way a downstream
+// module reads the full alerts collection: internal/alerting owns every
+// read and write against this table (see package doc), so the alert
+// inventory list -- currently evidence.ComposeList -- calls List rather
+// than querying the table directly. An empty table returns a nil slice
+// and a nil error, never an error.
+func List(ctx context.Context, db *sql.DB) ([]Alert, error) {
+	rows, err := db.QueryContext(ctx, `SELECT id, detection_result_id, summary FROM alerts ORDER BY id ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("alerting: list alerts: %w", err)
+	}
+	defer rows.Close()
+
+	var alerts []Alert
+	for rows.Next() {
+		var (
+			id, detectionResultID int64
+			raw                   []byte
+		)
+		if err := rows.Scan(&id, &detectionResultID, &raw); err != nil {
+			return nil, fmt.Errorf("alerting: list alerts: scan: %w", err)
+		}
+		var summary Summary
+		if err := json.Unmarshal(raw, &summary); err != nil {
+			return nil, fmt.Errorf("alerting: list alerts: unmarshal summary for alert %d: %w", id, err)
+		}
+		alerts = append(alerts, Alert{ID: id, DetectionResultID: detectionResultID, Summary: summary})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("alerting: list alerts: %w", err)
+	}
+	return alerts, nil
+}
+
 // Get retrieves the alert already persisted for detectionResultID. It is
 // the sanctioned way a downstream module reads alerts: internal/alerting
 // owns every read and write against this table (see package doc), so a

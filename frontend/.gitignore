@@ -4,6 +4,11 @@ dist-ssr
 *.local
 *.tsbuildinfo
 
+# Local runtime configuration (API token, proxy target) — see .env.example.
+# Never commit real values.
+.env
+!.env.example
+
 # Test and visual-review output — never committed (Milestone 1 review artifacts)
 review-artifacts/
 playwright-report/

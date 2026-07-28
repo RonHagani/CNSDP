@@ -36,10 +36,17 @@
 
 .utilityBar {
   display: flex;
-  align-items: baseline;
+  align-items: center;
+  justify-content: space-between;
   gap: var(--map-space-2);
   padding: var(--map-space-4) var(--map-space-5);
   border-bottom: 1px solid var(--map-rule-strong);
+}
+
+.utilityBarIdentity {
+  display: flex;
+  align-items: baseline;
+  gap: var(--map-space-2);
 }
 
 .wordmark {
@@ -54,4 +61,18 @@
   font-family: var(--map-font-mono);
   font-size: 0.7rem;
   color: var(--map-text-tertiary);
+}
+
+.backLink {
+  font-family: var(--map-font-mono);
+  font-size: 0.75rem;
+  color: var(--map-text-secondary);
+  text-decoration: none;
+  padding: var(--map-space-1) var(--map-space-2);
+  border-radius: 3px;
+}
+
+.backLink:hover {
+  color: var(--map-text);
+  background: var(--map-surface-2);
 }

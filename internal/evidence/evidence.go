@@ -289,3 +289,41 @@ func Compose(ctx context.Context, db *sql.DB, alertID int64) (*Inventory, error)
 
 	return inv, nil
 }
+
+// SummaryItem is the lightweight per-alert projection ComposeList serves
+// to internal/retrieval's alert-inventory list (FR-030's list-level
+// analog), deliberately never the full six-artifact Inventory Compose
+// produces: an alert's persisted Summary (FR-029) already carries every
+// field the inventory needs (detection name, subject, operation, target,
+// outcome, request time), so a list of many alerts never has to carry
+// every row's raw event, normalized event, or detection definition
+// content.
+type SummaryItem struct {
+	AlertID int64
+	Summary alerting.Summary
+	Chain   traceability.Result
+}
+
+// ComposeList assembles the best-effort summary projection for every
+// persisted alert, ordered by alert id ascending (alerting.List) for a
+// deterministic presentation. Like Compose, a verification gap is
+// reported visibly (Chain.Intact == false) rather than by omitting the
+// alert or raising an error (FR-035) -- a returned error reflects only a
+// genuine read failure (context cancellation, database connectivity),
+// never a per-alert traceability outcome.
+func ComposeList(ctx context.Context, db *sql.DB) ([]SummaryItem, error) {
+	alerts, err := alerting.List(ctx, db)
+	if err != nil {
+		return nil, fmt.Errorf("evidence: compose list: %w", err)
+	}
+
+	items := make([]SummaryItem, 0, len(alerts))
+	for _, a := range alerts {
+		chain, err := traceability.VerifyAlert(ctx, db, a.ID)
+		if err != nil {
+			return nil, fmt.Errorf("evidence: compose list: verify traceability chain for alert %d: %w", a.ID, err)
+		}
+		items = append(items, SummaryItem{AlertID: a.ID, Summary: a.Summary, Chain: chain})
+	}
+	return items, nil
+}

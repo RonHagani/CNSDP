@@ -10,6 +10,61 @@ the platform and reproduce the Scenario 1 walking-skeleton demonstration
 It documents operational setup only; it does not redefine or restate any
 approved product, requirements, or architecture decision.
 
+## Quick start (PowerShell)
+
+The fastest path from a clean checkout to real alerts rendered in the
+frontend at `/alerts`. Every command below is exact PowerShell, run from
+the repository root unless noted otherwise. Each step links to the fuller
+section below it for detail and troubleshooting.
+
+1. Copy both `.env.example` files and fill in matching values (see
+   "Environment variables" below and `frontend/.env.example`):
+
+   ```powershell
+   Copy-Item .env.example .env
+   Copy-Item frontend/.env.example frontend/.env
+   ```
+
+   Edit `.env`: set `API_TOKEN` (any long random value) and
+   `POSTGRES_PASSWORD`. Edit `frontend/.env`: set `API_PROXY_TOKEN` to the
+   *same* value as `.env`'s `API_TOKEN`. If you changed `APP_PORT` away
+   from its `8080` default, also set `frontend/.env`'s `API_PROXY_TARGET`
+   to `http://127.0.0.1:<APP_PORT>`.
+
+2. Start PostgreSQL and the backend ("Starting the stack" below):
+
+   ```powershell
+   docker compose up -d --build
+   docker compose ps
+   ```
+
+   Wait until both services show `Up (healthy)`.
+
+3. Load development alerts ("Loading development alerts" below):
+
+   ```powershell
+   ./scripts/dev-seed-alerts.ps1
+   ```
+
+4. Start the frontend, in a second terminal ("Frontend development"
+   below):
+
+   ```powershell
+   cd frontend
+   npm install
+   npm run dev
+   ```
+
+   Open the printed local URL (`http://localhost:5173/alerts`) — three
+   real, backend-composed alerts render within a few seconds.
+
+5. When done for the session, stop without losing data ("Stopping and
+   resetting" below):
+
+   ```powershell
+   docker compose stop
+   ```
+
 ## Prerequisites
 
 - Docker Engine with the Compose plugin (`docker compose version` prints
@@ -18,6 +73,8 @@ approved product, requirements, or architecture decision.
 - No local Go toolchain, PostgreSQL install, or other dependency is
   required — the build stage compiles the application inside a
   container.
+- Node.js and npm, only for the frontend (see "Frontend development"
+  below) — not required to run the backend alone.
 
 ## Environment variables
 
@@ -42,36 +99,47 @@ deferred to later design work.
 assembles it from `POSTGRES_PASSWORD` and the fixed in-network hostname
 of the `postgres` service.
 
-## Clean deployment
+## Starting the stack
 
-From the repository root, with `.env` filled in:
+### Routine start (preserves existing data)
 
-```sh
-docker compose down -v --remove-orphans
-docker compose build --no-cache
-docker compose up -d
+The normal day-to-day command, from the repository root with `.env`
+filled in — safe to run repeatedly, including right after
+`docker compose stop`:
+
+```powershell
+docker compose up -d --build
+docker compose ps
 ```
-
-`down -v --remove-orphans` first guarantees a clean instance (no
-leftover volume or container from a prior run) — the "clean instance of
-exactly one documented reference environment" NFR-033 requires. It is
-also how you tear down when finished (see "Shutdown and cleanup" below).
 
 `postgres` becomes healthy once `pg_isready` succeeds against it; `app`
 does not start until `postgres` reports healthy
 (`depends_on: condition: service_healthy`), so there is no
-connect-before-ready race to handle.
-
-Check both containers report healthy:
-
-```sh
-docker compose ps
-```
+connect-before-ready race to handle. If a named `postgres-data` volume
+already exists from a previous session, its data is preserved and reused
+— this command never deletes it.
 
 Expected: both `postgres` and `app` show `Up (healthy)`. If `app` is
 still `starting`, wait a few seconds and re-check — the application must
 connect to PostgreSQL, apply migrations, and load the detection
 definitions before it starts serving.
+
+### First-time or full-reset deployment (destroys existing data)
+
+Use this only when you deliberately want a genuinely clean database — a
+first-time deployment, or recovering from corrupted local state. This is
+the one and only command in this document that deletes data; see
+"Stopping and resetting" below for when to reach for it.
+
+```powershell
+docker compose down -v --remove-orphans
+docker compose build --no-cache
+docker compose up -d
+```
+
+`down -v --remove-orphans` guarantees a clean instance (no leftover
+volume or container from a prior run) — the "clean instance of exactly
+one documented reference environment" NFR-033 requires.
 
 ## Readiness verification
 
@@ -101,6 +169,65 @@ If either check has not yet passed, this returns `503 Service
 Unavailable` with `{"status":"not_ready","failed_check":"database"}` or
 `{"status":"not_ready","failed_check":"detection_definitions"}` instead
 — never a silent hang or an unrelated error (NFR-020, AC-026).
+
+## Loading development alerts
+
+`scripts/dev-seed-alerts.ps1` submits the same real, committed fixtures
+used by this repository's own tests
+(`internal/intake/testdata/scenario-1-eventlist.json`,
+`internal/validation/testdata/scenario{2,3}-valid.json`) through the real
+ingestion API (`POST /v1/audit-events`) — never a frontend fixture, and
+never anything invented for this script. It is development tooling only:
+it is never run automatically, and it only ever talks to whatever
+`-BaseUrl` you point it at (default: this local Compose stack).
+
+```powershell
+./scripts/dev-seed-alerts.ps1
+```
+
+It reads `API_TOKEN` and `APP_PORT` from the repository root `.env` by
+default (never printing the token) — pass `-ApiToken` / `-BaseUrl`
+explicitly to target something else.
+
+Running it again is safe and does not create duplicate alerts: submission
+admission is keyed by a deterministic `source_key` derived from each
+event's `auditID`/`auditStage`
+(`internal/submission/submission.go`, `migrations/0002_submission_source_key.up.sql`),
+so resubmitting identical fixture content resolves to the same existing
+rows. To start over with genuinely empty alert data instead, use the
+full-reset deployment above, then re-run the seed script.
+
+After seeding, `/v1/alerts` (and the frontend's `/alerts` page) shows
+three alerts within a few seconds — the same three scenarios exercised by
+`frontend/e2e/real-backend.spec.ts`.
+
+## Frontend development
+
+The frontend (`frontend/`) is a separate Vite/React app that talks to
+this backend only through its own dev/preview server's same-origin `/api`
+proxy — see `frontend/vite.config.ts` and `frontend/.env.example` for how
+that proxy attaches the bearer credential server-side, never in the
+browser.
+
+```powershell
+Copy-Item frontend/.env.example frontend/.env
+# edit frontend/.env: set API_PROXY_TOKEN to match this backend's API_TOKEN
+cd frontend
+npm install
+npm run dev
+```
+
+Open `http://localhost:5173/alerts`. This requires the backend already
+running and reachable (see "Starting the stack" above) — `npm run dev`
+alone starts only the frontend, and its proxy refuses to start at all if
+`API_PROXY_TOKEN` is unset (a clear startup error, not a silent failure).
+
+`frontend/README.md` documents the frontend's own checks (`npm run
+typecheck`, `lint`, `test`, `build`) and `npm run e2e`, which runs against
+a production preview build. `frontend/e2e/real-backend.spec.ts`
+specifically requires this real backend (with development alerts loaded,
+above) already running; every other e2e spec mocks the API and needs no
+backend at all.
 
 ## Scenario 1 end-to-end demonstration
 
@@ -173,16 +300,29 @@ Compose stack instead of `go test`.
    `satisfiedCharacteristics` (the fixture requests both), and
    `traceability.intact` is `true`.
 
-## Shutdown and cleanup
+## Stopping and resetting
 
-```sh
+**Routine stop (preserves data).** Use this at the end of a normal
+session — the recorded database survives (NFR-010), and "Routine start"
+above brings it straight back:
+
+```powershell
+docker compose stop
+```
+
+**Explicit reset (destroys data).** Use this only when you deliberately
+want to discard all local development data — e.g. between independent
+demonstration runs, or to recover from corrupted local state. This is the
+one command in this document that deletes the database volume; never run
+it as part of routine shutdown:
+
+```powershell
 docker compose down -v --remove-orphans
 ```
 
-`-v` removes the named PostgreSQL volume, so the next `docker compose
-up` starts from a genuinely clean database — use this between
-independent demonstration runs. Omit `-v` if you want the recorded data
-to survive a stop/restart cycle (NFR-010).
+`-v` removes the named PostgreSQL volume, so the next `docker compose up`
+starts from a genuinely clean database and development alerts must be
+reloaded (see "Loading development alerts" above).
 
 ## Troubleshooting
 

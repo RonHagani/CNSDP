@@ -211,6 +211,29 @@ export interface AlertInvestigationResponse {
 }
 
 /**
+ * Wire types for `GET /v1/alerts` (internal/retrieval/list.go). A
+ * dedicated summary contract, distinct from `AlertInvestigationResponse`
+ * -- each row carries only the fields an inventory row needs, never any
+ * row's raw event, normalized event, or detection definition content.
+ */
+export interface AlertSummaryListItem {
+  alertId: number;
+  detectionName: string;
+  subject: Subject;
+  operation: Operation;
+  target: Target;
+  outcome: Outcome;
+  requestTime: string;
+  traceability: TraceabilityResult;
+}
+
+/** internal/retrieval `listResponse` (GET /v1/alerts). */
+export interface AlertInventoryResponse {
+  alerts: AlertSummaryListItem[];
+  total: number;
+}
+
+/**
  * The six real evidence-artifact identities (PD-04 scope decision 8;
  * FR-031). Traceability verification is explicitly not a seventh artifact
  * — see docs/frontend/product-experience-brief.md §3.3.

@@ -1,8 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, RouterProvider, createMemoryRouter } from "react-router-dom";
+import {
+  fixtureBrokenTraceability,
+  fixtureBrokenTraceabilitySourceKey,
+  fixtureIntact,
+  fixturePartial,
+  fixtureScenario2Intact,
+  fixtureScenario3Intact,
+} from "@/fixtures/alert-investigation/v1";
+import { mockJsonResponse, stubFetchRoutes } from "@/test/mockFetch";
 import { AlertInvestigationPage } from "./AlertInvestigationPage";
 
 function renderAt(path: string) {
@@ -20,11 +29,13 @@ function renderAt(path: string) {
 
 describe("AlertInvestigationPage — required route-level states", () => {
   it("renders the loading state before data resolves", () => {
-    renderAt("/alerts/1?demo=slow");
+    stubFetchRoutes({ "/v1/alerts/1": () => new Promise<Response>(() => {}) });
+    renderAt("/alerts/1");
     expect(screen.getByText(/Retrieving alert investigation record/)).toBeInTheDocument();
   });
 
   it("renders the full Dark Evidence Map for the intact fixture (valid traceability)", async () => {
+    stubFetchRoutes({ "/v1/alerts/1": () => mockJsonResponse(200, fixtureIntact) });
     renderAt("/alerts/1");
     await screen.findAllByText(/Alert #1\b/);
     expect(screen.getByText("Traceability intact")).toBeInTheDocument();
@@ -44,6 +55,7 @@ describe("AlertInvestigationPage — required route-level states", () => {
 
   it("selecting a satisfied characteristic pin reveals its Verified provenance record", async () => {
     const user = userEvent.setup();
+    stubFetchRoutes({ "/v1/alerts/1": () => mockJsonResponse(200, fixtureIntact) });
     renderAt("/alerts/1");
     await screen.findAllByText(/Alert #1\b/);
     await user.click(screen.getByRole("button", { name: /tty_allocation/ }));
@@ -54,6 +66,7 @@ describe("AlertInvestigationPage — required route-level states", () => {
 
   it("selecting a satisfied characteristic pin reveals its Partial provenance record (scenario 2)", async () => {
     const user = userEvent.setup();
+    stubFetchRoutes({ "/v1/alerts/4": () => mockJsonResponse(200, fixtureScenario2Intact) });
     renderAt("/alerts/4");
     await screen.findAllByText(/Alert #4\b/);
     await user.click(screen.getByRole("button", { name: /privileged_container/ }));
@@ -64,6 +77,7 @@ describe("AlertInvestigationPage — required route-level states", () => {
 
   it("supports keyboard-only selection: Tab-focusing a pin and activating with Enter", async () => {
     const user = userEvent.setup();
+    stubFetchRoutes({ "/v1/alerts/1": () => mockJsonResponse(200, fixtureIntact) });
     renderAt("/alerts/1");
     await screen.findAllByText(/Alert #1\b/);
     const pin = screen.getByRole("button", { name: /stdin_streaming/ });
@@ -73,12 +87,14 @@ describe("AlertInvestigationPage — required route-level states", () => {
   });
 
   it("renders scenario 3's real cluster-admin grant identity", async () => {
+    stubFetchRoutes({ "/v1/alerts/5": () => mockJsonResponse(200, fixtureScenario3Intact) });
     renderAt("/alerts/5");
     await screen.findAllByText(/Alert #5\b/);
     expect(screen.getByRole("button", { name: /role_ref_cluster_admin/ })).toBeInTheDocument();
   });
 
   it("renders partial artifact availability distinctly, with the gap named explicitly", async () => {
+    stubFetchRoutes({ "/v1/alerts/2": () => mockJsonResponse(200, fixturePartial) });
     renderAt("/alerts/2");
     await screen.findAllByText(/Alert #2\b/);
     await waitFor(() => expect(screen.getByText("Detection definition unavailable")).toBeInTheDocument());
@@ -87,6 +103,7 @@ describe("AlertInvestigationPage — required route-level states", () => {
   });
 
   it("renders broken traceability with the specific failed link named", async () => {
+    stubFetchRoutes({ "/v1/alerts/3": () => mockJsonResponse(200, fixtureBrokenTraceability) });
     renderAt("/alerts/3");
     await screen.findAllByText(/Alert #3\b/);
     await screen.findByText("Traceability broken");
@@ -99,6 +116,7 @@ describe("AlertInvestigationPage — required route-level states", () => {
   });
 
   it("renders broken traceability (source_key) with the specific failed link named", async () => {
+    stubFetchRoutes({ "/v1/alerts/6": () => mockJsonResponse(200, fixtureBrokenTraceabilitySourceKey) });
     renderAt("/alerts/6");
     await screen.findAllByText(/Alert #6\b/);
     await screen.findByText("Traceability broken");
@@ -106,41 +124,80 @@ describe("AlertInvestigationPage — required route-level states", () => {
     expect(screen.getAllByText("source_key").length).toBeGreaterThan(0);
   });
 
-  it("renders a not-found state for an unknown alert id", async () => {
+  it("renders a not-found state for an unknown alert id (backend 404)", async () => {
+    stubFetchRoutes({ "/v1/alerts/999": () => mockJsonResponse(404, {}) });
     renderAt("/alerts/999");
-    await waitFor(() =>
-      expect(screen.getByText(/No alert exists with id 999/)).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText(/No alert exists with id 999/)).toBeInTheDocument());
   });
 
-  it("renders an unauthorized state under the unauthorized demo scenario", async () => {
-    renderAt("/alerts/1?demo=unauthorized");
+  it("renders an unauthorized state for a backend 401", async () => {
+    stubFetchRoutes({ "/v1/alerts/1": () => mockJsonResponse(401, {}) });
+    renderAt("/alerts/1");
     await waitFor(() => expect(screen.getByText("Authentication required")).toBeInTheDocument());
   });
 
-  it("renders an unavailable-backend state with a retry action", async () => {
-    renderAt("/alerts/1?demo=unavailable");
+  it("renders an unavailable-backend state with a retry action for a 5xx", async () => {
+    stubFetchRoutes({ "/v1/alerts/1": () => mockJsonResponse(500, {}) });
+    renderAt("/alerts/1");
     await waitFor(() =>
-      expect(
-        screen.getByText("The investigation backend could not be reached"),
-      ).toBeInTheDocument(),
+      expect(screen.getByText("The investigation backend could not be reached")).toBeInTheDocument(),
     );
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
   });
 
   it("never renders fabricated alert content in a route-level failure state", async () => {
+    stubFetchRoutes({ "/v1/alerts/999": () => mockJsonResponse(404, {}) });
     renderAt("/alerts/999");
-    await waitFor(() =>
-      expect(screen.getByText(/No alert exists with id 999/)).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText(/No alert exists with id 999/)).toBeInTheDocument());
     expect(screen.queryByRole("heading", { name: "Source submission" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Detection result" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Generated alert" })).not.toBeInTheDocument();
   });
 });
 
+describe("AlertInvestigationPage — stale responses and cancellation", () => {
+  it("a stale response for a prior alert id cannot overwrite a newer route's state", async () => {
+    let resolveFirst!: (value: Response) => void;
+    const firstResponse = new Promise<Response>((resolve) => {
+      resolveFirst = resolve;
+    });
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.endsWith("/v1/alerts/1")) return firstResponse;
+      if (url.endsWith("/v1/alerts/4")) return Promise.resolve(mockJsonResponse(200, fixtureScenario2Intact));
+      return Promise.resolve(mockJsonResponse(404, {}));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const router = createMemoryRouter(
+      [{ path: "/alerts/:alertId", element: <AlertInvestigationPage /> }],
+      { initialEntries: ["/alerts/1"] },
+    );
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+
+    // Navigate to alert 4 before alert 1's request resolves — a real
+    // client-side route change, not a remount.
+    router.navigate("/alerts/4");
+    await screen.findAllByText(/Alert #4\b/);
+
+    // Now let the stale alert-1 response resolve — it must not clobber
+    // alert 4's already-rendered content.
+    resolveFirst(mockJsonResponse(200, fixtureIntact));
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(screen.getAllByText(/Alert #4\b/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Alert #1\b/)).not.toBeInTheDocument();
+  });
+});
+
 describe("AlertInvestigationPage — no legacy presentation in the live DOM", () => {
   it("renders none of the rejected Signal Path or Forensic Case Folio vocabulary or attributes", async () => {
+    stubFetchRoutes({ "/v1/alerts/1": () => mockJsonResponse(200, fixtureIntact) });
     const { container } = renderAt("/alerts/1");
     await screen.findAllByText(/Alert #1\b/);
     const text = container.textContent!.toLowerCase();

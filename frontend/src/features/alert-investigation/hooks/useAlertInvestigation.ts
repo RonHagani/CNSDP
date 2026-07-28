@@ -1,10 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { fetchAlertInvestigation, type DemoScenario } from "../lib/alertSource";
+import { fetchAlertInvestigation } from "../lib/alertSource";
 
-export function useAlertInvestigation(alertId: string, demoScenario?: DemoScenario) {
+export function useAlertInvestigation(alertId: string) {
   return useQuery({
-    queryKey: ["alert-investigation", alertId, demoScenario ?? null],
-    queryFn: ({ signal }) => fetchAlertInvestigation(alertId, demoScenario, signal),
+    queryKey: ["alert-investigation", alertId],
+    queryFn: ({ signal }) => fetchAlertInvestigation(alertId, signal),
     retry: false,
     staleTime: 30_000,
   });

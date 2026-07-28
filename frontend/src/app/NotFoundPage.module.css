@@ -1,0 +1,38 @@
+.wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: var(--cnsdp-space-3);
+  padding: var(--cnsdp-space-8);
+}
+
+.eyebrow {
+  margin: 0;
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-xs);
+  letter-spacing: var(--cnsdp-tracking-label);
+  text-transform: uppercase;
+  color: var(--cnsdp-branch);
+}
+
+.heading {
+  margin: 0;
+  font-size: var(--cnsdp-text-xl);
+  font-weight: 600;
+}
+
+.message {
+  margin: 0;
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-sm);
+  color: var(--cnsdp-text-secondary);
+  max-width: 48ch;
+}
+
+.link {
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-sm);
+  color: var(--cnsdp-signal);
+}

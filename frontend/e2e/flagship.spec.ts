@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { mockAlertStatus, mockFixtureBackend } from "./support/mockApi";
 
 /**
  * Visual and interaction verification for the Dark Evidence Map — the live
@@ -11,7 +12,22 @@ import { test, expect } from "@playwright/test";
  * structural integrity (no horizontal overflow) at the UX spec's own
  * desktop viewport floor (1024px) and principal target range
  * (1440–1600px).
+ *
+ * The production frontend now calls the real `GET /v1/alerts/{id}`
+ * endpoint (through the same-origin `/api` proxy — see vite.config.ts and
+ * src/lib/api/client.ts), not a bundled fixture. `mockFixtureBackend`
+ * (e2e/support/mockApi.ts) installs a network-level stand-in backend
+ * serving the same committed fixtures every test in this file already
+ * depended on, so the scenario/content coverage below is unchanged —
+ * only the demo-scenario query-param mechanism it used to rely on for
+ * the unauthorized/unavailable states is gone, replaced by a per-test
+ * route status override (`mockAlertStatus`). The one real,
+ * non-intercepted backend journey lives in e2e/real-backend.spec.ts.
  */
+
+test.beforeEach(async ({ page }) => {
+  await mockFixtureBackend(page);
+});
 
 const DESKTOP_VIEWPORTS = [
   ["1024px (viewport floor)", { width: 1024, height: 900 }],
@@ -172,10 +188,12 @@ test.describe("Alert Investigation — route-level states", () => {
     await page.goto("/alerts/999");
     await expect(page.getByText(/No alert exists with id 999/)).toBeVisible();
 
-    await page.goto("/alerts/1?demo=unauthorized");
+    await mockAlertStatus(page, 1, 401);
+    await page.goto("/alerts/1");
     await expect(page.getByText("Authentication required")).toBeVisible();
 
-    await page.goto("/alerts/1?demo=unavailable");
+    await mockAlertStatus(page, 1, 500);
+    await page.goto("/alerts/1");
     await expect(page.getByText("The investigation backend could not be reached")).toBeVisible();
     await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
   });

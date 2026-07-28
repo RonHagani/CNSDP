@@ -395,3 +395,90 @@ func TestCompose_TamperedRawEvent_ReportsChainNotIntactButStillComposes(t *testi
 		t.Error("Complete() = true, want false (chain not intact)")
 	}
 }
+
+// --- ComposeList: the alert-inventory list projection internal/retrieval's
+// GET /v1/alerts serves, deliberately separate from Compose's full
+// six-artifact single-alert read.
+
+func TestComposeList_EmptyRepository_ReturnsEmptySlice(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+
+	got, err := ComposeList(context.Background(), db)
+	if err != nil {
+		t.Fatalf("ComposeList: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("len(got) = %d, want 0", len(got))
+	}
+}
+
+func TestComposeList_MultipleAlerts_ReturnsAllOrderedByIDWithIntactTraceability(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	if err := detection.Load(context.Background(), db); err != nil {
+		t.Fatalf("detection.Load: %v", err)
+	}
+	sub1 := seedAlerted(t, db, validEventJSON, "34b75a57-e1c0-4659-a21f-2d39256f018c", "ResponseComplete")
+	alertID1 := alertIDForSubmission(t, db, sub1.ID)
+	sub2 := seedAlerted(t, db, validEventJSON, "45c86b68-f2d1-4760-b32f-3e4a3676129d", "ResponseComplete")
+	alertID2 := alertIDForSubmission(t, db, sub2.ID)
+
+	got, err := ComposeList(context.Background(), db)
+	if err != nil {
+		t.Fatalf("ComposeList: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len(got) = %d, want 2", len(got))
+	}
+	if got[0].AlertID != alertID1 || got[1].AlertID != alertID2 {
+		t.Errorf("alert ids = [%d, %d], want [%d, %d] (ascending by id)", got[0].AlertID, got[1].AlertID, alertID1, alertID2)
+	}
+	for _, item := range got {
+		if !item.Chain.Intact {
+			t.Errorf("alert %d: Chain.Intact = false, want true", item.AlertID)
+		}
+		if item.Summary.MatchReason.Scenario != "scenario-1" {
+			t.Errorf("alert %d: Summary.MatchReason.Scenario = %q, want scenario-1", item.AlertID, item.Summary.MatchReason.Scenario)
+		}
+	}
+}
+
+// TestComposeList_TamperedAlert_ReportsChainNotIntactWithoutFailingTheWholeList
+// proves ComposeList's best-effort contract at list scope: one alert's
+// traceability gap is reported on that row alone (FR-035), never turned
+// into an error that would blank out the entire inventory.
+func TestComposeList_TamperedAlert_ReportsChainNotIntactWithoutFailingTheWholeList(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	if err := detection.Load(context.Background(), db); err != nil {
+		t.Fatalf("detection.Load: %v", err)
+	}
+	sub1 := seedAlerted(t, db, validEventJSON, "34b75a57-e1c0-4659-a21f-2d39256f018c", "ResponseComplete")
+	alertID1 := alertIDForSubmission(t, db, sub1.ID)
+	sub2 := seedAlerted(t, db, validEventJSON, "45c86b68-f2d1-4760-b32f-3e4a3676129d", "ResponseComplete")
+	alertID2 := alertIDForSubmission(t, db, sub2.ID)
+
+	if _, err := db.ExecContext(context.Background(),
+		`UPDATE submissions SET raw_event = $1 WHERE id = $2`,
+		[]byte(`{"tampered":true}`), sub2.ID,
+	); err != nil {
+		t.Fatalf("tamper raw_event: %v", err)
+	}
+
+	got, err := ComposeList(context.Background(), db)
+	if err != nil {
+		t.Fatalf("ComposeList: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len(got) = %d, want 2", len(got))
+	}
+
+	byID := map[int64]SummaryItem{got[0].AlertID: got[0], got[1].AlertID: got[1]}
+	if !byID[alertID1].Chain.Intact {
+		t.Errorf("alert %d: Chain.Intact = false, want true (untampered)", alertID1)
+	}
+	if byID[alertID2].Chain.Intact {
+		t.Errorf("alert %d: Chain.Intact = true, want false (tampered)", alertID2)
+	}
+	if byID[alertID2].Chain.FailedLink != "raw_event_sha256" {
+		t.Errorf("alert %d: Chain.FailedLink = %q, want raw_event_sha256", alertID2, byID[alertID2].Chain.FailedLink)
+	}
+}
