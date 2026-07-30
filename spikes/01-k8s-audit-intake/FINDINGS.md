@@ -162,8 +162,8 @@ acceptance-criteria.md` (PD-07, AC-012).
 - `high-risk-pod.yaml`, `crb-*-initial.yaml`, `crb-a-updated.yaml` — the
   real manifests applied to generate the fixtures
 - `audit-logs/audit.log` — the complete raw audit log from the live cluster
-  (1,265 lines; retained for traceability of every fixture back to its
-  original capture)
+  (3,717 lines, 4,253,096 bytes; retained for traceability of every fixture
+  back to its original capture)
 - `fixtures/exec-tty-true.jsonl`, `fixtures/pod-create-highrisk.jsonl`,
   `fixtures/crb-create-events.jsonl`,
   `fixtures/crb-subject-addition-variants.jsonl` — isolated single-purpose
