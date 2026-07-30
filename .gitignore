@@ -17,3 +17,8 @@ tmp/
 *.swp
 .DS_Store
 Thumbs.db
+
+# Local Claude Code configuration (plugin preferences, machine-specific
+# permission allowlists, local paths). Not required to build, test, run, or
+# contribute to CNSDP -- kept local rather than repository-owned.
+.claude/
