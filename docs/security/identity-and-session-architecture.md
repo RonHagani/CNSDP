@@ -273,7 +273,21 @@ module, following this repository's existing module-boundary discipline —
 directly), with at minimum: `session_id_hash`, `user_subject` (the IdP `sub`
 claim), `issued_at`, `last_seen_at`, `idle_expires_at`,
 `absolute_expires_at`, `revoked_at` (nullable), `ip_at_issue`,
-`user_agent_at_issue`, `rotation_count`.
+`user_agent_at_issue`, `rotation_count`. This schema, together with the
+opaque-credential-plus-digest design in "How the application session is
+identified" above, is confirmed — not altered — by `open-decisions.md`
+decision 3.
+
+`last_seen_at` records only **genuine user activity**, per decision 4's
+resolution (below) — it is never updated by background polling, an
+automatic refresh, WebSocket traffic, a heartbeat, or any other
+application-generated request; only a request that reflects real user
+interaction with the product updates it. `ip_at_issue` and
+`user_agent_at_issue` are also the intended basis for the minimal
+device/session metadata decision 18 requires for self-service session
+recognition (see "Session cardinality and self-service session
+management," below) — no field beyond these two, and no browser
+fingerprinting technique of any kind, is required or in scope.
 
 **Rotation.** A fresh session identifier is issued and the previous one
 invalidated:
@@ -302,26 +316,78 @@ claim:
   login regardless of activity, bounding the maximum value of a stolen
   session identifier even against faked activity.
 
-Concrete numeric values (e.g. "30 minutes idle / 12 hours absolute") are
-**not fixed by this document** — like this repository's own approved
-numeric targets (NFR-001, NFR-002, NFR-009), they belong to a future,
-explicitly approved decision informed by the eventual analyst workflow, not
-invented here as a side effect of this proposal.
+**Idle timeout is 20 minutes; absolute timeout is 8 hours from initial
+authentication** — resolved by `open-decisions.md` decisions 4 and 5
+respectively (2026-07-29, Ron Hagani — Project Owner and Security Design
+Authority), replacing the placeholder ranges this document originally left
+open. Both are enforced exactly as described above: re-checked against the
+database row on every request, never inferred from the cookie's presence.
 
-**Revocation.** Logout, and any administrator-initiated forced revocation
-(see `authorization-model.md`'s Platform Administrator role), sets
-`revoked_at` on the session row. Because every request re-validates against
-the stored row rather than trusting a self-contained token, revocation is
-effective on the very next request — there is no propagation delay or
-stale-token acceptance window to reason about.
+- The idle timer (`last_seen_at`) is refreshed **only by genuine user
+  interaction** — background polling, an automatic refresh, WebSocket
+  traffic, a heartbeat, or any other application-generated request must
+  never refresh it (decision 4). A warning is presented to the user 2
+  minutes before idle expiration (at 18 minutes of inactivity).
+- The absolute timeout is **never extended** by activity, session
+  rotation, background requests, or provider-token renewal of any kind
+  (decision 5) — re-authentication against the IdP is required once the
+  8-hour bound is reached, regardless of how recently the session was
+  used. This is intentionally aligned with Option A's recommended
+  provider-token handling above: since no silent, IdP-session-length
+  renewal occurs, the fixed 8-hour bound is what actually governs how long
+  a compromised session identifier remains valuable.
+
+**Revocation.** Logout, self-service revocation of a specific session,
+self-service logout of every session ("logout-all"), and any
+administrator-initiated forced revocation (see `authorization-model.md`'s
+Platform Administrator role), each set `revoked_at` on the affected session
+row(s). In addition, per `open-decisions.md` decision 18, a password
+change, user disablement, identity-compromise handling, or another
+authorized security action revokes every session belonging to the affected
+identity. Because every request re-validates against the stored row rather
+than trusting a self-contained token, revocation is effective on the very
+next request — there is no propagation delay or stale-token acceptance
+window to reason about. See "Session cardinality and self-service session
+management," below, for the self-service paths, and "Compromised-session
+response" for the security-triggered global-revocation paths.
+
+## Fail-closed session validation
+
+Per `open-decisions.md` decision 3: session state that is **missing,
+expired, malformed, or revoked** must fail closed — the request is treated
+as unauthenticated, exactly as "Revoked or expired session" (sequence
+diagram 5, below) already describes for the expired/revoked cases. This
+document does not extend this policy to a full session-store connectivity
+outage (the database being unreachable rather than returning a
+determinate row) — that distinct question is analyzed, and left
+unresolved, at `threat-model.md` TM-D03; decision 3's fail-closed
+requirement narrows but does not by itself close that gap, since an
+outage is a different failure mode from a determinate "no valid session"
+result.
+
+## Session-record cleanup
+
+Per `open-decisions.md` decision 3, expired and revoked session records
+must have a documented cleanup strategy — session rows are not treated as
+permanent evidence the way audit records are (`audit-and-accountability-design.md`'s
+deployment-lifetime audit retention default does not apply here). This
+document establishes the requirement; the concrete mechanism and cadence
+(e.g. a periodic purge job, and how long a revoked/expired row is retained
+before removal for investigative purposes) is an implementation-time
+decision for whoever implements Pass 4/5, not fixed here.
 
 ## Idle timeout and absolute timeout
 
-Rationale restated: idle timeout protects against the shared-workstation,
+Rationale restated: idle timeout (20 minutes, per `open-decisions.md`
+decision 4) protects against the shared-workstation,
 walked-away-from-the-desk scenario realistic for a SOC; absolute timeout
+(8 hours from initial authentication, per `open-decisions.md` decision 5)
 protects against a session identifier that is stolen and then kept "alive"
 indefinitely by an attacker faking activity. Both are necessary; neither
-alone is sufficient.
+alone is sufficient. See "Session persistence, rotation, expiration, and
+revocation," above, for the full enforcement detail (genuine-activity-only
+idle-timer refresh, the 2-minute pre-expiration warning, and the absolute
+timeout's non-extendability).
 
 ## Logout and IdP logout behavior
 
@@ -336,6 +402,41 @@ alone is sufficient.
   valuable for shared or kiosk-style analyst workstations where leaving an
   IdP-level SSO session alive after "logout" would let the next person at
   the workstation silently re-authenticate as the prior user.
+- **Self-service logout-all** (per `open-decisions.md` decision 18): a
+  user-initiated action, distinct from ordinary local logout, that revokes
+  every session currently held by the caller's own identity, not only the
+  current one. See "Session cardinality and self-service session
+  management," below.
+
+## Session cardinality and self-service session management
+
+Resolved by `open-decisions.md` decision 18 (2026-07-29, Ron Hagani —
+Project Owner and Security Design Authority):
+
+- A human identity may hold at most **3 active sessions** concurrently.
+  Each is its own independently revocable row in the session table
+  described above.
+- **At login, if the authenticating identity already holds 3 active
+  sessions, the new session is not created and an existing session is not
+  silently evicted.** The BFF must instead present the identity's current
+  active sessions (using only the minimal metadata already persisted —
+  `issued_at`, `last_seen_at`, `ip_at_issue`, `user_agent_at_issue`) and
+  require an explicit selection of one to revoke before the new session is
+  created. See sequence diagram 6, below.
+- Every authenticated human session can, for its own identity only (an
+  ownership check against `user_subject`, never a role-gated permission —
+  distinct from the Platform Administrator's cross-identity capability
+  below): list its own active sessions; revoke one specific session other
+  than, or including, the current one; and log out of every session at
+  once ("logout-all," above). This is a baseline capability of every
+  authenticated identity regardless of role, not an entry in
+  `authorization-model.md`'s permission matrix, since it is scoped to the
+  caller's own identity rather than to a role-gated resource.
+- No additional device/session metadata beyond `ip_at_issue` and
+  `user_agent_at_issue` is required to support this, and no browser
+  fingerprinting technique (canvas, font enumeration, or similar) is
+  introduced for this purpose — decision 18 explicitly requires minimal
+  metadata only.
 
 ## Compromised-session response
 
@@ -348,13 +449,27 @@ above. Every such forced revocation is itself an audited action (see
 refresh tokens) was adopted, a compromise response additionally includes
 rotating or revoking that stored refresh token.
 
-"Every session belonging to a given user identity" presumes a given human
-identity can hold more than one concurrent session (e.g. multiple devices
-or browsers at once) — this document relies on that possibility for a
-complete compromise response, but whether concurrent sessions are allowed
-at all, and if so under what bound, is **not decided here**. See
-`open-decisions.md`, decision 18, "Concurrent sessions per human
-identity."
+Per `open-decisions.md` decision 18, three further triggers, beyond an
+administrator's own initiative, also revoke every session belonging to an
+identity: a password change, user disablement, and identity-compromise
+handling more generally (as an instance of "another authorized security
+action"). **A genuine gap this document surfaces, not resolves:** this
+platform never sees a password directly (the IdP owns credential storage
+entirely, per ADR-0005), so "password changes... may revoke all sessions"
+depends on this platform *learning* that a password change occurred at the
+external IdP — for example via OIDC Back-Channel Logout or an equivalent
+provider-originated signal. No such integration is selected by this
+document or by ADR-0005; until one is, the password-change trigger can be
+honored only for a password change the platform itself observes indirectly
+(e.g. the identity's next login, which already rotates the session per
+"Rotation," above) — not as an immediate, provider-pushed revocation. This
+gap is recorded here for a future decision or roadmap pass, not resolved
+by this document.
+
+"Every session belonging to a given user identity" now resolves to **at
+most 3 sessions** in practice, per decision 18's cardinality bound above —
+this document no longer relies on an unbounded or undecided concurrent-session
+count for a complete compromise response.
 
 ## Hardened cookie configuration
 
@@ -594,6 +709,30 @@ sequenceDiagram
     Browser->>Browser: Redirect to login (per "Login" diagram)
 ```
 
+### 6. Login while at the session-cardinality limit
+
+Per `open-decisions.md` decision 18. Diverges from sequence diagram 1
+("Login") only at the point the BFF would otherwise create the new session
+row; every step before that point is unchanged.
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Browser
+    participant BFF as BFF (reverse proxy)
+    participant DB as PostgreSQL (sessions)
+
+    Note over Browser,BFF: Steps identical to "Login" (diagram 1)<br/>through ID token validation
+    BFF->>DB: SELECT active sessions WHERE user_subject = ?
+    DB-->>BFF: 3 active sessions found (at the limit)
+    BFF-->>Browser: Present the identity's active sessions<br/>(issued_at, last_seen_at, ip_at_issue, user_agent_at_issue)
+    User->>Browser: Select one existing session to revoke
+    Browser->>BFF: Confirm revocation of the selected session
+    BFF->>DB: UPDATE selected session SET revoked_at = now()
+    BFF->>DB: INSERT new session (session_id_hash, user_subject, ...)
+    BFF-->>Browser: 302 to original destination<br/>Set-Cookie: session=<opaque id>; HttpOnly; Secure; SameSite=Lax
+```
+
 ## Retrieval-latency impact on NFR-002 / AC-021
 
 This proposal adds new I/O to the request path of the two endpoints
@@ -626,3 +765,9 @@ before that measurement exists.
 - This document selects no concrete OIDC provider, no concrete session-store
   library, and no concrete cookie-signing implementation — those remain
   implementation choices for the future approved ADR referenced above.
+- This document does not select a mechanism for the platform to learn of an
+  external password change at the IdP (e.g. OIDC Back-Channel Logout or an
+  equivalent signal) — see "Compromised-session response," above, for the
+  gap this leaves in decision 18's password-change revocation trigger.
+- This document does not select the concrete cleanup mechanism or cadence
+  for expired/revoked session rows — see "Session-record cleanup," above.

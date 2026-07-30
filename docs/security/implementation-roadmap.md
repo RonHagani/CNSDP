@@ -203,40 +203,76 @@ token's function before its replacement is verified — see each pass's
 - **Goal:** Finalize the cookie configuration (`HttpOnly`, `Secure`,
   `SameSite=Lax`, `Path`, expiration mirroring `absolute_expires_at`) and
   implement the full session lifecycle: rotation on login/privilege
-  change/periodic interval, idle-timeout and absolute-timeout enforcement on
-  every request, and an explicit revocation path.
+  change/periodic interval; idle-timeout (20 minutes, genuine-user-activity
+  refresh only, 2-minute pre-expiration warning) and absolute-timeout (8
+  hours, never extended) enforcement on every request, per
+  `open-decisions.md` decisions 4 and 5; the 3-active-session cardinality
+  bound with mandatory explicit-selection-at-login when the limit is
+  reached (no silent eviction); and self-service session management (list
+  own active sessions, revoke one, log out of all), per `open-decisions.md`
+  decision 18.
 - **Prerequisites:** Pass 4.
 - **Layers / files likely affected:** BFF cookie-issuing code, session
-  lookup/rotation logic (extends Pass 4's module), a logout route.
+  lookup/rotation logic (extends Pass 4's module), a logout route, new
+  self-service session-management routes (list/revoke-one/revoke-all,
+  scoped to the caller's own `user_subject`), the at-cap login branch
+  described in `identity-and-session-architecture.md` sequence diagram 6.
 - **Security acceptance criteria:** Every cookie attribute matches
   `identity-and-session-architecture.md`'s table exactly; idle and absolute
   timeouts are enforced by re-checking the database row on every request,
-  never inferred from the cookie's presence alone; rotation issues a
-  genuinely new session identifier and invalidates the old one rather than
-  extending it in place.
+  never inferred from the cookie's presence alone; the idle timer is
+  refreshed only by a request reflecting genuine user interaction, never by
+  background polling, an automatic refresh, WebSocket traffic, or a
+  heartbeat; rotation issues a genuinely new session identifier and
+  invalidates the old one rather than extending it in place; a login
+  attempt for an identity already holding 3 active sessions never creates a
+  4th session without an explicit, authenticated selection of an existing
+  session to revoke first; every self-service session-management endpoint
+  authorizes strictly by ownership (`user_subject` match to the caller's
+  own session), never by role, and never permits one identity to view or
+  revoke another identity's session.
 - **Required unit tests:** Cookie-attribute construction; idle/absolute
   timeout boundary conditions (just-inside vs. just-outside the window);
   rotation logic (old row invalidated, new row created, both linked for
-  audit purposes per Pass 12).
+  audit purposes per Pass 12); genuine-user-activity request classification
+  (which request shapes may refresh `last_seen_at` and which may not);
+  session-count-at-cap logic (2 vs. 3 vs. 4th-login-attempted).
 - **Required integration tests:** A session past its idle timeout is
   rejected; a session past its absolute timeout is rejected even with
   continuous activity; a rotated session's old identifier is rejected after
-  rotation.
+  rotation; a background/polling request does not extend an otherwise-idle
+  session; a login attempt at the 3-session cap does not create a session
+  until an existing one is explicitly revoked; self-service list/revoke-one/
+  revoke-all each operate correctly against a real database-backed session
+  set for the caller's own identity.
 - **Required e2e / abuse-case tests:** A browser replaying a
   pre-rotation cookie value after rotation is rejected; a session fixation
   attempt (an attacker-supplied pre-auth session identifier surviving into
   an authenticated session) fails, since login always issues a fresh
-  identifier per `identity-and-session-architecture.md`.
+  identifier per `identity-and-session-architecture.md`; an authenticated
+  identity attempting to list or revoke a session belonging to a different
+  identity via the self-service endpoints is rejected; a login attempt that
+  tries to bypass the at-cap explicit-selection requirement (e.g. omitting
+  the selected session to revoke) is rejected rather than silently evicting
+  the oldest session.
 - **Explicit non-goals:** CSRF protection (Pass 6). Federated/IdP logout is
   explicitly optional per the design document and may be deferred beyond
-  this pass.
+  this pass. Administrator-initiated cross-identity session revocation
+  remains Pass 18's concern, not this pass's.
 - **Migration / compatibility considerations:** No schema change beyond Pass
-  4's table (timeout/rotation are policy, not schema). Bearer-token flow
-  still unaffected.
-- **Rollback considerations:** Revert lifecycle-policy code; the underlying
-  session table from Pass 4 is unaffected and can remain.
-- **Recommended atomic commit boundary:** One PR: cookie hardening,
-  timeout/rotation enforcement, logout route, and their tests.
+  4's table — the self-service session-management surface and cardinality
+  enforcement read and write the same table, using the already-specified
+  `ip_at_issue`/`user_agent_at_issue` fields as the minimal session-recognition
+  metadata; no new field is required. Bearer-token flow still unaffected.
+- **Rollback considerations:** Revert lifecycle-policy code and the
+  self-service routes; the underlying session table from Pass 4 is
+  unaffected and can remain.
+- **Recommended atomic commit boundary:** Reasonable to split into two PRs
+  given the expanded scope: (1) cookie hardening, timeout/rotation
+  enforcement, and logout, with their tests; (2) session-cardinality
+  enforcement and the self-service session-management endpoints, with
+  their tests — either as one PR or two is acceptable, but do not bundle
+  either with Pass 6's CSRF work.
 
 ## Pass 6 — CSRF protection
 
