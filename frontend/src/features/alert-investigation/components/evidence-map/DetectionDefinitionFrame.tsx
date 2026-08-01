@@ -12,12 +12,10 @@ import styles from "./evidence-map.module.css";
  * outcome clause when declared) and a bus of characteristic pins.
  *
  * Deliberately renders `.ruleFrame` alone, never `.artifactShape` (the
- * shared background+border treatment every other artifact uses): the
- * approved prototype (`dark-evidence-map/prototype.css`'s `.ruleframe`)
- * and UX spec §8 ("never a filled card") both show this frame with no
- * fill and no border — only the two corner brackets. Applying
- * `.artifactShape` here (corrected by this pass) had rendered it as a
- * solid bordered box, contradicting both.
+ * shared background+border treatment every other artifact uses) —
+ * applying `.artifactShape` here would render the frame as a solid
+ * bordered box, conflicting with UX spec §8's undecorated,
+ * corner-bracketed treatment ("never a filled card").
  *
  * The bus renders every declared characteristic row `concordance.ts`
  * produces — satisfied and declared-but-unsatisfied alike (UX spec §8;

@@ -348,8 +348,6 @@ func TestAdvance_LaterDefinitionRevision_DoesNotAlterExistingAlert(t *testing.T)
 	}
 	before := readAlertSummary(t, db, rec.ID)
 
-	// Insert a newer revision for scenario-1 alongside the original row --
-	// the original detection_definitions row is never touched.
 	newContent := []byte(`{"scenario":"scenario-1","name":"Interactive exec with TTY and stdin (revised)","description":"revised","conditions":{"operation":{"resource":"pods","subresource":"exec"},"requires_any":[{"id":"tty_allocation","description":"x"}]}}`)
 	if _, err := db.ExecContext(context.Background(),
 		`INSERT INTO detection_definitions (scenario, revision, content) VALUES ('scenario-1', 'newer-revision-id', $1)`,

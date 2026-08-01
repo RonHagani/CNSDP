@@ -14,7 +14,6 @@ CREATE TABLE detection_definitions (
     revision TEXT NOT NULL
 );
 
--- One validation outcome per submission.
 CREATE TABLE validation_outcomes (
     id SERIAL PRIMARY KEY,
     submission_id INTEGER NOT NULL REFERENCES submissions(id),
@@ -23,7 +22,6 @@ CREATE TABLE validation_outcomes (
     UNIQUE (submission_id)
 );
 
--- One normalized event per submission.
 CREATE TABLE normalized_events (
     id SERIAL PRIMARY KEY,
     submission_id INTEGER NOT NULL REFERENCES submissions(id),
@@ -32,7 +30,6 @@ CREATE TABLE normalized_events (
     UNIQUE (submission_id)
 );
 
--- One detection result per (submission, detection-definition revision).
 CREATE TABLE detection_results (
     id SERIAL PRIMARY KEY,
     submission_id INTEGER NOT NULL REFERENCES submissions(id),
@@ -42,7 +39,6 @@ CREATE TABLE detection_results (
     UNIQUE (submission_id, detection_definition_id)
 );
 
--- One alert per matching detection result.
 CREATE TABLE alerts (
     id SERIAL PRIMARY KEY,
     detection_result_id INTEGER NOT NULL REFERENCES detection_results(id),
@@ -50,7 +46,6 @@ CREATE TABLE alerts (
     UNIQUE (detection_result_id)
 );
 
--- One traceability link per (source, target, relation).
 CREATE TABLE traceability_links (
     id SERIAL PRIMARY KEY,
     source_ref TEXT NOT NULL,
