@@ -4,10 +4,10 @@ import styles from "./StatusBadge.module.css";
 export type StatusTone = "intact" | "warning" | "broken" | "neutral";
 
 const TONE_GLYPH: Record<StatusTone, string> = {
-  intact: "✓", // check — intact / normal
-  warning: "⚠", // triangle warning — a genuine warning state
-  broken: "✕", // cross — broken / unavailable
-  neutral: "–", // en dash — no status claim
+  intact: "✓",
+  warning: "⚠",
+  broken: "✕",
+  neutral: "–",
 };
 
 /**

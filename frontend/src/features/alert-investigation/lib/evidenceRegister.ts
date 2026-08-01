@@ -4,12 +4,10 @@ import type { AlertInvestigationResponse, EvidenceArtifactId } from "@/types/con
  * The Evidence Register model (UX spec §3.4): the fixed six-artifact
  * ledger. Traceability is deliberately absent — it is not a seventh
  * artifact (PD-04 scope decision 8; FR-031). The per-artifact summary
- * field choices below extract the same fields StageContent.tsx's
- * per-artifact renders already treat as each artifact's essential content
+ * field choices below extract each artifact's essential content
  * (validation outcome + reason; detection definition name/scenario;
- * matched definition/subject/operation/target/outcome for the alert) —
- * StageContent.tsx itself is not imported or modified; only its field
- * selection is reused, condensed into a single factual line per artifact.
+ * matched definition/subject/operation/target/outcome for the alert),
+ * condensed into a single factual line per artifact.
  */
 
 export const EVIDENCE_ARTIFACT_ORDER: readonly EvidenceArtifactId[] = [

@@ -3,10 +3,8 @@ import type { AlertInvestigationResponse, FailedLink } from "@/types/contract";
 /**
  * The Traceability Proof model (UX spec §3.6, §7): a plain, declarative
  * verification statement, never a chain-link graphic. `failedLinkExplanation`
- * is generalized from `ProofChain.tsx`'s `FAILED_LINK_EXPLANATION` map
- * (ProofChain.tsx itself is not imported or modified — only its
- * already-correct explanatory text is preserved here, as UX spec §7
- * explicitly calls for).
+ * gives each failure mode its own plain-language sentence, as UX spec §7
+ * requires.
  *
  * Traceability and per-condition provenance (provenance.ts) are
  * independent concepts computed at different levels: this model verifies

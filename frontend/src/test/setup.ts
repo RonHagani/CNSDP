@@ -27,8 +27,8 @@ if (typeof document !== "undefined") {
   }
   vi.stubGlobal("IntersectionObserver", MockIntersectionObserver);
 
-  // jsdom also does not implement ResizeObserver; stub it out in case a
-  // future component observes element size (nothing currently does).
+  // jsdom does not implement ResizeObserver either, required by
+  // useHorizontalOverflow and the evidence-map overlay tests.
   class MockResizeObserver implements ResizeObserver {
     observe() {}
     unobserve() {}

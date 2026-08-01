@@ -7,8 +7,8 @@
  * existing scenario-1, partial-availability, and broken-traceability
  * fixtures (id 1-3) is intentionally not duplicated here — their content
  * is untouched by this file, and their existing behavior is exercised
- * unchanged by alertSource.test.ts, deriveStageStatus.test.ts,
- * lineage.test.ts, and AlertInvestigationPage.test.tsx.
+ * unchanged by alertSource.test.ts, lineage.test.ts, and
+ * AlertInvestigationPage.test.tsx.
  */
 import { describe, expect, it } from "vitest";
 import { fixtureScenario2Intact, fixtureScenario3Intact, fixturesById } from "./v1";

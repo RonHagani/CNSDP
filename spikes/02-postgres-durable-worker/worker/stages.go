@@ -180,7 +180,7 @@ func advance(ctx context.Context, db *sql.DB, submissionID int, work stageWork, 
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback() // no-op once committed
+	defer tx.Rollback()
 
 	stmts, err := work.prepare(ctx, tx, submissionID)
 	if err != nil {

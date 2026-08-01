@@ -6,11 +6,9 @@
 # but that binary and a minimal Alpine base -- no source, no build
 # tooling, no Git metadata.
 
-# ---- Build stage ----
 # Alpine variant tag without a distinct alpine-release suffix -- Docker
 # Hub does not publish a golang:1.26.5-alpine3.22 tag; 1.26.5-alpine is
-# the exact patch match for this repository's go.mod (go 1.26.5) that
-# actually exists (confirmed against the registry before writing this).
+# the exact patch match for this repository's go.mod (go 1.26.5).
 FROM golang:1.26.5-alpine AS builder
 
 WORKDIR /src
@@ -31,12 +29,10 @@ COPY definitions ./definitions
 
 # CGO_ENABLED=0: every production dependency (pgx's pure-Go driver,
 # golang-migrate's pgx/v5 backend, the k8s.io audit-event types, the YAML
-# parser) is pure Go -- confirmed by a successful
-# CGO_ENABLED=0 GOOS=linux build before this Dockerfile was written.
+# parser) is pure Go, so the static build succeeds with cgo disabled.
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build -trimpath -ldflags="-s -w" -o /out/platform ./cmd/platform
 
-# ---- Runtime stage ----
 # Alpine, not scratch/distroless: the app healthcheck below and the
 # Compose healthcheck both need a real HTTP client, and Alpine's busybox
 # provides `wget` out of the box -- no custom healthcheck binary, no
