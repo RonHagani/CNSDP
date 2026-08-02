@@ -672,6 +672,27 @@ aligned with PC-P-004.
 than unverifiable claims: UC-002's explainability deficiency and UC-003's
 insufficient-evidence outcome.
 
+## Section H — Ingestion-channel summary
+
+### FR-036 — Retrospective ingestion-channel summary
+
+The platform shall make available, for the defined telemetry intake, a
+retrospective summary consisting of: the count of submissions already
+admitted through it, and the timestamp of the most recently admitted
+submission, or an explicit indication that none has yet been admitted. This
+is a read-only report of telemetry already received; it shall not classify
+the intake's health, infer or report missing or expected-but-undelivered
+telemetry, or apply any staleness or time-based threshold.
+
+**Traceability:** UC-001; PER-003; PC-G-001; PD-04 scope decision 6
+(clarified).
+
+**Rationale:** Narrowly resolves scope decision 6's retained boundary: v0.1
+may report facts about telemetry already received without judging the
+health of its delivery. Serves PER-003's UC-001 goal of determining how
+telemetry that reached intake was handled, extended from per-submission to
+channel-level summary.
+
 ## Traceability summary
 
 | Requirement | Use cases | Personas | Product goals | PD-04 basis |
@@ -711,6 +732,7 @@ insufficient-evidence outcome.
 | FR-033 | UC-002, UC-003 | PER-001, PER-002 | PC-G-007 | In-scope 7 |
 | FR-034 | UC-003 | PER-001 | PC-G-007 | In-scope 7 |
 | FR-035 | UC-002, UC-003 | PER-001, PER-002 | PC-G-005, PC-G-006, PC-G-007 | In-scope 6, 7 |
+| FR-036 | UC-001 | PER-003 | PC-G-001 | Decision 6 (clarified) |
 
 Behavior required by more than one use case or persona is stated once with
 shared traceability. In particular: "never silently dropped and never

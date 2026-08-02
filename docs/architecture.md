@@ -56,7 +56,7 @@ Cited by identifier only; full text lives in the referenced Phase 0 document.
 explicit internal workflow-stage module boundaries. No service
 decomposition, no message broker. See ADR-0001.
 
-Nine internal modules, one per workflow area, each owning its own artifact
+Ten internal modules, one per workflow area, each owning its own artifact
 table(s) and exposing only a defined interface to the others — no module
 reads or writes another module's table directly:
 
@@ -69,6 +69,13 @@ reads or writes another module's table directly:
 7. Traceability
 8. Retrieval and investigation
 9. Operational diagnostics
+10. Ingestion-channel summary
+
+Module 10 is read-only: it summarizes module 1's already-admitted
+submissions (FR-036) through internal/submission's sanctioned read API and
+persists no table of its own. It reports retrospective counts and timing
+only — never a health, staleness, or missing-delivery judgment (docs/
+scope.md scope decision 6, as clarified).
 
 This boundary discipline is what satisfies NFR-023 (change isolation) and is
 verified by AC-027 (a confined change must not require changes to unrelated

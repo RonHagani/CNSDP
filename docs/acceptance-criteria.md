@@ -848,6 +848,33 @@ lock-in criterion.
 
 **Traceability:** NFR-018, NFR-034.
 
+## Section K — Ingestion-Channel Summary
+
+### AC-031 — Retrospective ingestion-channel summary accuracy and access control
+
+**Type:** Functional / Security.
+
+**Context:** The defined telemetry intake, with zero and with multiple
+previously admitted submissions.
+
+**Action or condition:** An authenticated request for the ingestion-channel
+summary is made when no submission has ever been admitted, and again after
+multiple submissions have been admitted; an unauthenticated or invalidly
+authenticated request is also attempted.
+
+**Pass conditions:** With no admitted submissions, the summary reports a
+submission count of zero and no last-admitted time, represented honestly
+rather than omitted. With admitted submissions present, the summary reports
+a count matching the admitted total and a last-admitted time matching the
+most recent admission. No health, staleness, or missing-delivery judgment is
+reported. An unauthenticated or invalidly authenticated request is denied
+and returns no summary data.
+
+**Required evidence:** Captured responses for the zero-submission case, the
+multiple-submission case, and the denied-access case.
+
+**Traceability:** FR-036; UC-001; PER-003.
+
 ## Coverage matrix
 
 ### Functional requirements
@@ -865,7 +892,7 @@ lock-in criterion.
 | FR-009 | AC-005 | FR-021 | AC-009 | FR-033 | AC-016 |
 | FR-010 | AC-006 | FR-022 | AC-009 | FR-034 | AC-016 |
 | FR-011 | AC-003, AC-004, AC-005, AC-006 | FR-023 | AC-009, AC-013 | FR-035 | AC-016 |
-| FR-012 | AC-004, AC-005, AC-006, AC-029 | FR-024 | AC-010 | | |
+| FR-012 | AC-004, AC-005, AC-006, AC-029 | FR-024 | AC-010 | FR-036 | AC-031 |
 
 ### Non-functional requirements
 

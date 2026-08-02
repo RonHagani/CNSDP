@@ -1,6 +1,7 @@
 import { type RouteObject, createBrowserRouter, Navigate } from "react-router-dom";
 import { AlertInvestigationPage } from "@/features/alert-investigation/AlertInvestigationPage";
 import { AlertInventoryPage } from "@/features/alert-inventory/AlertInventoryPage";
+import { DataSourcesPage } from "@/features/data-sources/DataSourcesPage";
 import { NotFoundPage } from "./NotFoundPage";
 import { RootErrorBoundary } from "./RootErrorBoundary";
 
@@ -29,6 +30,11 @@ export const routes: RouteObject[] = [
   {
     path: "/alerts/:alertId",
     element: <AlertInvestigationPage />,
+    errorElement: <RootErrorBoundary />,
+  },
+  {
+    path: "/data-sources",
+    element: <DataSourcesPage />,
     errorElement: <RootErrorBoundary />,
   },
   {

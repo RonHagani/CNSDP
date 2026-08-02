@@ -166,7 +166,16 @@ recorded in PD-03:
    classified as valid proceeds.
 6. **Source-health or missing-delivery visibility** — resolved. Excluded from
    v0.1 and deferred to a later release. v0.1 covers only telemetry that
-   reaches the defined intake, preserving the UC-001 boundary.
+   reaches the defined intake, preserving the UC-001 boundary. Clarification:
+   this exclusion covers health classification, missing-delivery detection,
+   staleness or time-based threshold judgment, and inactivity-based alerting.
+   It does not exclude a read-only, retrospective summary of telemetry
+   already accepted through the existing defined intake channel — the
+   channel's identity, the count of submissions already admitted through it,
+   and the timestamp of the most recently admitted one, including the fact
+   that none have yet been admitted. No inference about expected-but-missing
+   telemetry is made, and no additional independently identified ingestion
+   channel is introduced.
 7. **Detection-result visibility for non-matching telemetry** — resolved.
    Excluded from v0.1. Verification under UC-002 relies on the recorded match
    reasons of matching detection results that produce alerts.
