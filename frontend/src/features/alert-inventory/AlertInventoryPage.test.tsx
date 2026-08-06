@@ -146,7 +146,7 @@ describe("AlertInventoryPage", () => {
 });
 
 describe("AlertInventoryPage — shell", () => {
-  it("renders the product identity and an active Alerts destination alongside disabled future destinations", async () => {
+  it("renders the product identity and an active Alerts destination alongside the real Detections link and the still-disabled System Health", async () => {
     stubFetchRoutes({ "/v1/alerts": () => mockJsonResponse(200, { alerts: THREE_ROWS, total: 3 }) });
     renderAt("/alerts");
     await screen.findByRole("heading", { name: "Alerts" });
@@ -155,9 +155,10 @@ describe("AlertInventoryPage — shell", () => {
     const alertsLink = screen.getByRole("link", { name: "Alerts" });
     expect(alertsLink).toHaveAttribute("aria-current", "page");
 
-    for (const label of ["Detections", "System Health"]) {
-      const disabled = screen.getByText(label).closest("span");
-      expect(disabled).toHaveAttribute("aria-disabled", "true");
-    }
+    const detectionsLink = screen.getByRole("link", { name: "Detections" });
+    expect(detectionsLink).not.toHaveAttribute("aria-current", "page");
+
+    const systemHealth = screen.getByText("System Health").closest("span");
+    expect(systemHealth).toHaveAttribute("aria-disabled", "true");
   });
 });

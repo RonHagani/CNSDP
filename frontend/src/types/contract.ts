@@ -281,3 +281,20 @@ export interface DataSourcesResponse {
   dataSources: DataSourceItem[];
   total: number;
 }
+
+/**
+ * Wire types for `GET /v1/detections` (internal/retrieval/detections.go).
+ * The currently active detection definitions only (FR-020, FR-021,
+ * FR-022) — never a historical, superseded, or inactive revision
+ * (ADR-0004: no code path exists to edit or manage a definition through
+ * the product itself).
+ */
+export interface DetectionItem extends DetectionDefinition {
+  revision: string;
+}
+
+/** internal/retrieval `detectionsListResponse` (GET /v1/detections). */
+export interface DetectionsResponse {
+  detections: DetectionItem[];
+  total: number;
+}

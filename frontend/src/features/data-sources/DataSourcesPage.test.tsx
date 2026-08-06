@@ -98,7 +98,7 @@ describe("DataSourcesPage", () => {
 });
 
 describe("DataSourcesPage — shell", () => {
-  it("marks Data Sources as the active navigation destination", async () => {
+  it("marks Data Sources as the active navigation destination, alongside the real Detections link and the still-disabled System Health", async () => {
     stubFetchRoutes({
       "/v1/data-sources": () => mockJsonResponse(200, { dataSources: [source()], total: 1 }),
     });
@@ -108,9 +108,10 @@ describe("DataSourcesPage — shell", () => {
     const dataSourcesLink = screen.getByRole("link", { name: "Data Sources" });
     expect(dataSourcesLink).toHaveAttribute("aria-current", "page");
 
-    for (const label of ["Detections", "System Health"]) {
-      const disabled = screen.getByText(label).closest("span");
-      expect(disabled).toHaveAttribute("aria-disabled", "true");
-    }
+    const detectionsLink = screen.getByRole("link", { name: "Detections" });
+    expect(detectionsLink).not.toHaveAttribute("aria-current", "page");
+
+    const systemHealth = screen.getByText("System Health").closest("span");
+    expect(systemHealth).toHaveAttribute("aria-disabled", "true");
   });
 });

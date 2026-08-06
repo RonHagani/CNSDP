@@ -114,6 +114,32 @@ describe("app router — navigation flow", () => {
     expect(router.state.location.pathname).toBe("/data-sources");
   });
 
+  it("renders the Detections page for a direct /detections visit, wired from the real route config", async () => {
+    stubFetchRoutes({
+      "/v1/detections": () =>
+        mockJsonResponse(200, {
+          detections: [
+            {
+              scenario: "scenario-1",
+              name: "Interactive container exec request",
+              description: "Detection of a Kubernetes API request to the pods/exec subresource.",
+              revision: "1111222233334444555566667777888899990000aaaabbbbccccddddeeeeff",
+              conditions: {
+                operation: { resource: "pods", subresource: "exec" },
+                requires_any: [
+                  { id: "tty_allocation", description: "The exec request requests interactive terminal (TTY) allocation." },
+                ],
+              },
+            },
+          ],
+          total: 1,
+        }),
+    });
+    const router = renderRouterAt("/detections");
+    await screen.findByRole("heading", { name: "Detections" });
+    expect(router.state.location.pathname).toBe("/detections");
+  });
+
   it("switching from one alert to a different alert via the inventory leaves no prior provenance selection behind", async () => {
     stubBackend();
     const user = userEvent.setup();
