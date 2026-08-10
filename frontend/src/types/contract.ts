@@ -261,3 +261,23 @@ export type SignalPathStageId =
   | "evidence"
   | "traceability"
   | "investigation";
+
+/**
+ * Wire types for `GET /v1/data-sources` (internal/datasources/datasources.go).
+ * A retrospective summary of telemetry already admitted through one
+ * ingestion channel (FR-036) — never a health, staleness, or
+ * missing-delivery judgment (docs/scope.md scope decision 6).
+ */
+export interface DataSourceItem {
+  id: string;
+  displayName: string;
+  endpoint: string;
+  eventCount: number;
+  lastEventAt: string | null;
+}
+
+/** internal/datasources `listResponse` (GET /v1/data-sources). */
+export interface DataSourcesResponse {
+  dataSources: DataSourceItem[];
+  total: number;
+}

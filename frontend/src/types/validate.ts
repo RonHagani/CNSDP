@@ -16,7 +16,7 @@
  */
 
 import { ApiError } from "@/lib/api/client";
-import type { AlertInventoryResponse, AlertInvestigationResponse } from "./contract";
+import type { AlertInventoryResponse, AlertInvestigationResponse, DataSourcesResponse } from "./contract";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -74,4 +74,29 @@ export function validateAlertInventoryResponse(json: unknown): AlertInventoryRes
     }
   }
   return json as unknown as AlertInventoryResponse;
+}
+
+export function validateDataSourcesResponse(json: unknown): DataSourcesResponse {
+  if (!isRecord(json) || !Array.isArray(json.dataSources) || typeof json.total !== "number") {
+    throw new ApiError(
+      "malformed-response",
+      "The data sources response did not match the expected DataSourcesResponse shape.",
+    );
+  }
+  for (const item of json.dataSources) {
+    if (
+      !isRecord(item) ||
+      typeof item.id !== "string" ||
+      typeof item.displayName !== "string" ||
+      typeof item.endpoint !== "string" ||
+      typeof item.eventCount !== "number" ||
+      (item.lastEventAt !== null && typeof item.lastEventAt !== "string")
+    ) {
+      throw new ApiError(
+        "malformed-response",
+        "A data source row did not match the expected DataSourceItem shape.",
+      );
+    }
+  }
+  return json as unknown as DataSourcesResponse;
 }

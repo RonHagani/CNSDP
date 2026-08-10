@@ -243,3 +243,19 @@ func SourceKey(rawEvent json.RawMessage, auditID, auditStage string) string {
 	sum := sha256.Sum256(rawEvent)
 	return "raw:" + hex.EncodeToString(sum[:])
 }
+
+// AdmittedSummary reports the total number of submissions ever admitted
+// and the created_at of the most recently admitted one (nil if none exist)
+// -- the two facts internal/datasources projects onto the platform's one
+// ingestion channel (FR-036). It is a retrospective count, never a health
+// or delivery judgment.
+func AdmittedSummary(ctx context.Context, db DB) (count int64, lastAdmittedAt *time.Time, err error) {
+	var last sql.NullTime
+	if err := db.QueryRowContext(ctx, `SELECT count(*), max(created_at) FROM submissions`).Scan(&count, &last); err != nil {
+		return 0, nil, fmt.Errorf("submission: admitted summary: %w", err)
+	}
+	if last.Valid {
+		lastAdmittedAt = &last.Time
+	}
+	return count, lastAdmittedAt, nil
+}

@@ -365,6 +365,7 @@ Every denial, of either shape, is itself an audited event
 | `GET /v1/alerts` | Exists today | View alert inventory |
 | `GET /v1/alerts/{id}` | Exists today | View alert investigation details (composes raw payload, provenance/traceability). The Go backend — never the browser, frontend, or BFF — authorizes each sub-view individually against the matrix above and composes or omits the corresponding response section accordingly (see Pass 11, `implementation-roadmap.md`); the frontend only renders whatever the authorized backend response actually contains. |
 | `GET /readyz` | Exists today, intentionally unauthenticated | None (see "Notes on specific rows," above) |
+| `GET /v1/data-sources` | Exists today | View data sources summary — read-only, bearer-token authenticated (same mechanism as `GET /v1/alerts`); a retrospective ingestion-channel summary (count and latest-timestamp facts only), not a management or configuration capability. Distinct from `POST /v1/data-sources`, below, which is a separate, still-proposed capability. |
 | `POST /v1/alerts/{id}/acknowledge` ⚠ | Proposed, not implemented | Acknowledge an alert |
 | `PATCH /v1/alerts/{id}/status` ⚠ | Proposed, not implemented | Change alert status |
 | `POST /v1/alerts/{id}/assignment` ⚠ | Proposed, not implemented | Assign an alert |

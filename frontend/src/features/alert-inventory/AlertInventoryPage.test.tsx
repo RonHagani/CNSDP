@@ -155,7 +155,7 @@ describe("AlertInventoryPage — shell", () => {
     const alertsLink = screen.getByRole("link", { name: "Alerts" });
     expect(alertsLink).toHaveAttribute("aria-current", "page");
 
-    for (const label of ["Detections", "Data Sources", "System Health"]) {
+    for (const label of ["Detections", "System Health"]) {
       const disabled = screen.getByText(label).closest("span");
       expect(disabled).toHaveAttribute("aria-disabled", "true");
     }

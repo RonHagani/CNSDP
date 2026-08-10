@@ -141,6 +141,7 @@ v0.1 will be considered successful when it demonstrates that:
 8. the full path from source telemetry to alert can be traced
 9. the system can be operated and evaluated through documented procedures
 10. the project demonstrates deliberate security, reliability, testing, and operational practices
+11. a retrospective summary of telemetry already accepted through the defined intake is available for review, including when none has yet been accepted (not a health or delivery judgment — see `docs/scope.md` scope decision 6)
 
 Quantitative success metrics will be defined later where they are meaningful and testable.
 

@@ -93,6 +93,27 @@ describe("app router — navigation flow", () => {
     expect(router.state.location.pathname).toBe("/alerts");
   });
 
+  it("renders the Data Sources page for a direct /data-sources visit, wired from the real route config", async () => {
+    stubFetchRoutes({
+      "/v1/data-sources": () =>
+        mockJsonResponse(200, {
+          dataSources: [
+            {
+              id: "audit-events",
+              displayName: "Audit Events API",
+              endpoint: "POST /v1/audit-events",
+              eventCount: 0,
+              lastEventAt: null,
+            },
+          ],
+          total: 1,
+        }),
+    });
+    const router = renderRouterAt("/data-sources");
+    await screen.findByRole("heading", { name: "Data Sources" });
+    expect(router.state.location.pathname).toBe("/data-sources");
+  });
+
   it("switching from one alert to a different alert via the inventory leaves no prior provenance selection behind", async () => {
     stubBackend();
     const user = userEvent.setup();

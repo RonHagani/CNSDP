@@ -26,6 +26,7 @@ import (
 	"syscall"
 	"time"
 
+	"cnsdp/internal/datasources"
 	"cnsdp/internal/db"
 	"cnsdp/internal/detection"
 	"cnsdp/internal/diagnostics"
@@ -91,6 +92,7 @@ func main() {
 	mux.Handle("POST /v1/audit-events", &intake.Handler{DB: conn, Token: token, MaxBodyBytes: maxBodyBytes})
 	mux.Handle("GET /v1/alerts", &retrieval.ListHandler{DB: conn, Token: token})
 	mux.Handle("GET /v1/alerts/{id}", &retrieval.Handler{DB: conn, Token: token})
+	mux.Handle("GET /v1/data-sources", &datasources.Handler{DB: conn, Token: token})
 	mux.Handle("GET /readyz", &diagnostics.Handler{DB: conn})
 
 	srv := &http.Server{
