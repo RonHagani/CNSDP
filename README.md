@@ -107,6 +107,8 @@ walkthrough, including inspecting a single alert's evidence via `curl`.
 | `POST /v1/audit-events` | Bearer token | Submits a Kubernetes audit-webhook `EventList` for admission |
 | `GET /v1/alerts` | Bearer token | Lists persisted alerts as ordered summaries for the frontend alert-inventory view |
 | `GET /v1/alerts/{id}` | Bearer token | Retrieves an alert together with its full evidence and traceability inventory |
+| `GET /v1/detections` | Bearer token | Lists the currently active detection definitions and their documented conditions |
+| `GET /v1/data-sources` | Bearer token | Reports a retrospective count and last-event time for the platform's one ingestion channel |
 | `GET /readyz` | None | Reports readiness: database connectivity and detection-definition load status |
 
 ## Testing

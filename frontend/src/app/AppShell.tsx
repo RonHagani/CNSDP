@@ -6,7 +6,7 @@ import styles from "./AppShell.module.css";
  *  visibly disabled, non-navigating chrome — never a fake functional page
  *  (product requirement: no placeholder page for a feature that doesn't
  *  exist). */
-const PLANNED_DESTINATIONS = ["Detections", "System Health"];
+const PLANNED_DESTINATIONS = ["System Health"];
 
 /**
  * The restrained production application shell: product identity plus a
@@ -29,6 +29,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           </NavLink>
           <NavLink to="/data-sources" className={styles.navLink}>
             Data Sources
+          </NavLink>
+          <NavLink to="/detections" className={styles.navLink}>
+            Detections
           </NavLink>
           {PLANNED_DESTINATIONS.map((label) => (
             <span key={label} className={styles.navDisabled} aria-disabled="true">

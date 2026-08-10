@@ -16,7 +16,12 @@
  */
 
 import { ApiError } from "@/lib/api/client";
-import type { AlertInventoryResponse, AlertInvestigationResponse, DataSourcesResponse } from "./contract";
+import type {
+  AlertInventoryResponse,
+  AlertInvestigationResponse,
+  DataSourcesResponse,
+  DetectionsResponse,
+} from "./contract";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -99,4 +104,31 @@ export function validateDataSourcesResponse(json: unknown): DataSourcesResponse 
     }
   }
   return json as unknown as DataSourcesResponse;
+}
+
+export function validateDetectionsResponse(json: unknown): DetectionsResponse {
+  if (!isRecord(json) || !Array.isArray(json.detections) || typeof json.total !== "number") {
+    throw new ApiError(
+      "malformed-response",
+      "The detections response did not match the expected DetectionsResponse shape.",
+    );
+  }
+  for (const item of json.detections) {
+    if (
+      !isRecord(item) ||
+      typeof item.scenario !== "string" ||
+      typeof item.name !== "string" ||
+      typeof item.description !== "string" ||
+      typeof item.revision !== "string" ||
+      !isRecord(item.conditions) ||
+      !isRecord(item.conditions.operation) ||
+      typeof item.conditions.operation.resource !== "string"
+    ) {
+      throw new ApiError(
+        "malformed-response",
+        "A detection row did not match the expected DetectionItem shape.",
+      );
+    }
+  }
+  return json as unknown as DetectionsResponse;
 }

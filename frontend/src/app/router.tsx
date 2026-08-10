@@ -2,6 +2,7 @@ import { type RouteObject, createBrowserRouter, Navigate } from "react-router-do
 import { AlertInvestigationPage } from "@/features/alert-investigation/AlertInvestigationPage";
 import { AlertInventoryPage } from "@/features/alert-inventory/AlertInventoryPage";
 import { DataSourcesPage } from "@/features/data-sources/DataSourcesPage";
+import { DetectionsPage } from "@/features/detections/DetectionsPage";
 import { NotFoundPage } from "./NotFoundPage";
 import { RootErrorBoundary } from "./RootErrorBoundary";
 
@@ -35,6 +36,11 @@ export const routes: RouteObject[] = [
   {
     path: "/data-sources",
     element: <DataSourcesPage />,
+    errorElement: <RootErrorBoundary />,
+  },
+  {
+    path: "/detections",
+    element: <DetectionsPage />,
     errorElement: <RootErrorBoundary />,
   },
   {
