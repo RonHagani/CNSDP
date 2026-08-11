@@ -108,6 +108,7 @@ walkthrough, including inspecting a single alert's evidence via `curl`.
 | `GET /v1/alerts` | Bearer token | Lists persisted alerts as ordered summaries for the frontend alert-inventory view |
 | `GET /v1/alerts/{id}` | Bearer token | Retrieves an alert together with its full evidence and traceability inventory |
 | `GET /v1/detections` | Bearer token | Lists the currently active detection definitions and their documented conditions |
+| `GET /v1/submissions` | Bearer token | Keyset-paginated, outcome-filterable review of every admitted submission and its validation outcome, including ones that never produce an alert |
 | `GET /v1/data-sources` | Bearer token | Reports a retrospective count and last-event time for the platform's one ingestion channel |
 | `GET /readyz` | None | Reports readiness: database connectivity and detection-definition load status |
 

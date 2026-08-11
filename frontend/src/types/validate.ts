@@ -21,6 +21,7 @@ import type {
   AlertInvestigationResponse,
   DataSourcesResponse,
   DetectionsResponse,
+  SubmissionsResponse,
 } from "./contract";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -131,4 +132,35 @@ export function validateDetectionsResponse(json: unknown): DetectionsResponse {
     }
   }
   return json as unknown as DetectionsResponse;
+}
+
+export function validateSubmissionsResponse(json: unknown): SubmissionsResponse {
+  if (
+    !isRecord(json) ||
+    !Array.isArray(json.submissions) ||
+    (json.nextCursor !== null && typeof json.nextCursor !== "number") ||
+    typeof json.total !== "number"
+  ) {
+    throw new ApiError(
+      "malformed-response",
+      "The submissions response did not match the expected SubmissionsResponse shape.",
+    );
+  }
+  for (const item of json.submissions) {
+    if (
+      !isRecord(item) ||
+      typeof item.submissionId !== "number" ||
+      typeof item.status !== "string" ||
+      typeof item.auditId !== "string" ||
+      typeof item.auditStage !== "string" ||
+      typeof item.createdAt !== "string" ||
+      !hasAvailableFlag(item.validationOutcome)
+    ) {
+      throw new ApiError(
+        "malformed-response",
+        "A submissions row did not match the expected SubmissionListItem shape.",
+      );
+    }
+  }
+  return json as unknown as SubmissionsResponse;
 }

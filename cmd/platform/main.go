@@ -93,6 +93,7 @@ func main() {
 	mux.Handle("GET /v1/alerts", &retrieval.ListHandler{DB: conn, Token: token})
 	mux.Handle("GET /v1/alerts/{id}", &retrieval.Handler{DB: conn, Token: token})
 	mux.Handle("GET /v1/detections", &retrieval.DetectionsHandler{DB: conn, Token: token})
+	mux.Handle("GET /v1/submissions", &retrieval.SubmissionsListHandler{DB: conn, Token: token})
 	mux.Handle("GET /v1/data-sources", &datasources.Handler{DB: conn, Token: token})
 	mux.Handle("GET /readyz", &diagnostics.Handler{DB: conn})
 

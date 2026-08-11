@@ -295,3 +295,182 @@ func TestGet_NotFoundBeforeAdvance(t *testing.T) {
 		t.Fatalf("Get: expected ErrNotFound, got %v", err)
 	}
 }
+
+// --- ListByOutcome / CountByOutcome (Checkpoint: submissions review,
+// FR-011/FR-012/FR-013): the sanctioned batch reads internal/retrieval's
+// submissions list uses for an outcome-filtered page, so composing that
+// page never issues one validation query per submission row.
+
+func TestListByOutcome_ReturnsOnlyMatchingOutcomeOrderedBySubmissionID(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	valid1 := seedAdmitted(t, db, validEventJSON)
+	unsupported := seedAdmitted(t, db, unsupportedEventJSON)
+	valid2 := seedAdmitted(t, db, validEventJSON)
+	for _, sub := range []*submission.Submission{valid1, unsupported, valid2} {
+		if err := Advance(context.Background(), db, sub); err != nil {
+			t.Fatalf("Advance(%d): %v", sub.ID, err)
+		}
+	}
+
+	got, err := ListByOutcome(context.Background(), db, OutcomeValid, 0, 10)
+	if err != nil {
+		t.Fatalf("ListByOutcome: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len(got) = %d, want 2", len(got))
+	}
+	if got[0].SubmissionID != valid1.ID || got[1].SubmissionID != valid2.ID {
+		t.Errorf("submission ids = [%d, %d], want ascending [%d, %d]", got[0].SubmissionID, got[1].SubmissionID, valid1.ID, valid2.ID)
+	}
+	for _, r := range got {
+		if r.Result.Outcome != OutcomeValid {
+			t.Errorf("record %+v has outcome %q, want %q", r, r.Result.Outcome, OutcomeValid)
+		}
+	}
+}
+
+func TestListByOutcome_RespectsCursorAndLimit(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	first := seedAdmitted(t, db, unsupportedEventJSON)
+	second := seedAdmitted(t, db, unsupportedEventJSON)
+	third := seedAdmitted(t, db, unsupportedEventJSON)
+	for _, sub := range []*submission.Submission{first, second, third} {
+		if err := Advance(context.Background(), db, sub); err != nil {
+			t.Fatalf("Advance(%d): %v", sub.ID, err)
+		}
+	}
+
+	page, err := ListByOutcome(context.Background(), db, OutcomeUnsupported, 0, 2)
+	if err != nil {
+		t.Fatalf("ListByOutcome: %v", err)
+	}
+	if len(page) != 2 || page[0].SubmissionID != first.ID || page[1].SubmissionID != second.ID {
+		t.Errorf("first page = %+v, want [%d, %d] (limit enforced)", page, first.ID, second.ID)
+	}
+
+	rest, err := ListByOutcome(context.Background(), db, OutcomeUnsupported, second.ID, 10)
+	if err != nil {
+		t.Fatalf("ListByOutcome after cursor: %v", err)
+	}
+	if len(rest) != 1 || rest[0].SubmissionID != third.ID {
+		t.Errorf("page after cursor %d = %+v, want [%d]", second.ID, rest, third.ID)
+	}
+}
+
+func TestListByOutcome_ReasonCarriedThroughForNonValidOutcome(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	sub := seedAdmitted(t, db, unsupportedEventJSON)
+	if err := Advance(context.Background(), db, sub); err != nil {
+		t.Fatalf("Advance: %v", err)
+	}
+
+	got, err := ListByOutcome(context.Background(), db, OutcomeUnsupported, 0, 10)
+	if err != nil {
+		t.Fatalf("ListByOutcome: %v", err)
+	}
+	if len(got) != 1 || got[0].Result.Reason == "" {
+		t.Fatalf("got = %+v, want exactly one record with a non-empty reason", got)
+	}
+}
+
+func TestListByOutcome_NoMatchesReturnsNilSliceNoError(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	sub := seedAdmitted(t, db, validEventJSON)
+	if err := Advance(context.Background(), db, sub); err != nil {
+		t.Fatalf("Advance: %v", err)
+	}
+
+	got, err := ListByOutcome(context.Background(), db, OutcomeInvalid, 0, 10)
+	if err != nil {
+		t.Fatalf("ListByOutcome: %v", err)
+	}
+	if got != nil {
+		t.Errorf("got = %+v, want nil", got)
+	}
+}
+
+func TestCountByOutcome_CountsOnlyMatchingOutcome(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	valid := seedAdmitted(t, db, validEventJSON)
+	unsupported1 := seedAdmitted(t, db, unsupportedEventJSON)
+	unsupported2 := seedAdmitted(t, db, unsupportedEventJSON)
+	for _, sub := range []*submission.Submission{valid, unsupported1, unsupported2} {
+		if err := Advance(context.Background(), db, sub); err != nil {
+			t.Fatalf("Advance(%d): %v", sub.ID, err)
+		}
+	}
+
+	n, err := CountByOutcome(context.Background(), db, OutcomeUnsupported)
+	if err != nil {
+		t.Fatalf("CountByOutcome: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("count = %d, want 2", n)
+	}
+
+	n, err = CountByOutcome(context.Background(), db, OutcomeIncomplete)
+	if err != nil {
+		t.Fatalf("CountByOutcome: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("count = %d, want 0", n)
+	}
+}
+
+// --- BatchGet: the sanctioned batch read internal/retrieval's submissions
+// list uses to decorate one unfiltered page of submissions with their
+// outcomes in a single query.
+
+func TestBatchGet_ReturnsOutcomesKeyedBySubmissionID(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	valid := seedAdmitted(t, db, validEventJSON)
+	unsupported := seedAdmitted(t, db, unsupportedEventJSON)
+	for _, sub := range []*submission.Submission{valid, unsupported} {
+		if err := Advance(context.Background(), db, sub); err != nil {
+			t.Fatalf("Advance(%d): %v", sub.ID, err)
+		}
+	}
+
+	got, err := BatchGet(context.Background(), db, []int64{valid.ID, unsupported.ID})
+	if err != nil {
+		t.Fatalf("BatchGet: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len(got) = %d, want 2", len(got))
+	}
+	if got[valid.ID].Outcome != OutcomeValid {
+		t.Errorf("got[%d].Outcome = %q, want %q", valid.ID, got[valid.ID].Outcome, OutcomeValid)
+	}
+	if got[unsupported.ID].Outcome != OutcomeUnsupported {
+		t.Errorf("got[%d].Outcome = %q, want %q", unsupported.ID, got[unsupported.ID].Outcome, OutcomeUnsupported)
+	}
+}
+
+// TestBatchGet_PendingSubmissionIsAbsentFromResult proves the "no
+// fabricated outcome" contract: a submission that has never been advanced
+// through validation has no validation_outcomes row, and BatchGet must
+// simply omit it from the map rather than inventing a zero-value outcome.
+func TestBatchGet_PendingSubmissionIsAbsentFromResult(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	pending := seedAdmitted(t, db, validEventJSON) // never advanced
+
+	got, err := BatchGet(context.Background(), db, []int64{pending.ID})
+	if err != nil {
+		t.Fatalf("BatchGet: %v", err)
+	}
+	if _, ok := got[pending.ID]; ok {
+		t.Errorf("got[%d] present = %+v, want absent (pending submission)", pending.ID, got[pending.ID])
+	}
+}
+
+func TestBatchGet_EmptyIDsReturnsEmptyMapNoQuery(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+
+	got, err := BatchGet(context.Background(), db, nil)
+	if err != nil {
+		t.Fatalf("BatchGet: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("got = %+v, want empty map", got)
+	}
+}

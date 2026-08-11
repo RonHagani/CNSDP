@@ -235,6 +235,190 @@ func TestAdmit_RetryReturnsSameID(t *testing.T) {
 	}
 }
 
+// --- List (Checkpoint: submissions review, FR-011/FR-012/FR-013): the
+// keyset-paginated read internal/retrieval's submissions list composes.
+
+func TestList_OrdersByIDAscendingAndRespectsCursor(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	first := seedSubmission(t, db, StatusAdmitted)
+	second := seedSubmission(t, db, StatusAdmitted)
+	third := seedSubmission(t, db, StatusAdmitted)
+
+	page, err := List(context.Background(), db, 0, nil, 10)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(page) != 3 {
+		t.Fatalf("len(page) = %d, want 3", len(page))
+	}
+	if page[0].ID != first || page[1].ID != second || page[2].ID != third {
+		t.Errorf("ids = [%d, %d, %d], want ascending [%d, %d, %d]", page[0].ID, page[1].ID, page[2].ID, first, second, third)
+	}
+
+	// A cursor of the first id excludes it and everything before it.
+	rest, err := List(context.Background(), db, first, nil, 10)
+	if err != nil {
+		t.Fatalf("list after cursor: %v", err)
+	}
+	if len(rest) != 2 || rest[0].ID != second || rest[1].ID != third {
+		t.Errorf("list after cursor %d = %+v, want [%d, %d]", first, rest, second, third)
+	}
+}
+
+func TestList_RespectsLimit(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	seedSubmission(t, db, StatusAdmitted)
+	seedSubmission(t, db, StatusAdmitted)
+	seedSubmission(t, db, StatusAdmitted)
+
+	page, err := List(context.Background(), db, 0, nil, 2)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(page) != 2 {
+		t.Errorf("len(page) = %d, want 2 (limit enforced)", len(page))
+	}
+}
+
+func TestList_NilStatusReturnsEverySubmissionRegardlessOfStatus(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	seedSubmission(t, db, StatusAdmitted)
+	seedSubmission(t, db, StatusValidated)
+	seedSubmission(t, db, StatusEvidenced)
+
+	page, err := List(context.Background(), db, 0, nil, 10)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(page) != 3 {
+		t.Errorf("len(page) = %d, want 3 (no status filter)", len(page))
+	}
+}
+
+// TestList_StatusFilterSelectsOnlyPendingSubmissions is the direct proof of
+// the "pending" filter design: filtering List by StatusAdmitted returns
+// exactly the not-yet-validated submissions, and nothing already validated
+// -- no validation_outcomes read is needed to answer this.
+func TestList_StatusFilterSelectsOnlyPendingSubmissions(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	pending := seedSubmission(t, db, StatusAdmitted)
+	seedSubmission(t, db, StatusValidated)
+	seedSubmission(t, db, StatusEvidenced)
+
+	admitted := StatusAdmitted
+	page, err := List(context.Background(), db, 0, &admitted, 10)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(page) != 1 || page[0].ID != pending {
+		t.Errorf("page = %+v, want exactly the one pending submission %d", page, pending)
+	}
+}
+
+func TestList_EmptyTableReturnsNilSliceNoError(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+
+	page, err := List(context.Background(), db, 0, nil, 10)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if page != nil {
+		t.Errorf("page = %+v, want nil", page)
+	}
+}
+
+// --- GetMany: the bounded batch read internal/retrieval's submissions
+// list uses to fetch a page of submissions already selected by
+// internal/validation.ListByOutcome, without one query per id.
+
+func TestGetMany_ReturnsMatchingRowsOrderedByID(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	first := seedSubmission(t, db, StatusAdmitted)
+	second := seedSubmission(t, db, StatusValidated)
+	seedSubmission(t, db, StatusEvidenced) // not requested, must not appear
+
+	got, err := GetMany(context.Background(), db, []int64{second, first})
+	if err != nil {
+		t.Fatalf("get many: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len(got) = %d, want 2", len(got))
+	}
+	if got[0].ID != first || got[1].ID != second {
+		t.Errorf("ids = [%d, %d], want ascending [%d, %d]", got[0].ID, got[1].ID, first, second)
+	}
+}
+
+func TestGetMany_EmptyIDsReturnsNilSliceNoQuery(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+
+	got, err := GetMany(context.Background(), db, nil)
+	if err != nil {
+		t.Fatalf("get many: %v", err)
+	}
+	if got != nil {
+		t.Errorf("got = %+v, want nil", got)
+	}
+}
+
+func TestGetMany_UnknownIDIsSilentlyAbsentNotError(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	real := seedSubmission(t, db, StatusAdmitted)
+
+	got, err := GetMany(context.Background(), db, []int64{real, 999999})
+	if err != nil {
+		t.Fatalf("get many: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != real {
+		t.Errorf("got = %+v, want exactly [%d]", got, real)
+	}
+}
+
+// --- Count: the total a paginated submissions list reports alongside a
+// page, independent of that page's own LIMIT.
+
+func TestCount_NilStatusCountsEverySubmission(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	seedSubmission(t, db, StatusAdmitted)
+	seedSubmission(t, db, StatusValidated)
+
+	n, err := Count(context.Background(), db, nil)
+	if err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("count = %d, want 2", n)
+	}
+}
+
+func TestCount_StatusFilterCountsOnlyThatStatus(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	seedSubmission(t, db, StatusAdmitted)
+	seedSubmission(t, db, StatusAdmitted)
+	seedSubmission(t, db, StatusValidated)
+
+	admitted := StatusAdmitted
+	n, err := Count(context.Background(), db, &admitted)
+	if err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("count = %d, want 2", n)
+	}
+}
+
+func TestCount_EmptyTableIsZero(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+
+	n, err := Count(context.Background(), db, nil)
+	if err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("count = %d, want 0", n)
+	}
+}
+
 func TestAdmit_DifferentlyFormattedEquivalentJSON_ReturnsErrSourceConflict(t *testing.T) {
 	db := testutil.MigratedPostgres(t)
 
