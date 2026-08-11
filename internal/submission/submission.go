@@ -244,6 +244,121 @@ func SourceKey(rawEvent json.RawMessage, auditID, auditStage string) string {
 	return "raw:" + hex.EncodeToString(sum[:])
 }
 
+// List returns up to limit submissions ordered by id ascending with
+// id > after -- a keyset ("seek") page, not an OFFSET-based one. Keyset
+// pagination is index-only against the primary key and stays correct
+// while the worker concurrently inserts and advances submissions, unlike
+// OFFSET, which can skip or duplicate rows under concurrent writes at the
+// volumes AC-021 exercises (10,000+ accumulated submissions). Pass after=0
+// for the first page. If status is non-nil, only submissions currently at
+// that status are returned -- the sanctioned way a caller filters to
+// exactly the "not yet validated" submissions (status == StatusAdmitted),
+// since a validation_outcomes row and the admitted -> validated transition
+// are always written together in one transaction (internal/validation.Advance):
+// status == StatusAdmitted if and only if no validation outcome has been
+// recorded yet. An empty result returns a nil slice and a nil error, never
+// an error.
+func List(ctx context.Context, db *sql.DB, after int64, status *Status, limit int) ([]Submission, error) {
+	var rows *sql.Rows
+	var err error
+	if status != nil {
+		rows, err = db.QueryContext(ctx,
+			`SELECT id, status, raw_event, audit_id, audit_stage, created_at
+			 FROM submissions WHERE id > $1 AND status = $2 ORDER BY id ASC LIMIT $3`,
+			after, string(*status), limit)
+	} else {
+		rows, err = db.QueryContext(ctx,
+			`SELECT id, status, raw_event, audit_id, audit_stage, created_at
+			 FROM submissions WHERE id > $1 ORDER BY id ASC LIMIT $2`,
+			after, limit)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("submission: list: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Submission
+	for rows.Next() {
+		s, err := scanSubmissionRows(rows)
+		if err != nil {
+			return nil, fmt.Errorf("submission: list: scan: %w", err)
+		}
+		out = append(out, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("submission: list: %w", err)
+	}
+	return out, nil
+}
+
+// GetMany batch-fetches every submission whose id is in ids, ordered by id
+// ascending, in exactly one query -- the bounded-query-count counterpart to
+// List for a caller (internal/retrieval's submissions list, for an
+// outcome-filtered page) that already knows a page's ids from
+// internal/validation's own sanctioned read and needs the matching
+// submission rows without querying once per id. A requested id with no
+// matching row (never expected in ordinary operation: submissions are
+// never deleted, PC-P-... deployment-lifetime retention) is simply absent
+// from the result rather than an error. An empty ids slice returns a nil
+// slice and a nil error without issuing a query.
+func GetMany(ctx context.Context, db *sql.DB, ids []int64) ([]Submission, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := db.QueryContext(ctx,
+		`SELECT id, status, raw_event, audit_id, audit_stage, created_at
+		 FROM submissions WHERE id = ANY($1) ORDER BY id ASC`,
+		ids)
+	if err != nil {
+		return nil, fmt.Errorf("submission: get many: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Submission
+	for rows.Next() {
+		s, err := scanSubmissionRows(rows)
+		if err != nil {
+			return nil, fmt.Errorf("submission: get many: scan: %w", err)
+		}
+		out = append(out, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("submission: get many: %w", err)
+	}
+	return out, nil
+}
+
+// scanSubmissionRows scans one row of a *sql.Rows result set produced by
+// List or GetMany -- the same column order as scanSubmission's single-row
+// *sql.Row, factored out so both bulk readers share one scan path.
+func scanSubmissionRows(rows *sql.Rows) (Submission, error) {
+	var s Submission
+	var status string
+	if err := rows.Scan(&s.ID, &status, &s.RawEvent, &s.AuditID, &s.AuditStage, &s.CreatedAt); err != nil {
+		return Submission{}, err
+	}
+	s.Status = Status(status)
+	return s, nil
+}
+
+// Count reports the total number of submissions, optionally restricted to
+// those currently at status (nil means every submission regardless of
+// status) -- the total a paginated list reports alongside a page, computed
+// independently of that page's own LIMIT.
+func Count(ctx context.Context, db *sql.DB, status *Status) (int64, error) {
+	var n int64
+	var err error
+	if status != nil {
+		err = db.QueryRowContext(ctx, `SELECT count(*) FROM submissions WHERE status = $1`, string(*status)).Scan(&n)
+	} else {
+		err = db.QueryRowContext(ctx, `SELECT count(*) FROM submissions`).Scan(&n)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("submission: count: %w", err)
+	}
+	return n, nil
+}
+
 // AdmittedSummary reports the total number of submissions ever admitted
 // and the created_at of the most recently admitted one (nil if none exist)
 // -- the two facts internal/datasources projects onto the platform's one

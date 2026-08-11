@@ -1,0 +1,284 @@
+.wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.toolbar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--cnsdp-space-4);
+  padding: var(--cnsdp-space-5) var(--cnsdp-space-5) var(--cnsdp-space-3);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--cnsdp-text-lg);
+  font-weight: 600;
+}
+
+.toolbarMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--cnsdp-space-3);
+}
+
+.count {
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-xs);
+  color: var(--cnsdp-text-tertiary);
+  letter-spacing: var(--cnsdp-tracking-label);
+  text-transform: uppercase;
+}
+
+.scrollHint {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cnsdp-space-1);
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-2xs);
+  letter-spacing: var(--cnsdp-tracking-label);
+  text-transform: uppercase;
+  color: var(--cnsdp-text-tertiary);
+  border: 1px solid var(--cnsdp-border-subtle);
+  border-radius: var(--cnsdp-radius-pill);
+  padding: 0.15rem var(--cnsdp-space-2);
+}
+
+.filterBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--cnsdp-space-2);
+  padding: 0 var(--cnsdp-space-5) var(--cnsdp-space-3);
+}
+
+.filterButton {
+  padding: var(--cnsdp-space-1) var(--cnsdp-space-3);
+  border: 1px solid var(--cnsdp-border-subtle);
+  border-radius: var(--cnsdp-radius-pill);
+  background: var(--cnsdp-surface-1);
+  color: var(--cnsdp-text-secondary);
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-xs);
+  letter-spacing: var(--cnsdp-tracking-label);
+  text-transform: uppercase;
+}
+
+.filterButton:hover {
+  background: var(--cnsdp-surface-2);
+}
+
+.filterButton[aria-pressed="true"] {
+  background: var(--cnsdp-surface-3);
+  border-color: var(--cnsdp-border-strong);
+  color: var(--cnsdp-text-primary);
+}
+
+.filterButton:focus-visible {
+  outline: none;
+  box-shadow: var(--cnsdp-focus-ring);
+}
+
+.tableScroll {
+  flex: 1;
+  overflow-x: auto;
+  padding: 0 var(--cnsdp-space-5) var(--cnsdp-space-5);
+}
+
+.tableScroll[tabindex="0"]:focus-visible {
+  outline: none;
+  box-shadow: var(--cnsdp-focus-ring);
+  border-radius: var(--cnsdp-radius-sm);
+}
+
+.table {
+  width: 100%;
+  min-width: 880px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--cnsdp-text-sm);
+}
+
+.table thead th {
+  text-align: left;
+  padding: var(--cnsdp-space-2) var(--cnsdp-space-3);
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-2xs);
+  letter-spacing: var(--cnsdp-tracking-label);
+  text-transform: uppercase;
+  color: var(--cnsdp-text-tertiary);
+  box-shadow: inset 0 -1px 0 0 var(--cnsdp-border-default);
+  white-space: nowrap;
+  background: var(--cnsdp-surface-0);
+}
+
+.row {
+  background: var(--cnsdp-surface-0);
+}
+
+.row:hover {
+  background: var(--cnsdp-surface-1);
+}
+
+.table tbody td {
+  padding: var(--cnsdp-space-3);
+  vertical-align: middle;
+  color: var(--cnsdp-text-secondary);
+  box-shadow: inset 0 -1px 0 0 var(--cnsdp-border-subtle);
+}
+
+.cellId {
+  font-family: var(--cnsdp-font-mono);
+  color: var(--cnsdp-text-primary);
+  white-space: nowrap;
+}
+
+.cellTechnical {
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-xs);
+  max-width: 18ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cellCreatedAt {
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-xs);
+  color: var(--cnsdp-text-tertiary);
+  white-space: nowrap;
+  min-width: 11rem;
+}
+
+.cellOutcome {
+  min-width: 8rem;
+  white-space: nowrap;
+}
+
+.cellReason {
+  color: var(--cnsdp-text-secondary);
+  font-size: var(--cnsdp-text-xs);
+  max-width: 32ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Applied alongside .cellTechnical (Audit ID) or .cellReason only when
+   that cell actually carries a title tooltip -- a pure hover affordance,
+   no effect on width or truncation, so it never widens or reflows the
+   table (the existing truncation rules above are untouched). */
+.hasTooltip {
+  cursor: help;
+}
+
+.loadMoreWrap {
+  display: flex;
+  justify-content: center;
+  padding: 0 var(--cnsdp-space-5) var(--cnsdp-space-5);
+}
+
+.loadMoreButton {
+  padding: var(--cnsdp-space-2) var(--cnsdp-space-5);
+  border: 1px solid var(--cnsdp-border-strong);
+  border-radius: var(--cnsdp-radius-sm);
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-xs);
+  letter-spacing: var(--cnsdp-tracking-label);
+  text-transform: uppercase;
+  color: var(--cnsdp-text-primary);
+  background: var(--cnsdp-surface-2);
+}
+
+.loadMoreButton:hover:not(:disabled) {
+  background: var(--cnsdp-surface-3);
+}
+
+.loadMoreButton:disabled {
+  opacity: 0.6;
+}
+
+.state {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--cnsdp-space-3);
+  padding: var(--cnsdp-space-6) var(--cnsdp-space-5) var(--cnsdp-space-8);
+}
+
+.stateTitle {
+  margin: 0;
+  font-size: var(--cnsdp-text-md);
+  font-weight: 600;
+}
+
+.stateMessage {
+  margin: 0;
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-sm);
+  color: var(--cnsdp-text-secondary);
+  max-width: 56ch;
+}
+
+.retryButton {
+  padding: var(--cnsdp-space-2) var(--cnsdp-space-4);
+  border: 1px solid var(--cnsdp-border-strong);
+  border-radius: var(--cnsdp-radius-sm);
+  font-family: var(--cnsdp-font-mono);
+  font-size: var(--cnsdp-text-xs);
+  letter-spacing: var(--cnsdp-tracking-label);
+  text-transform: uppercase;
+  color: var(--cnsdp-text-primary);
+  background: var(--cnsdp-surface-2);
+}
+
+.retryButton:hover {
+  background: var(--cnsdp-surface-3);
+}
+
+.loadingRow {
+  height: 2.75rem;
+  border-radius: var(--cnsdp-radius-sm);
+  background: linear-gradient(
+    90deg,
+    var(--cnsdp-surface-1) 0%,
+    var(--cnsdp-surface-2) 50%,
+    var(--cnsdp-surface-1) 100%
+  );
+  background-size: 200% 100%;
+  animation: loadingShimmer 1.6s ease-in-out infinite;
+  margin-bottom: var(--cnsdp-space-2);
+}
+
+@keyframes loadingShimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loadingRow {
+    animation: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .toolbar {
+    padding: var(--cnsdp-space-4) var(--cnsdp-space-4) var(--cnsdp-space-2);
+  }
+
+  .filterBar {
+    padding: 0 var(--cnsdp-space-4) var(--cnsdp-space-2);
+  }
+
+  .tableScroll {
+    padding: 0 var(--cnsdp-space-4) var(--cnsdp-space-4);
+  }
+}

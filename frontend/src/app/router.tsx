@@ -3,6 +3,7 @@ import { AlertInvestigationPage } from "@/features/alert-investigation/AlertInve
 import { AlertInventoryPage } from "@/features/alert-inventory/AlertInventoryPage";
 import { DataSourcesPage } from "@/features/data-sources/DataSourcesPage";
 import { DetectionsPage } from "@/features/detections/DetectionsPage";
+import { SubmissionsPage } from "@/features/submissions/SubmissionsPage";
 import { NotFoundPage } from "./NotFoundPage";
 import { RootErrorBoundary } from "./RootErrorBoundary";
 
@@ -41,6 +42,11 @@ export const routes: RouteObject[] = [
   {
     path: "/detections",
     element: <DetectionsPage />,
+    errorElement: <RootErrorBoundary />,
+  },
+  {
+    path: "/submissions",
+    element: <SubmissionsPage />,
     errorElement: <RootErrorBoundary />,
   },
   {

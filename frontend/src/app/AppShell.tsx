@@ -33,6 +33,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           <NavLink to="/detections" className={styles.navLink}>
             Detections
           </NavLink>
+          <NavLink to="/submissions" className={styles.navLink}>
+            Submissions
+          </NavLink>
           {PLANNED_DESTINATIONS.map((label) => (
             <span key={label} className={styles.navDisabled} aria-disabled="true">
               {label}

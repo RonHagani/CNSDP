@@ -609,11 +609,12 @@ and implementation approval before any backend code changes.
 - **Alert list/index capability.** Required for the Alerts index route
   (§6). Without it, alert IDs are only discoverable through session-local
   seeding from Scenario Lab submissions.
-- **Retrieval of non-matching and non-valid submissions.** Required for
-  Scenario Lab (§6) to honestly show the four real data-quality outcomes —
-  today, a submission classified invalid, incomplete, or unsupported, or one
-  that validly processed without matching a scenario, has no read-back path
-  at all.
+- **Single-submission and raw-event detail retrieval.** Required for
+  Scenario Lab (§6) to honestly show the four real data-quality outcomes
+  with full detail — list-level retrieval now exists (`GET /v1/submissions`,
+  keyset-paginated and filterable by validation outcome, including a
+  still-pending submission), but there is no single-submission or raw-event
+  read-back path yet.
 - **Detection-definition catalog retrieval.** Required for the full
   Detections catalog route (§6) to move beyond the interim static mirror of
   the committed YAML files.

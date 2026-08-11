@@ -140,6 +140,29 @@ describe("app router — navigation flow", () => {
     expect(router.state.location.pathname).toBe("/detections");
   });
 
+  it("renders the Submissions page for a direct /submissions visit, wired from the real route config", async () => {
+    stubFetchRoutes({
+      "/v1/submissions": () =>
+        mockJsonResponse(200, {
+          submissions: [
+            {
+              submissionId: 1,
+              status: "validated",
+              auditId: "34b75a57-e1c0-4659-a21f-2d39256f018c",
+              auditStage: "ResponseComplete",
+              createdAt: "2026-08-02T12:00:00Z",
+              validationOutcome: { available: true, outcome: "valid" },
+            },
+          ],
+          nextCursor: null,
+          total: 1,
+        }),
+    });
+    const router = renderRouterAt("/submissions");
+    await screen.findByRole("heading", { name: "Submissions" });
+    expect(router.state.location.pathname).toBe("/submissions");
+  });
+
   it("switching from one alert to a different alert via the inventory leaves no prior provenance selection behind", async () => {
     stubBackend();
     const user = userEvent.setup();

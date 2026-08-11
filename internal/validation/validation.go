@@ -340,3 +340,102 @@ func Get(ctx context.Context, db DB, submissionID int64) (*Record, error) {
 		Result:       Result{Outcome: Outcome(outcome), Reason: reason.String},
 	}, nil
 }
+
+// ListByOutcome returns up to limit validation_outcomes records for exactly
+// one outcome, ordered by submission_id ascending with submission_id >
+// after -- a keyset page over validation_outcomes alone, the same
+// id-ordered, cursor-based pagination internal/submission.List uses over
+// submissions. It is the sanctioned way internal/retrieval's submissions
+// list resolves an outcome-filtered page: filtering by outcome is this
+// module's own table, so this query never touches submissions -- the
+// caller batch-fetches the matching submission rows separately via
+// internal/submission.GetMany, using the SubmissionID already present on
+// each returned Record. An empty result returns a nil slice and a nil
+// error, never an error.
+func ListByOutcome(ctx context.Context, db *sql.DB, outcome Outcome, after int64, limit int) ([]Record, error) {
+	rows, err := db.QueryContext(ctx,
+		`SELECT id, submission_id, outcome, reason
+		 FROM validation_outcomes
+		 WHERE outcome = $1 AND submission_id > $2
+		 ORDER BY submission_id ASC
+		 LIMIT $3`,
+		string(outcome), after, limit)
+	if err != nil {
+		return nil, fmt.Errorf("validation: list by outcome %s: %w", outcome, err)
+	}
+	defer rows.Close()
+
+	var out []Record
+	for rows.Next() {
+		var (
+			id, submissionID int64
+			o                string
+			reason           sql.NullString
+		)
+		if err := rows.Scan(&id, &submissionID, &o, &reason); err != nil {
+			return nil, fmt.Errorf("validation: list by outcome %s: scan: %w", outcome, err)
+		}
+		out = append(out, Record{
+			ID:           id,
+			SubmissionID: submissionID,
+			Result:       Result{Outcome: Outcome(o), Reason: reason.String},
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("validation: list by outcome %s: %w", outcome, err)
+	}
+	return out, nil
+}
+
+// CountByOutcome reports the total number of validation_outcomes rows
+// recorded for exactly one outcome -- the total an outcome-filtered
+// submissions-list page reports alongside its own LIMIT-bounded page.
+func CountByOutcome(ctx context.Context, db *sql.DB, outcome Outcome) (int64, error) {
+	var n int64
+	if err := db.QueryRowContext(ctx,
+		`SELECT count(*) FROM validation_outcomes WHERE outcome = $1`, string(outcome),
+	).Scan(&n); err != nil {
+		return 0, fmt.Errorf("validation: count by outcome %s: %w", outcome, err)
+	}
+	return n, nil
+}
+
+// BatchGet resolves the persisted validation outcome for every id in
+// submissionIDs in exactly one query, returned as a map keyed by
+// submission id -- the bounded-query-count read internal/retrieval's
+// submissions list uses to decorate one unfiltered page of submissions
+// (internal/submission.List) with their outcomes, instead of one
+// validation.Get call per row. A submission id with no persisted outcome
+// (not yet validated, i.e. still at submission.StatusAdmitted) is simply
+// absent from the returned map -- the caller renders that as
+// validationOutcome.available == false, never a fabricated outcome. An
+// empty submissionIDs slice returns an empty map without issuing a query.
+func BatchGet(ctx context.Context, db *sql.DB, submissionIDs []int64) (map[int64]Result, error) {
+	out := make(map[int64]Result, len(submissionIDs))
+	if len(submissionIDs) == 0 {
+		return out, nil
+	}
+	rows, err := db.QueryContext(ctx,
+		`SELECT submission_id, outcome, reason FROM validation_outcomes WHERE submission_id = ANY($1)`,
+		submissionIDs)
+	if err != nil {
+		return nil, fmt.Errorf("validation: batch get: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			submissionID int64
+			outcome      string
+			reason       sql.NullString
+		)
+		if err := rows.Scan(&submissionID, &outcome, &reason); err != nil {
+			return nil, fmt.Errorf("validation: batch get: scan: %w", err)
+		}
+		out[submissionID] = Result{Outcome: Outcome(outcome), Reason: reason.String}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("validation: batch get: %w", err)
+	}
+	return out, nil
+}

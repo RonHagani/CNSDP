@@ -298,3 +298,59 @@ export interface DetectionsResponse {
   detections: DetectionItem[];
   total: number;
 }
+
+/**
+ * Wire types for `GET /v1/submissions` (internal/retrieval/submissions.go).
+ * A keyset-paginated, optionally outcome-filtered review of every
+ * submission received at the defined intake (FR-011, FR-012, FR-013) --
+ * including submissions that never produce an alert (invalid, incomplete,
+ * unsupported, and valid-but-non-matching), none of which is reachable
+ * through `GET /v1/alerts`.
+ */
+
+/** internal/submission.Status -- the six workflow stages a submission
+ *  passes through (ARCH-01 §3). */
+export type SubmissionStatus = "admitted" | "validated" | "normalized" | "evaluated" | "alerted" | "evidenced";
+
+/** internal/validation.Outcome -- the four mutually exclusive validation
+ *  outcomes (FR-005). */
+export type ValidationOutcomeName = "valid" | "invalid" | "incomplete" | "unsupported";
+
+/**
+ * The `outcome` query filter GET /v1/submissions accepts: one of the four
+ * real validation outcomes, or "pending" -- a submission still at
+ * `status: "admitted"` with no validation outcome recorded yet. "pending"
+ * is never a fifth ValidationOutcomeName: it is a filter/presentation
+ * concept only, derived from submission status, never persisted as an
+ * outcome (see internal/retrieval/submissions.go's package doc).
+ */
+export type SubmissionOutcomeFilter = "pending" | ValidationOutcomeName;
+
+/** internal/retrieval `submissionItem` (one GET /v1/submissions row). The
+ *  `available` flag carries the same "never fabricate" contract as every
+ *  other artifact in this contract file: a submission not yet validated
+ *  has `validationOutcome.available === false` and no `outcome`/`reason`
+ *  field, never a fabricated or zero-valued outcome. */
+export interface SubmissionListItem {
+  submissionId: number;
+  status: SubmissionStatus;
+  auditId: string;
+  auditStage: string;
+  createdAt: string;
+  validationOutcome: {
+    available: boolean;
+    outcome?: ValidationOutcomeName;
+    reason?: string;
+  };
+}
+
+/** internal/retrieval `submissionsListResponse` (GET /v1/submissions).
+ *  `nextCursor` is the last-seen `submissionId` to pass back as the
+ *  `cursor` query parameter for the next keyset page, or `null` when this
+ *  is the last page. `total` reflects the full count matching the active
+ *  `outcome` filter, independent of this page's own size. */
+export interface SubmissionsResponse {
+  submissions: SubmissionListItem[];
+  nextCursor: number | null;
+  total: number;
+}
