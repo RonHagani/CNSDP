@@ -588,16 +588,51 @@ func ac022BacklogDrain(result *SustainedRunResult) Verdict {
 		}
 	}
 	final := nonTerminal(result.StatusSeries[len(result.StatusSeries)-1].Counts)
+	peakByStatus, finalByStatus := backlogByStatus(result.StatusSeries)
 	return Verdict{
 		Clause: "backlog_drain",
 		Status: VerdictInformational,
-		Detail: fmt.Sprintf("peak non-terminal backlog observed: %d; non-terminal backlog at the end of the drain wait: %d (no numeric drain-time target is defined by AC-022)", maxBacklog, final),
+		Detail: fmt.Sprintf("peak non-terminal backlog observed: %d; non-terminal backlog at the end of the drain wait: %d (no numeric drain-time target is defined by AC-022). Per-status breakdown and the full sample series are preserved in this clause's Numbers field so a stalled or slow-draining stage can be identified precisely.", maxBacklog, final),
 		Numbers: map[string]any{
-			"peakBacklog":  maxBacklog,
-			"finalBacklog": final,
-			"sampleCount":  len(result.StatusSeries),
+			"peakBacklog":   maxBacklog,
+			"finalBacklog":  final,
+			"sampleCount":   len(result.StatusSeries),
+			"peakByStatus":  peakByStatus,
+			"finalByStatus": finalByStatus,
+			"series":        result.StatusSeries,
 		},
 	}
+}
+
+// backlogByStatus reduces a StatusSeries to peak and final counts per
+// individual non-terminal status -- pulled out of ac022BacklogDrain so
+// it's independently unit-testable. peakByStatus tracks each status's
+// own high-water mark independently (not necessarily all reached at the
+// same sample), matching how maxBacklog above already treats the
+// aggregate peak; finalByStatus is just the last sample's per-status
+// breakdown. 'evidenced' is excluded from both, consistent with the
+// aggregate backlog definition already used by ac022BacklogDrain.
+func backlogByStatus(series []StatusSample) (peakByStatus, finalByStatus map[string]int64) {
+	peakByStatus = map[string]int64{}
+	for _, s := range series {
+		for status, c := range s.Counts {
+			if status == "evidenced" {
+				continue
+			}
+			if c > peakByStatus[status] {
+				peakByStatus[status] = c
+			}
+		}
+	}
+	finalByStatus = map[string]int64{}
+	if len(series) > 0 {
+		for status, c := range series[len(series)-1].Counts {
+			if status != "evidenced" {
+				finalByStatus[status] = c
+			}
+		}
+	}
+	return peakByStatus, finalByStatus
 }
 
 func joinLimited(items []string, limit int) string {

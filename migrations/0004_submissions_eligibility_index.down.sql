@@ -1,0 +1,1 @@
+DROP INDEX submissions_eligibility_idx;

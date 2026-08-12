@@ -1,0 +1,36 @@
+-- Supports internal/worker's oldestEligibleAfter query (worker.go):
+-- selects the single oldest submission across five eligibility
+-- conditions (status = admitted/normalized/evaluated/alerted, or
+-- status = validated with a recorded valid outcome), ordered by
+-- (created_at, id) LIMIT 1. Without this index the query requires a
+-- full sequential scan of submissions on every worker claim -- cost
+-- grows with total accumulated rows, not with the number actually
+-- eligible.
+--
+-- Column choice is empirically driven, not the first shape inspection
+-- suggested. A leading-status composite index (status, created_at, id)
+-- was also benchmarked (EXPLAIN ANALYZE, BUFFERS against seeded
+-- Postgres 16 datasets shaped like a large backlog, a healthy
+-- mostly-terminal table with a small in-flight tail, and a realistic
+-- long-run table carrying an accumulated population of permanently
+-- parked invalid/incomplete/unsupported submissions -- FR-014,
+-- worker.go: these never leave status='validated', so unlike every
+-- other non-terminal status they never age out of any index scoped by
+-- status alone). The plain (created_at, id) shape below won in every
+-- scenario, sometimes by two orders of magnitude: because it matches
+-- the query's own ORDER BY exactly, Postgres can walk it in ascending
+-- order and stop at the first row satisfying the remaining filter
+-- (LIMIT 1 early-exit) instead of first gathering every eligible row
+-- across separate per-status index entries and then sorting them
+-- (which a status-leading index forces, since that index only orders
+-- rows locally within each status value, not globally).
+--
+-- Partial: 'evidenced' (migration 0001's CHECK constraint) is the one
+-- terminal status the eligibility query never matches. Excluding it
+-- keeps the index scoped to in-flight-or-parked submissions instead of
+-- growing across the platform's deployment-lifetime retention model
+-- (NFR-032, NFR-035, NFR-036) -- every row eventually reaches
+-- 'evidenced' and is retained forever, but need not stay indexed here.
+CREATE INDEX submissions_eligibility_idx
+    ON submissions (created_at, id)
+    WHERE status <> 'evidenced';

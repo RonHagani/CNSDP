@@ -121,14 +121,19 @@ func TestMigrations_ApplyExpectedSchema(t *testing.T) {
 // TestMigration0002_DownPreservesJSONSemanticsAndUpRestoresBytea drives
 // migration 0002's down/up reversibility directly, rather than only
 // asserting the end-state schema: it seeds a row with deliberately
-// non-canonically-formatted JSON, steps down two versions (across 0003 --
-// which depends on raw_event already being BYTEA -- and then 0002
-// itself), confirms the column reverted to JSONB with the same JSON
-// content (not the same bytes -- JSONB canonicalizes on storage, so
-// byte-for-byte preservation across this lossy rollback is not claimed),
-// steps back up two versions, and confirms raw_event is BYTEA again and
-// source_key and raw_event_sha256 both still exist, are NOT NULL, and
-// source_key is still UNIQUE.
+// non-canonically-formatted JSON, migrates down to the fixed target
+// version 1 -- i.e. undoes 0002 itself and everything above it, whatever
+// that count happens to be today (an absolute target rather than a
+// relative step count, so this test does not silently break every time
+// a later migration is added: version N always means "0001 through 000N
+// applied", so "undo 0002" is always version 1, never a count that
+// shifts as the migration set grows) -- confirms the column reverted to
+// JSONB with the same JSON content (not the same bytes -- JSONB
+// canonicalizes on storage, so byte-for-byte preservation across this
+// lossy rollback is not claimed), migrates back up to the latest
+// version, and confirms raw_event is BYTEA again and source_key and
+// raw_event_sha256 both still exist, are NOT NULL, and source_key is
+// still UNIQUE.
 func TestMigration0002_DownPreservesJSONSemanticsAndUpRestoresBytea(t *testing.T) {
 	conn := testutil.MigratedPostgres(t)
 	ctx := context.Background()
@@ -148,8 +153,8 @@ func TestMigration0002_DownPreservesJSONSemanticsAndUpRestoresBytea(t *testing.T
 		t.Fatalf("construct migrator: %v", err)
 	}
 
-	if err := m.Steps(-2); err != nil {
-		t.Fatalf("migrate down across 0003 and 0002: %v", err)
+	if err := m.Migrate(1); err != nil {
+		t.Fatalf("migrate down to version 1 (undo 0002 and everything above it): %v", err)
 	}
 
 	dataType := columnDataType(t, conn, "submissions", "raw_event")
@@ -165,8 +170,8 @@ func TestMigration0002_DownPreservesJSONSemanticsAndUpRestoresBytea(t *testing.T
 	}
 	assertSameJSONContent(t, "after down", storedAfterDown, original)
 
-	if err := m.Steps(2); err != nil {
-		t.Fatalf("migrate up across 0002 and 0003 again: %v", err)
+	if err := m.Up(); err != nil {
+		t.Fatalf("migrate back up to the latest version: %v", err)
 	}
 
 	dataType = columnDataType(t, conn, "submissions", "raw_event")
@@ -219,10 +224,12 @@ func TestMigration0002_DownPreservesJSONSemanticsAndUpRestoresBytea(t *testing.T
 // migration 0003's own down/up reversibility: it seeds a row (present
 // before the round trip, so the up-migration's backfill path is
 // exercised on re-apply, not just its bare ALTER TABLE ADD COLUMN),
-// steps down one version (undoing 0003 only -- 0002 remains applied, so
-// raw_event stays BYTEA throughout), confirms raw_event_sha256 is gone,
-// steps back up, and confirms the column is restored, NOT NULL, and
-// correctly backfilled to sha256(raw_event) for the pre-existing row.
+// migrates down to the fixed target version 2 -- i.e. undoes 0003 itself
+// and everything above it (0002 remains applied either way, so
+// raw_event stays BYTEA throughout) -- confirms raw_event_sha256 is
+// gone, migrates back up to the latest version, and confirms the column
+// is restored, NOT NULL, and correctly backfilled to sha256(raw_event)
+// for the pre-existing row.
 func TestMigration0003_DownDropsColumnAndUpRestoresBackfilled(t *testing.T) {
 	conn := testutil.MigratedPostgres(t)
 	ctx := context.Background()
@@ -242,8 +249,8 @@ func TestMigration0003_DownDropsColumnAndUpRestoresBackfilled(t *testing.T) {
 		t.Fatalf("construct migrator: %v", err)
 	}
 
-	if err := m.Steps(-1); err != nil {
-		t.Fatalf("migrate down across 0003: %v", err)
+	if err := m.Migrate(2); err != nil {
+		t.Fatalf("migrate down to version 2 (undo 0003 and everything above it): %v", err)
 	}
 
 	var columnExists bool
@@ -261,8 +268,8 @@ func TestMigration0003_DownDropsColumnAndUpRestoresBackfilled(t *testing.T) {
 		t.Errorf("raw_event data_type after down across 0003 only = %q, want unchanged bytea (0002 remains applied)", dataType)
 	}
 
-	if err := m.Steps(1); err != nil {
-		t.Fatalf("migrate up across 0003 again: %v", err)
+	if err := m.Up(); err != nil {
+		t.Fatalf("migrate back up to the latest version: %v", err)
 	}
 
 	var digestNullable, digestType string
@@ -351,6 +358,79 @@ func assertSameJSONContent(t *testing.T, label, got, want string) {
 		if gv, ok := gotVal[k]; !ok || gv != wv {
 			t.Errorf("%s: raw_event[%q] = %v, want %v", label, k, gv, wv)
 		}
+	}
+}
+
+// TestMigration0004_CreatesEligibilityIndex proves the index worker.go's
+// oldestEligibleAfter query relies on for performance actually exists
+// after migration, with the exact shape selected by empirical
+// EXPLAIN (ANALYZE, BUFFERS) benchmarking against seeded Postgres 16
+// datasets (see the migration's own comment for the comparison
+// summary): ordered by (created_at, id), scoped to non-'evidenced' rows.
+func TestMigration0004_CreatesEligibilityIndex(t *testing.T) {
+	conn := testutil.MigratedPostgres(t)
+	ctx := context.Background()
+
+	var indexdef string
+	err := conn.QueryRowContext(ctx,
+		`SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'submissions' AND indexname = 'submissions_eligibility_idx'`,
+	).Scan(&indexdef)
+	if err != nil {
+		t.Fatalf("expected submissions_eligibility_idx to exist: %v", err)
+	}
+	if !bytes.Contains([]byte(indexdef), []byte("(created_at, id)")) {
+		t.Errorf("indexdef = %q, want it to cover (created_at, id)", indexdef)
+	}
+	if !bytes.Contains([]byte(indexdef), []byte("status <> 'evidenced'::text")) {
+		t.Errorf("indexdef = %q, want the partial predicate status <> 'evidenced'", indexdef)
+	}
+}
+
+// TestMigration0004_DownDropsIndexAndUpRestoresIt drives migration
+// 0004's own down/up reversibility. Like TestMigration0002 and
+// TestMigration0003 above, this migrates down to a fixed absolute
+// target version rather than a relative step count: version 3 always
+// means "0001 through 0003 applied, 0004 and anything above it undone",
+// regardless of how many migrations exist above 0004 by the time this
+// runs. A relative m.Steps(-1)/m.Steps(1) pair would silently start
+// exercising whatever migration is currently on top instead of 0004
+// specifically the moment a 0005 migration is added -- exactly the bug
+// class the 0002/0003 fix above addresses, so this test must not
+// reintroduce it.
+func TestMigration0004_DownDropsIndexAndUpRestoresIt(t *testing.T) {
+	conn := testutil.MigratedPostgres(t)
+	ctx := context.Background()
+
+	m, err := db.NewMigrator(conn)
+	if err != nil {
+		t.Fatalf("construct migrator: %v", err)
+	}
+
+	if err := m.Migrate(3); err != nil {
+		t.Fatalf("migrate down to version 3 (undo 0004 and everything above it): %v", err)
+	}
+
+	var exists bool
+	if err := conn.QueryRowContext(ctx,
+		`SELECT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'submissions' AND indexname = 'submissions_eligibility_idx')`,
+	).Scan(&exists); err != nil {
+		t.Fatalf("check index absence after down: %v", err)
+	}
+	if exists {
+		t.Error("submissions_eligibility_idx still exists after migrating down across 0004")
+	}
+
+	if err := m.Up(); err != nil {
+		t.Fatalf("migrate back up to the latest version: %v", err)
+	}
+
+	if err := conn.QueryRowContext(ctx,
+		`SELECT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'submissions' AND indexname = 'submissions_eligibility_idx')`,
+	).Scan(&exists); err != nil {
+		t.Fatalf("check index existence after re-up: %v", err)
+	}
+	if !exists {
+		t.Error("submissions_eligibility_idx does not exist after migrating up across 0004 again")
 	}
 }
 
