@@ -54,14 +54,27 @@ func SetupReadOnlyAccess(ctx context.Context, postgresHostPort, adminPassword st
 	return conn, nil
 }
 
-func bootstrapReadOnlyRole(ctx context.Context, privilegedDSN, roPassword string) error {
-	conn, err := cnsdpdb.Connect(ctx, privilegedDSN)
-	if err != nil {
-		return wrapEnvErr("connect with privileged role to bootstrap read-only role", err)
-	}
-	defer conn.Close()
+// bootstrapStmtNames is parallel to bootstrapStatements' return value and
+// used only for diagnostics -- never the statement text itself, which for
+// statement 0 embeds roPassword in clear text. An error must identify
+// *which* bootstrap step failed without ever being able to carry that
+// statement's own SQL body (or the password within it) into a log line or
+// the JSON report: every phase error is logged and persisted verbatim by
+// main.go's recordPhase, so anything placed in an error here is effectively
+// clear-text output.
+var bootstrapStmtNames = []string{
+	"create read-only role",
+	"grant connect on database",
+	"grant usage on schema",
+	"grant select on existing tables",
+	"alter default privileges for future tables",
+}
 
-	stmts := []string{
+// bootstrapStatements returns the read-only-role bootstrap DDL, in the same
+// order as bootstrapStmtNames. Split out from bootstrapReadOnlyRole so it is
+// unit-testable without a live database connection (see dbaccess_test.go).
+func bootstrapStatements(roPassword string) []string {
+	return []string{
 		fmt.Sprintf(`DO $$ BEGIN
 			IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '%s') THEN
 				CREATE ROLE %s LOGIN PASSWORD '%s';
@@ -72,9 +85,25 @@ func bootstrapReadOnlyRole(ctx context.Context, privilegedDSN, roPassword string
 		fmt.Sprintf(`GRANT SELECT ON ALL TABLES IN SCHEMA public TO %s;`, readOnlyRole),
 		fmt.Sprintf(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO %s;`, readOnlyRole),
 	}
-	for _, stmt := range stmts {
+}
+
+// bootstrapStmtErr reports a bootstrap statement's execution failure using
+// only its index and a safe, static name -- never the statement body, which
+// for statement 0 contains the generated read-only role's password.
+func bootstrapStmtErr(i int, err error) error {
+	return wrapEnvErr("bootstrap read-only role", fmt.Errorf("bootstrap statement %d (%s): %w", i, bootstrapStmtNames[i], err))
+}
+
+func bootstrapReadOnlyRole(ctx context.Context, privilegedDSN, roPassword string) error {
+	conn, err := cnsdpdb.Connect(ctx, privilegedDSN)
+	if err != nil {
+		return wrapEnvErr("connect with privileged role to bootstrap read-only role", err)
+	}
+	defer conn.Close()
+
+	for i, stmt := range bootstrapStatements(roPassword) {
 		if _, err := conn.ExecContext(ctx, stmt); err != nil {
-			return wrapEnvErr("bootstrap read-only role", fmt.Errorf("executing %q: %w", stmt, err))
+			return bootstrapStmtErr(i, err)
 		}
 	}
 	return nil
