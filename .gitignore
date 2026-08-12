@@ -11,6 +11,11 @@ coverage.out
 coverage.html
 tmp/
 
+# Generated verification-harness run reports (test/verification) -- local
+# evidence artifacts from a run on this machine, never committed; see
+# test/verification/report.go.
+/test/verification/results/
+
 # Editor and OS metadata.
 .vscode/
 .idea/
