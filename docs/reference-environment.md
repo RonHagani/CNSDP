@@ -170,6 +170,37 @@ Unavailable` with `{"status":"not_ready","failed_check":"database"}` or
 `{"status":"not_ready","failed_check":"detection_definitions"}` instead
 — never a silent hang or an unrelated error (NFR-020, AC-026).
 
+## Recovery from an abrupt interruption
+
+The documented recovery procedure exercised and measured by
+`test/verification`'s AC-019 verification (recovery-time objective,
+NFR-009): after an abrupt, non-graceful interruption (a crashed host, a
+`docker kill`, a process termination outside Compose's own control), bring
+the application back with:
+
+```sh
+docker compose start app
+```
+
+then confirm readiness the same way as initial startup (see "Readiness
+verification" above). This is an explicit step, not merely a wait: the
+base `docker-compose.yml`'s `restart: unless-stopped` policy is declared
+and remains unchanged, but empirical testing (`test/verification`'s own
+first runs against this exact environment) found it did not reliably
+restart the container on its own after an abrupt `SIGKILL` — `docker
+inspect`'s `RestartCount` stayed at `0` for over ten minutes in that
+condition. Issuing `docker compose start app` explicitly is the
+realistic action an operator or a supervising process takes, and is fast:
+the same verification harness measured full recovery (interruption to
+`/readyz` returning `200`, including migrations and detection-definition
+reload) at under 2 seconds once the explicit start was issued, well within
+the approved 15-minute objective.
+
+Persistent state is unaffected either way — every submission, validation
+outcome, normalized event, detection result, and alert already committed
+to PostgreSQL survives an application-container interruption untouched;
+only the application process itself needs restarting.
+
 ## Loading development alerts
 
 `scripts/dev-seed-alerts.ps1` submits the same real, committed fixtures

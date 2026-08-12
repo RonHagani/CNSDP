@@ -1,0 +1,46 @@
+# Verification-only Compose override (test/verification harness, AC-019
+# through AC-023 evidence collection). Always applied together with the
+# base docker-compose.yml under the dedicated project name "cnsdp-verify"
+# (see test/verification/compose.go) -- never alone, and never against the
+# developer's own default-named project.
+#
+# Two deliberate corrections over the base file:
+#
+# 1. app's host port publication is REPLACED, not merged. Compose's default
+#    list-merge semantics concatenate port lists across -f files, which
+#    would leave the base file's "127.0.0.1:${APP_PORT:-8080}:8080" entry
+#    present alongside anything added here -- still colliding with a
+#    developer's normal running stack on the shared default port. The
+#    "!override" merge-key tag (Compose Specification; confirmed supported
+#    by the installed Docker Compose v2.40.3-desktop.1 via `docker compose
+#    config`) replaces the list wholesale instead of appending to it, so
+#    exactly one app port entry exists in the effective configuration, on a
+#    Docker-assigned ephemeral host port (empty host-port field), discovered
+#    programmatically after `up` via `docker compose port app 8080` -- never
+#    hardcoded or guessed.
+#
+# 2. postgres, internal-only (no host port at all) in the base file,
+#    additionally publishes a dynamically assigned host port here -- the
+#    one deliberate exception to "internal-only unless genuinely required".
+#    The harness needs direct, parameterized SELECT-only SQL access (pgx)
+#    for latency correlation and constraint-verification queries used by
+#    nearly every phase; re-deriving that through text-parsed
+#    `docker compose exec postgres psql` output for dozens of distinct
+#    queries would be materially more fragile for no added isolation
+#    benefit, since exposure here is already minimized: 127.0.0.1-only, a
+#    randomly assigned port, reachable only from the isolated cnsdp-verify
+#    project's own Postgres instance (never the developer's dev database,
+#    which is a wholly separate container, network, and volume), and the
+#    harness connects exclusively through a dedicated read-only role it
+#    creates for itself after startup -- never the app's own privileged
+#    "cnsdp" role. No override merge-key is needed for this one: the base
+#    file declares no postgres ports at all, so there is nothing to
+#    conflict with -- plain list addition is unambiguous here.
+
+services:
+  app:
+    ports: !override
+      - "127.0.0.1::8080"
+  postgres:
+    ports:
+      - "127.0.0.1::5432"
