@@ -24,6 +24,14 @@ import { test, expect } from "@playwright/test";
  * in an EventList envelope) — landing on a fresh database as alerts 1,
  * 2, and 3 respectively. If the backend isn't reachable, this test fails
  * with a clear timeout on real content rather than silently passing.
+ *
+ * Also carries one minimal real-backend success-path smoke per read-only
+ * list page shipped since (`/detections`, `/data-sources`, `/submissions`)
+ * — each proving the full stack (real browser, real proxy, real Go
+ * backend, real database/application state where applicable) is actually
+ * connected, never the detailed state/error/filter/pagination matrix each
+ * page's own mocked spec (detections.spec.ts, data-sources.spec.ts,
+ * submissions.spec.ts) already covers.
  */
 
 test.describe("Real backend — primary successful journey", () => {
@@ -72,6 +80,88 @@ test.describe("Real backend — primary successful journey", () => {
     // No pin preselected, and no leftover provenance record carried over
     // from alert 2's selection.
     await expect(page.getByRole("group", { name: /Provenance record/i })).toHaveCount(0);
+  });
+});
+
+test.describe("Real backend — Detections catalog smoke", () => {
+  /**
+   * Minimal success-path proof for `/detections`. Unlike the alerts,
+   * data-sources, and submissions smokes below, this one needs no seeded
+   * event data at all: `GET /v1/detections` reads
+   * `detection.ActiveDefinitions`, sourced entirely from the
+   * version-controlled `definitions/*.yaml` files loaded at process
+   * startup — the same readiness `/readyz` already confirms via its own
+   * `detection_definitions` check. This test therefore passes on a
+   * freshly started backend regardless of whether development alerts have
+   * been seeded.
+   */
+  test("renders the real, version-controlled detection catalog", async ({ page }) => {
+    await page.goto("/detections");
+
+    await expect(page.getByText("3 detections")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("Interactive container exec request")).toBeVisible();
+    await expect(page.getByText("High-risk Pod creation")).toBeVisible();
+    await expect(page.getByText("Cluster-admin ClusterRoleBinding grant")).toBeVisible();
+  });
+});
+
+test.describe("Real backend — Data Sources smoke", () => {
+  /**
+   * Minimal success-path proof for `/data-sources`. Requires the same
+   * precondition as the primary alerts journey above: the three real
+   * fixtures loaded via `scripts/dev-seed-alerts.ps1`. The displayed event
+   * count is asserted `>= 3`, not exactly 3 — the reference environment's
+   * database is a persistent dev volume that can legitimately accumulate
+   * more than 3 admitted events across repeated manual seed runs, the same
+   * non-brittleness reasoning the alerts row count above already applies.
+   */
+  test("shows the one real ingestion channel with a genuine admitted-event count and timestamp", async ({
+    page,
+  }) => {
+    await page.goto("/data-sources");
+
+    await expect(page.getByRole("heading", { name: "Audit Events API" })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("POST /v1/audit-events")).toBeVisible();
+    await expect(page.getByText("Events observed")).toBeVisible();
+
+    const eventsAcceptedDd = page
+      .locator("dt", { hasText: "Events accepted" })
+      .locator("xpath=following-sibling::dd[1]");
+    const eventCountText = await eventsAcceptedDd.textContent();
+    expect(Number(eventCountText)).toBeGreaterThanOrEqual(3);
+
+    // A real formatted timestamp, never the null-placeholder "—" — proof
+    // this reflects genuinely admitted events, not an empty/fresh channel.
+    const lastEventDd = page.locator("dt", { hasText: "Last event" }).locator("xpath=following-sibling::dd[1]");
+    const lastEventText = await lastEventDd.textContent();
+    expect(lastEventText).not.toBe("—");
+  });
+});
+
+test.describe("Real backend — Submissions smoke", () => {
+  /**
+   * Minimal success-path proof for `/submissions`. Same precondition as
+   * Data Sources above. Asserts the real, committed auditID from
+   * internal/intake/testdata/scenario-1-eventlist.json
+   * ("34b75a57-e1c0-4659-a21f-2d39256f018c", extracted verbatim from the
+   * raw event at intake — internal/intake/intake.go) is present in a
+   * rendered row: a specific, non-fabricated identity check proving one
+   * exact submission genuinely round-tripped through intake -> worker ->
+   * database -> retrieval -> browser, not merely that some row count is
+   * nonzero. Row count is asserted `>= 3` for the same non-brittleness
+   * reasoning as Data Sources above. Filtering and pagination are already
+   * covered against the mocked backend (submissions.spec.ts) and are
+   * deliberately not repeated here.
+   */
+  test("shows the real seeded scenario-1 submission and a genuine row count", async ({ page }) => {
+    await page.goto("/submissions");
+
+    const rows = page.locator("tbody tr");
+    await expect(rows.first()).toBeVisible({ timeout: 15_000 });
+    const count = await rows.count();
+    expect(count).toBeGreaterThanOrEqual(3);
+
+    await expect(page.getByText("34b75a57-e1c0-4659-a21f-2d39256f018c")).toBeVisible();
   });
 });
 

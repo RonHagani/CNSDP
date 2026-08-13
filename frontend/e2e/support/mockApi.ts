@@ -1,6 +1,12 @@
 import type { Page } from "@playwright/test";
 import { fixturesById } from "../../src/fixtures/alert-investigation/v1";
-import type { AlertInvestigationResponse, AlertSummaryListItem } from "../../src/types/contract";
+import type {
+  AlertInvestigationResponse,
+  AlertSummaryListItem,
+  DataSourcesResponse,
+  DetectionsResponse,
+  SubmissionsResponse,
+} from "../../src/types/contract";
 
 /**
  * Test-only network interception for the production frontend's real API
@@ -73,4 +79,52 @@ export async function mockAlertListBody(page: Page, body: { alerts: AlertSummary
   await page.route("**/api/v1/alerts", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) }),
   );
+}
+
+/** Installs a successful `GET /v1/data-sources` response. Endpoint takes no
+ *  query parameters, so a plain path match is exact and sufficient. */
+export async function mockDataSourcesBody(page: Page, body: DataSourcesResponse) {
+  await page.route("**/api/v1/data-sources", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) }),
+  );
+}
+
+export async function mockDataSourcesStatus(page: Page, status: number) {
+  await page.route("**/api/v1/data-sources", (route) => route.fulfill({ status, body: "" }));
+}
+
+/** Installs a successful `GET /v1/detections` response. Endpoint takes no
+ *  query parameters, so a plain path match is exact and sufficient. */
+export async function mockDetectionsBody(page: Page, body: DetectionsResponse) {
+  await page.route("**/api/v1/detections", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) }),
+  );
+}
+
+export async function mockDetectionsStatus(page: Page, status: number) {
+  await page.route("**/api/v1/detections", (route) => route.fulfill({ status, body: "" }));
+}
+
+/**
+ * Installs a successful `GET /v1/submissions` response for one exact query
+ * string (`""` for no filter/cursor, or e.g. `"outcome=invalid"`,
+ * `"cursor=1"` — matching exactly how submissionsSource.ts builds the query
+ * via URLSearchParams). Matched with a URL predicate rather than a glob
+ * string: Playwright glob patterns treat a literal `?` as a single-character
+ * wildcard, not a query-string separator, so a glob string here would match
+ * more than intended. Register the no-filter route first, then any
+ * query-specific override afterward — Playwright resolves the
+ * most-recently-registered matching route first, the same convention
+ * mockAlertStatus already relies on above.
+ */
+export async function mockSubmissionsBody(page: Page, body: SubmissionsResponse, query = "") {
+  const expectedSearch = query ? `?${query}` : "";
+  await page.route(
+    (url) => url.pathname === "/api/v1/submissions" && url.search === expectedSearch,
+    (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) }),
+  );
+}
+
+export async function mockSubmissionsStatus(page: Page, status: number) {
+  await page.route("**/api/v1/submissions", (route) => route.fulfill({ status, body: "" }));
 }
