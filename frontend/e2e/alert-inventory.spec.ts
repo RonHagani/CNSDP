@@ -89,15 +89,18 @@ test.describe("Alert Inventory — primary entry point", () => {
     await expect(page).toHaveURL(/\/alerts$/);
   });
 
-  test("the primary navigation shows Alerts as active and future destinations as disabled", async ({
+  test("the primary navigation shows Alerts as active, Data Sources/Detections/Submissions as live links, and System Health as the one remaining disabled destination", async ({
     page,
   }) => {
     await page.goto("/alerts");
     const alertsLink = page.getByRole("link", { name: "Alerts" });
     await expect(alertsLink).toHaveAttribute("aria-current", "page");
-    for (const label of ["Detections", "Data Sources", "System Health"]) {
-      await expect(page.locator('[aria-disabled="true"]', { hasText: label })).toBeVisible();
+    for (const label of ["Data Sources", "Detections", "Submissions"]) {
+      const link = page.getByRole("link", { name: label });
+      await expect(link).toBeVisible();
+      await expect(link).not.toHaveAttribute("aria-current", "page");
     }
+    await expect(page.locator('[aria-disabled="true"]', { hasText: "System Health" })).toBeVisible();
   });
 });
 
