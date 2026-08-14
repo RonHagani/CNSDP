@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"sort"
 	"time"
 )
@@ -95,12 +96,30 @@ func buildWorkloadPlan(fixtures *ScenarioFixtures, p Params) ([]plannedAttempt, 
 
 // Attempt is the harness's own record of one dispatched HTTP POST --
 // authoritative for "offered" (every Attempt) and "admitted" (OK==true)
-// counts and for the admitted-rate bucket time series. SentAt is when the
-// harness intended/issued the send (the scheduling clock), not a database
-// timestamp.
+// counts. Two distinct clocks are recorded, deliberately kept separate:
+//
+//   - SentAt is the workload plan's *scheduled* target time (an even,
+//     drift-free sequence derived from a fixed start and the offered
+//     rate) -- used to determine which experimental condition (baseline
+//     vs. burst rate) an attempt belongs to, e.g. BurstStartIdx below.
+//     This is a test-design concept, unaffected by how dispatch actually
+//     went, and must stay that way: partitioning baseline vs. burst by
+//     real time instead would misclassify jitter-delayed baseline
+//     attempts as burst and vice versa.
+//   - ActualSentAt is when this attempt's HTTP exchange actually began
+//     in real wall-clock time, captured immediately before the
+//     PostAuditEvent call (after any dispatch/semaphore wait). Real
+//     dispatch can lag or cluster relative to the schedule (goroutine
+//     scheduling, semaphore backpressure, network/OS timer jitter), so
+//     this can differ from SentAt. Any check that reasons about the
+//     product's own real-time admission behavior -- notably
+//     ac022AdmittedRateEnvelope's bucketing -- must use this field, not
+//     SentAt, since the product's limiter itself decides admission
+//     against real time.
 type Attempt struct {
 	N            int
 	SentAt       time.Time
+	ActualSentAt time.Time
 	Scenario     ScenarioID
 	SubmissionID int64
 	OK           bool
@@ -175,8 +194,9 @@ func RunSustainedPhase(ctx context.Context, api *APIClient, db *sql.DB, fixtures
 			defer func() { <-sem }()
 			defer func() { <-inFlight }()
 			item := plan[idx]
-			subID, status, postErr := api.PostAuditEvent(ctx, item.Item)
-			a := Attempt{N: idx, SentAt: sentAt, Scenario: item.Scenario, SubmissionID: subID, OK: postErr == nil, StatusCode: status}
+			actualSentAt := time.Now()
+			subID, status, _, postErr := api.PostAuditEvent(ctx, item.Item)
+			a := Attempt{N: idx, SentAt: sentAt, ActualSentAt: actualSentAt, Scenario: item.Scenario, SubmissionID: subID, OK: postErr == nil, StatusCode: status}
 			if postErr != nil {
 				a.Err = postErr.Error()
 			}
@@ -403,18 +423,32 @@ func ac022Verdict(p Params, result *SustainedRunResult) ACResult {
 	return newACResult("AC-022", "Sustained capacity envelope of 10 submissions per second", clauses)
 }
 
+// ac022AdmittedRateEnvelope buckets by ActualSentAt (real dispatch time),
+// deliberately not SentAt (the scheduled target): this clause exists to
+// check whether the product's own real-time admission decisions ever
+// exceeded the envelope, and the product's limiter itself decides
+// admission against real wall-clock time, not against this harness's
+// dispatch schedule. Bucketing by SentAt instead would be close to
+// tautological for a steady-rate schedule -- a fixed-rate, drift-free
+// schedule can never itself show more than its own configured rate when
+// grouped by its own clock, regardless of how bursty real dispatch
+// actually was, which would silently defeat the purpose of this check.
 func ac022AdmittedRateEnvelope(p Params, result *SustainedRunResult) Verdict {
 	if len(result.Attempts) == 0 {
 		return Verdict{Clause: "admitted_rate_envelope", Status: VerdictFail, Detail: "no attempts recorded"}
 	}
-	start := result.Attempts[0].SentAt
+	start := result.Attempts[0].ActualSentAt
 	bucketWidth := p.RateBucketWidth
 	buckets := map[int]int{}
+	var maxDispatchLag time.Duration
 	for _, a := range result.Attempts {
+		if lag := a.ActualSentAt.Sub(a.SentAt); lag > maxDispatchLag {
+			maxDispatchLag = lag
+		}
 		if !a.OK {
 			continue
 		}
-		idx := int(a.SentAt.Sub(start) / bucketWidth)
+		idx := int(a.ActualSentAt.Sub(start) / bucketWidth)
 		buckets[idx]++
 	}
 
@@ -435,8 +469,8 @@ func ac022AdmittedRateEnvelope(p Params, result *SustainedRunResult) Verdict {
 	detail := fmt.Sprintf("admitted rate stayed within %.0f%% of the %.0f/s envelope in every %s bucket", rateTolerance*100, p.NormalOfferedRate, bucketWidth)
 	if len(violations) > 0 {
 		status = VerdictFail
-		detail = fmt.Sprintf("%d bucket(s) exceeded the %.0f/s envelope by more than %.0f%% -- expected during the burst window, since no admission-control mechanism exists to hold admitted rate down to the envelope (see capacity_rejection_defer): %s",
-			len(violations), p.NormalOfferedRate, rateTolerance*100, joinLimited(violations, 6))
+		detail = fmt.Sprintf("admitted rate exceeded the %.0f/s envelope by more than %.0f%% in %d bucket(s) -- see capacity_rejection_defer for the corresponding rejection/defer evidence: %s",
+			p.NormalOfferedRate, rateTolerance*100, len(violations), joinLimited(violations, 6))
 	}
 	return Verdict{
 		Clause: "admitted_rate_envelope",
@@ -447,6 +481,7 @@ func ac022AdmittedRateEnvelope(p Params, result *SustainedRunResult) Verdict {
 			"bucketWidth":       bucketWidth.String(),
 			"worstBucketRate":   worstRate,
 			"violatingBuckets":  len(violations),
+			"maxDispatchLag":    maxDispatchLag.String(),
 		},
 	}
 }
@@ -483,35 +518,89 @@ func ac022OfferedAdmittedCounts(p Params, result *SustainedRunResult) Verdict {
 	}
 }
 
-// ac022CapacityRejectionDefer implements design item 3/5: report
-// NOT_IMPLEMENTED, honestly, rather than manufacturing a pass, when every
-// burst-window attempt was admitted -- confirmed by direct source
-// inspection (internal/intake, cmd/platform) to have no admission-control,
-// rate-limit, or capacity-defer mechanism at all.
+// ac022CapacityRejectionDefer is a real PASS/FAIL check: internal/intake
+// now defines a capacity-specific status code (429 Too Many Requests,
+// admission.go's process-global sliding-window limiter), so this clause no
+// longer needs to hedge with an undifferentiated non-OK count the way it
+// did before that mechanism existed.
+//
+// rejectionTolerance mirrors rateTolerance immediately above: AC-022's
+// approved text states no numeric tolerance for how closely the observed
+// 429 count must reconcile with the expected excess, so this is the same
+// kind of harness-level measurement decision, documented the same way --
+// concurrent dispatch (dispatchConcurrency) means requests do not land at
+// the server in perfectly scheduled order, so a small amount of slack
+// against the theoretical expectedExcess is a measurement accommodation,
+// not a weakening of AC-022's own pass condition ("remains within the
+// supported envelope throughout"), which the separate
+// admitted_rate_envelope clause enforces independently and exactly.
+//
+// The band is symmetric -- a lowerBound and an upperBound, both derived
+// from the same tolerance -- so this clause catches both directions of a
+// broken admission-control mechanism: too few 429s (under-enforcing,
+// admitting more than the envelope allows) and too many 429s
+// (over-enforcing, refusing burst-window attempts that were still within
+// the approved 10/s envelope and should have been admitted). A lower-bound
+// -only check would silently PASS an over-restrictive mechanism.
+const rejectionTolerance = 0.15
+
 func ac022CapacityRejectionDefer(p Params, result *SustainedRunResult) Verdict {
 	burstAttempts := result.Attempts[min(result.BurstStartIdx, len(result.Attempts)):]
-	rejected := 0
+	rejected429 := 0
+	otherNonOK := 0
 	for _, a := range burstAttempts {
-		if !a.OK {
-			rejected++
+		if a.OK {
+			continue
+		}
+		if a.StatusCode == http.StatusTooManyRequests {
+			rejected429++
+		} else {
+			otherNonOK++
 		}
 	}
 	expectedExcess := p.ExcessBurstAttempts()
+	lowerBound := int(float64(expectedExcess) * (1 - rejectionTolerance))
+	upperBound := int(float64(expectedExcess) * (1 + rejectionTolerance))
+	numbers := map[string]any{
+		"burstAttempts":  len(burstAttempts),
+		"rejected429":    rejected429,
+		"otherNonOK":     otherNonOK,
+		"expectedExcess": expectedExcess,
+		"lowerBound":     lowerBound,
+		"upperBound":     upperBound,
+	}
 
-	if rejected == 0 {
+	if rejected429 == 0 {
 		return Verdict{
 			Clause: "capacity_rejection_defer",
-			Status: VerdictNotImplemented,
-			Detail: fmt.Sprintf("all %d burst-window attempts were admitted; none were visibly rejected or deferred for capacity. No admission-control, rate-limit, or capacity-defer mechanism exists in internal/intake or cmd/platform (confirmed by source inspection) -- this is an absent product capability, not a measurement gap, and AC-022's rejection/defer pass clause is not met as a result. Expected excess above the %.0f/s envelope: %d attempts.",
+			Status: VerdictFail,
+			Detail: fmt.Sprintf("0 of %d burst-window attempts were visibly capacity-rejected (429 Too Many Requests); the admission-control mechanism does not appear to be active. Expected excess above the %.0f/s envelope: %d attempts.",
 				len(burstAttempts), p.NormalOfferedRate, expectedExcess),
-			Numbers: map[string]any{"burstAttempts": len(burstAttempts), "rejected": rejected, "expectedExcess": expectedExcess},
+			Numbers: numbers,
 		}
+	}
+
+	status := VerdictPass
+	detail := fmt.Sprintf("%d of %d burst-window attempts were visibly capacity-rejected (429 Too Many Requests), within the accepted range [%d, %d] (expected excess %d above the %.0f/s envelope, +/-%.0f%%)",
+		rejected429, len(burstAttempts), lowerBound, upperBound, expectedExcess, p.NormalOfferedRate, rejectionTolerance*100)
+	switch {
+	case rejected429 < lowerBound:
+		status = VerdictFail
+		detail = fmt.Sprintf("only %d of %d burst-window attempts were capacity-rejected (429); expected at least %d (within %.0f%% of the expected excess of %d) above the %.0f/s envelope -- too few rejections, admission control may be under-enforcing",
+			rejected429, len(burstAttempts), lowerBound, rejectionTolerance*100, expectedExcess, p.NormalOfferedRate)
+	case rejected429 > upperBound:
+		status = VerdictFail
+		detail = fmt.Sprintf("%d of %d burst-window attempts were capacity-rejected (429); expected at most %d (within %.0f%% of the expected excess of %d) above the %.0f/s envelope -- too many rejections, admission control may be over-enforcing and refusing attempts that were still within the approved envelope",
+			rejected429, len(burstAttempts), upperBound, rejectionTolerance*100, expectedExcess, p.NormalOfferedRate)
+	}
+	if otherNonOK > 0 {
+		detail += fmt.Sprintf("; %d additional non-OK, non-429 attempt(s) observed -- inspect StatusCode/Err detail per attempt in the raw report before assuming these are also capacity-related", otherNonOK)
 	}
 	return Verdict{
 		Clause:  "capacity_rejection_defer",
-		Status:  VerdictInformational,
-		Detail:  fmt.Sprintf("%d of %d burst-window attempts received a non-OK response -- inspect StatusCode/Err detail per attempt in the raw report before treating this as capacity rejection (no capacity-specific status code is defined by the product; a non-OK response here may indicate a different problem)", rejected, len(burstAttempts)),
-		Numbers: map[string]any{"burstAttempts": len(burstAttempts), "rejected": rejected, "expectedExcess": expectedExcess},
+		Status:  status,
+		Detail:  detail,
+		Numbers: numbers,
 	}
 }
 
