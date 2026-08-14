@@ -6,10 +6,63 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+// seedAdmitRetryBudget bounds how long RunRecoveryPhase's seeding step will
+// keep retrying a single item that intake is capacity-rejecting (HTTP 429)
+// before giving up. Generous relative to the product's approved one-second
+// admission window (NFR-003) -- enough for several window cycles to drain
+// even under contention -- while still finite, so a persistently saturated
+// (or misbehaving) limiter can never hang the harness.
+const seedAdmitRetryBudget = 10 * time.Second
+
+// seedAdmitFallbackBackoff is used only when a 429 response carries no (or
+// an unparseable) Retry-After value. The product's admission handler
+// always sends one (intake.go), so this is a defensive floor, not the
+// expected path.
+const seedAdmitFallbackBackoff = 250 * time.Millisecond
+
+// seedOneAdmission submits item and retries the *same* item, unmodified,
+// only on HTTP 429 -- the documented, temporary capacity-backpressure
+// outcome (NFR-003, NFR-004) -- honoring the response's Retry-After value
+// when present, within a bounded overall deadline. Any other outcome
+// (a non-429 error, or the retry budget itself being exhausted) returns
+// immediately with no id: authentication, validation, conflict, and
+// platform-fault responses are genuine setup failures the seeding step
+// must not paper over, and a rejected attempt must never be mistaken for
+// an admitted one. This keeps retry *policy* local to the seeding path;
+// PostAuditEvent itself stays a plain HTTP exchange with no retry
+// behavior, so AC-022's own load generation (sustained_run.go), which
+// measures 429s rather than reacting to them, is untouched.
+func seedOneAdmission(ctx context.Context, api *APIClient, item json.RawMessage, budget time.Duration) (int64, error) {
+	deadline := time.Now().Add(budget)
+	for {
+		id, status, retryAfter, err := api.PostAuditEvent(ctx, item)
+		if err == nil {
+			return id, nil
+		}
+		if status != http.StatusTooManyRequests {
+			return 0, err
+		}
+
+		wait := retryAfter
+		if wait <= 0 {
+			wait = seedAdmitFallbackBackoff
+		}
+		if time.Now().Add(wait).After(deadline) {
+			return 0, fmt.Errorf("still capacity-rejected after %s retry budget: %w", budget, err)
+		}
+
+		sleepUntil(ctx, time.Now().Add(wait))
+		if ctx.Err() != nil {
+			return 0, ctx.Err()
+		}
+	}
+}
 
 // RecoveryResult is the full evidence trail for AC-019: what existed
 // right before the interruption, when it happened, when the platform
@@ -136,12 +189,17 @@ func RunRecoveryPhase(ctx context.Context, api *APIClient, compose *Compose, db 
 	for i := 0; i < p.RecoveryBatchSize; i++ {
 		kind := kinds[i%len(kinds)]
 		item := recoveryMixEvent(kind, i)
-		id, _, err := api.PostAuditEvent(ctx, item)
+		id, err := seedOneAdmission(ctx, api, item, seedAdmitRetryBudget)
 		if err != nil {
-			// An admission failure here is an environment condition: this
-			// phase's own seeding step is expected to succeed against a
-			// healthy platform, since intake admits every syntactically
-			// identifiable item regardless of content shape (FR-005).
+			// An admission failure here (after exhausting ordinary,
+			// bounded capacity backpressure via seedOneAdmission) is an
+			// environment condition: this phase's own seeding step is
+			// expected to succeed against a healthy platform, since intake
+			// admits every syntactically identifiable item regardless of
+			// content shape (FR-005). A capacity rejection alone is not
+			// this: seedOneAdmission already retries transient 429s, so
+			// only a non-429 failure or a genuinely exhausted retry budget
+			// reaches here.
 			return nil, wrapEnvErr("seed recovery batch", fmt.Errorf("item %d (%s): %w", i, kind, err))
 		}
 		batchIDs = append(batchIDs, id)

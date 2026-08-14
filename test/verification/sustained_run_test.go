@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -60,26 +62,173 @@ func TestBuildWorkloadPlan_AllAuditIDsUnique(t *testing.T) {
 	}
 }
 
-func TestAC022CapacityRejectionDefer_AllAdmitted_ReportsNotImplemented(t *testing.T) {
+func TestAC022CapacityRejectionDefer_AllAdmitted_Fails(t *testing.T) {
 	p := FullParams()
 	result := &SustainedRunResult{
 		Attempts:      makeAllOKAttempts(10),
 		BurstStartIdx: 5,
 	}
 	v := ac022CapacityRejectionDefer(p, result)
-	if v.Status != VerdictNotImplemented {
-		t.Errorf("Status = %s, want %s when every burst attempt was admitted", v.Status, VerdictNotImplemented)
+	if v.Status != VerdictFail {
+		t.Errorf("Status = %s, want %s when every burst attempt was admitted (no 429s observed)", v.Status, VerdictFail)
 	}
 }
 
-func TestAC022CapacityRejectionDefer_SomeRejected_NotNotImplemented(t *testing.T) {
-	p := FullParams()
+// smallBurstParams is a self-contained Params fixture (not FullParams,
+// whose expectedExcess of 150 needs a real 450-attempt burst window to
+// reconcile against) sized so a small, hand-built Attempts slice can
+// exercise the reconciliation arithmetic directly: BurstDuration(1s) *
+// (BurstOfferedRate(14) - NormalOfferedRate(10)) = an expected excess of
+// exactly 4, giving lowerBound=3 and upperBound=4 (int(4*0.85)=3,
+// int(4*1.15)=4) -- tight enough that 4 itself exercises the upper
+// boundary inclusively.
+func smallBurstParams() Params {
+	return Params{
+		NormalOfferedRate: 10,
+		BurstOfferedRate:  14,
+		BurstDuration:     1 * time.Second,
+	}
+}
+
+// mediumBurstParams gives more daylight between lowerBound and upperBound
+// than smallBurstParams, so "clearly inside the range" and "clearly above
+// the upper bound" can each be tested with a value that is not itself a
+// boundary: BurstDuration(2s) * (BurstOfferedRate(20) -
+// NormalOfferedRate(10)) = an expected excess of exactly 20, giving
+// lowerBound=17 (int(20*0.85)) and upperBound=23 (int(20*1.15)).
+func mediumBurstParams() Params {
+	return Params{
+		NormalOfferedRate: 10,
+		BurstOfferedRate:  20,
+		BurstDuration:     2 * time.Second,
+	}
+}
+
+func TestAC022CapacityRejectionDefer_ExpectedExcessRejected_Passes(t *testing.T) {
+	p := smallBurstParams() // expectedExcess = 4, upperBound = 4
 	attempts := makeAllOKAttempts(10)
-	attempts[6].OK = false
+	// Burst window = indices 5..9. One admitted, four capacity-rejected --
+	// exactly reconciles with the expected excess of 4, and exercises the
+	// upper bound inclusively (rejected429 == upperBound must still PASS).
+	for i := 6; i <= 9; i++ {
+		attempts[i].OK = false
+		attempts[i].StatusCode = http.StatusTooManyRequests
+	}
 	result := &SustainedRunResult{Attempts: attempts, BurstStartIdx: 5}
 	v := ac022CapacityRejectionDefer(p, result)
-	if v.Status == VerdictNotImplemented {
-		t.Errorf("Status should not be %s once at least one burst attempt was rejected", VerdictNotImplemented)
+	if v.Status != VerdictPass {
+		t.Errorf("Status = %s, want %s: 4 of 5 burst attempts capacity-rejected reconciles with an expected excess of 4 (detail: %s)", v.Status, VerdictPass, v.Detail)
+	}
+}
+
+func TestAC022CapacityRejectionDefer_WithinRange_Passes(t *testing.T) {
+	p := mediumBurstParams() // expectedExcess = 20, accepted range [17, 23]
+	attempts := makeAllOKAttempts(30)
+	// Burst window = indices 5..29 (25 attempts). Exactly 20 capacity-
+	// rejected, comfortably inside the accepted range without sitting on
+	// either boundary.
+	for i := 5; i < 25; i++ {
+		attempts[i].OK = false
+		attempts[i].StatusCode = http.StatusTooManyRequests
+	}
+	result := &SustainedRunResult{Attempts: attempts, BurstStartIdx: 5}
+	v := ac022CapacityRejectionDefer(p, result)
+	if v.Status != VerdictPass {
+		t.Errorf("Status = %s, want %s: 20 of 25 burst attempts capacity-rejected is within the accepted range [17,23] for an expected excess of 20 (detail: %s)", v.Status, VerdictPass, v.Detail)
+	}
+}
+
+func TestAC022CapacityRejectionDefer_BelowLowerBound_Fails(t *testing.T) {
+	p := smallBurstParams() // expectedExcess = 4, lowerBound = 3
+	attempts := makeAllOKAttempts(10)
+	// Burst window = indices 5..9. Only one capacity-rejected -- well
+	// under the expected excess of 4, so this must not report PASS merely
+	// because at least one 429 was observed.
+	attempts[9].OK = false
+	attempts[9].StatusCode = http.StatusTooManyRequests
+	result := &SustainedRunResult{Attempts: attempts, BurstStartIdx: 5}
+	v := ac022CapacityRejectionDefer(p, result)
+	if v.Status != VerdictFail {
+		t.Errorf("Status = %s, want %s: 1 of 5 burst attempts capacity-rejected does not reconcile with an expected excess of 4 (detail: %s)", v.Status, VerdictFail, v.Detail)
+	}
+}
+
+func TestAC022CapacityRejectionDefer_AboveUpperBound_Fails(t *testing.T) {
+	p := mediumBurstParams() // expectedExcess = 20, upperBound = 23
+	attempts := makeAllOKAttempts(30)
+	// Burst window = indices 5..29 (25 attempts). 24 capacity-rejected --
+	// above the upper bound of 23, meaning the mechanism is refusing more
+	// attempts than the approved envelope's excess actually accounts for
+	// (over-enforcing against in-envelope traffic). A lower-bound-only
+	// check would have wrongly PASSed this.
+	for i := 5; i < 29; i++ {
+		attempts[i].OK = false
+		attempts[i].StatusCode = http.StatusTooManyRequests
+	}
+	result := &SustainedRunResult{Attempts: attempts, BurstStartIdx: 5}
+	v := ac022CapacityRejectionDefer(p, result)
+	if v.Status != VerdictFail {
+		t.Errorf("Status = %s, want %s: 24 of 25 burst attempts capacity-rejected exceeds the upper bound of 23 for an expected excess of 20 (detail: %s)", v.Status, VerdictFail, v.Detail)
+	}
+	rejected429, _ := v.Numbers["rejected429"].(int)
+	if rejected429 != 24 {
+		t.Errorf("rejected429 = %d, want 24", rejected429)
+	}
+}
+
+func TestAC022CapacityRejectionDefer_NonCapacityFailure_NotCountedAs429(t *testing.T) {
+	p := smallBurstParams()
+	attempts := makeAllOKAttempts(10)
+	// A non-429 failure (e.g. a genuine platform fault, 503) in the burst
+	// window must not be silently counted as a capacity rejection.
+	attempts[9].OK = false
+	attempts[9].StatusCode = http.StatusServiceUnavailable
+	result := &SustainedRunResult{Attempts: attempts, BurstStartIdx: 5}
+	v := ac022CapacityRejectionDefer(p, result)
+	rejected429, _ := v.Numbers["rejected429"].(int)
+	otherNonOK, _ := v.Numbers["otherNonOK"].(int)
+	if rejected429 != 0 {
+		t.Errorf("rejected429 = %d, want 0 (the only non-OK attempt was a 503, not a 429)", rejected429)
+	}
+	if otherNonOK != 1 {
+		t.Errorf("otherNonOK = %d, want 1", otherNonOK)
+	}
+	if v.Status != VerdictFail {
+		t.Errorf("Status = %s, want %s: a non-429 failure alone must not satisfy the capacity-rejection clause", v.Status, VerdictFail)
+	}
+}
+
+// TestAC022CapacityRejectionDefer_MixedWithNonCapacityFailures_StillPasses
+// proves non-429 responses are excluded from BOTH bounds, not only the
+// zero-rejection case above: a batch with a within-range number of real
+// 429s plus several unrelated 503s must still PASS on the strength of the
+// 429 count alone, and the 503s must never inflate rejected429 nor be
+// treated as if they widened the accepted range.
+func TestAC022CapacityRejectionDefer_MixedWithNonCapacityFailures_StillPasses(t *testing.T) {
+	p := mediumBurstParams() // expectedExcess = 20, accepted range [17, 23]
+	attempts := makeAllOKAttempts(30)
+	// Burst window = indices 5..29 (25 attempts): 20 real capacity
+	// rejections (within range) plus 3 unrelated platform-fault 503s.
+	for i := 5; i < 25; i++ {
+		attempts[i].OK = false
+		attempts[i].StatusCode = http.StatusTooManyRequests
+	}
+	for i := 25; i < 28; i++ {
+		attempts[i].OK = false
+		attempts[i].StatusCode = http.StatusServiceUnavailable
+	}
+	result := &SustainedRunResult{Attempts: attempts, BurstStartIdx: 5}
+	v := ac022CapacityRejectionDefer(p, result)
+	rejected429, _ := v.Numbers["rejected429"].(int)
+	otherNonOK, _ := v.Numbers["otherNonOK"].(int)
+	if rejected429 != 20 {
+		t.Errorf("rejected429 = %d, want 20 (the 3 unrelated 503s must not be counted)", rejected429)
+	}
+	if otherNonOK != 3 {
+		t.Errorf("otherNonOK = %d, want 3", otherNonOK)
+	}
+	if v.Status != VerdictPass {
+		t.Errorf("Status = %s, want %s: 20 real 429s is within [17,23] regardless of the 3 unrelated 503s (detail: %s)", v.Status, VerdictPass, v.Detail)
 	}
 }
 
@@ -335,3 +484,134 @@ func makeAllOKAttempts(n int) []Attempt {
 
 func int64Ptr(v int64) *int64        { return &v }
 func timePtr(v time.Time) *time.Time { return &v }
+
+// admittedRateEnvelopeTestParams keeps ac022AdmittedRateEnvelope's bucket
+// width small (1s instead of Full's 10s) so a compact, hand-built Attempts
+// slice can cross its violation threshold (10 * 1.15 * 1s = 11.5, so 12+
+// admitted attempts landing in the same real 1s bucket is enough) without
+// needing hundreds of synthetic attempts.
+func admittedRateEnvelopeTestParams() Params {
+	return Params{
+		NormalOfferedRate: 10,
+		RateBucketWidth:   1 * time.Second,
+	}
+}
+
+// TestAC022AdmittedRateEnvelope_ClusteredActualDispatch_FailsDespiteEvenSchedule
+// is the core regression for the SentAt/ActualSentAt fix: a fixture whose
+// *scheduled* timestamps are perfectly even (would never violate the
+// envelope if bucketed by SentAt, the old behavior) but whose *actual*
+// dispatch timestamps all cluster into one real second (simulating a
+// catch-up burst after a dispatch stall) must be detected as a violation.
+func TestAC022AdmittedRateEnvelope_ClusteredActualDispatch_FailsDespiteEvenSchedule(t *testing.T) {
+	p := admittedRateEnvelopeTestParams()
+	schedBase := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	realBase := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) // an unrelated clock domain on purpose
+
+	const n = 20
+	attempts := make([]Attempt, n)
+	for i := 0; i < n; i++ {
+		attempts[i] = Attempt{
+			N:      i,
+			SentAt: schedBase.Add(time.Duration(i) * 100 * time.Millisecond), // perfectly even: 10/s across two 1s buckets
+			// All 20 real dispatches land within a 95ms real window --
+			// far inside a single 1s bucket -- unlike the even schedule.
+			ActualSentAt: realBase.Add(time.Duration(i) * 5 * time.Millisecond),
+			OK:           true,
+			StatusCode:   200,
+		}
+		if attempts[i].SentAt.Equal(attempts[i].ActualSentAt) {
+			t.Fatalf("attempt %d: SentAt and ActualSentAt unexpectedly equal -- invalid test fixture", i)
+		}
+	}
+
+	// Confirm the premise: bucketed by SentAt (the pre-fix behavior), this
+	// fixture shows exactly 10/s in each of two buckets -- no violation.
+	// It must be the clustered ActualSentAt that trips the check below.
+	schedBuckets := map[int]int{}
+	for _, a := range attempts {
+		schedBuckets[int(a.SentAt.Sub(schedBase)/p.RateBucketWidth)]++
+	}
+	for idx, count := range schedBuckets {
+		if count != 10 {
+			t.Fatalf("invalid test fixture: schedule bucket %d has %d attempts, want exactly 10", idx, count)
+		}
+	}
+
+	result := &SustainedRunResult{Attempts: attempts}
+	v := ac022AdmittedRateEnvelope(p, result)
+
+	if v.Status != VerdictFail {
+		t.Fatalf("Status = %s, want %s: 20 admitted attempts landed in the same real 1s window (clustered ActualSentAt), which must be detected even though SentAt was perfectly even (detail: %s)", v.Status, VerdictFail, v.Detail)
+	}
+	worstRate, _ := v.Numbers["worstBucketRate"].(float64)
+	if worstRate < 19.9 || worstRate > 20.1 {
+		t.Errorf("worstBucketRate = %v, want ~20.0 (all 20 admitted attempts fell in one real bucket)", worstRate)
+	}
+	violations, _ := v.Numbers["violatingBuckets"].(int)
+	if violations != 1 {
+		t.Errorf("violatingBuckets = %v, want 1", violations)
+	}
+	if strings.Contains(v.Detail, "no admission-control mechanism exists") {
+		t.Errorf("Detail = %q, still contains the stale pre-admission-control causal claim", v.Detail)
+	}
+}
+
+// TestAC022AdmittedRateEnvelope_EvenActualDispatch_Passes is the control
+// case: when real dispatch tracks the schedule evenly (SentAt ==
+// ActualSentAt) at exactly the envelope rate, the clause must still PASS --
+// proving the fix didn't accidentally tighten the check.
+func TestAC022AdmittedRateEnvelope_EvenActualDispatch_Passes(t *testing.T) {
+	p := admittedRateEnvelopeTestParams()
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	const n = 20
+	attempts := make([]Attempt, n)
+	for i := 0; i < n; i++ {
+		at := base.Add(time.Duration(i) * 100 * time.Millisecond)
+		attempts[i] = Attempt{N: i, SentAt: at, ActualSentAt: at, OK: true, StatusCode: 200}
+	}
+
+	result := &SustainedRunResult{Attempts: attempts}
+	v := ac022AdmittedRateEnvelope(p, result)
+
+	if v.Status != VerdictPass {
+		t.Errorf("Status = %s, want %s: real dispatch evenly matched the schedule at exactly the envelope rate (detail: %s)", v.Status, VerdictPass, v.Detail)
+	}
+	worstRate, _ := v.Numbers["worstBucketRate"].(float64)
+	if worstRate < 9.9 || worstRate > 10.1 {
+		t.Errorf("worstBucketRate = %v, want ~10.0", worstRate)
+	}
+}
+
+// TestAC022OfferedAdmittedCounts_UnaffectedByActualDispatchTime guards
+// against ac022OfferedAdmittedCounts (and, by construction, the
+// BurstStartIdx-based burst/baseline split it relies on) ever accidentally
+// starting to depend on ActualSentAt -- that split must stay a test-design
+// concept keyed on the scheduled rate, not on real dispatch timing.
+func TestAC022OfferedAdmittedCounts_UnaffectedByActualDispatchTime(t *testing.T) {
+	p := mediumBurstParams()
+	attempts := makeAllOKAttempts(30)
+	for i := 5; i < 25; i++ {
+		attempts[i].OK = false
+		attempts[i].StatusCode = http.StatusTooManyRequests
+	}
+	// Deliberately scramble ActualSentAt away from SentAt/index order.
+	scrambledBase := time.Date(2030, 6, 1, 0, 0, 0, 0, time.UTC)
+	for i := range attempts {
+		attempts[i].ActualSentAt = scrambledBase.Add(time.Duration(29-i) * time.Millisecond)
+	}
+	result := &SustainedRunResult{Attempts: attempts, BurstStartIdx: 5}
+
+	v := ac022OfferedAdmittedCounts(p, result)
+	offered, _ := v.Numbers["actualOfferedTotal"].(int)
+	admitted, _ := v.Numbers["actualAdmittedTotal"].(int)
+	burstOffered, _ := v.Numbers["actualBurstOffered"].(int)
+	burstAdmitted, _ := v.Numbers["actualBurstAdmitted"].(int)
+	if offered != 30 || admitted != 10 {
+		t.Errorf("offered/admitted = %d/%d, want 30/10 -- must be unaffected by ActualSentAt", offered, admitted)
+	}
+	if burstOffered != 25 || burstAdmitted != 5 {
+		t.Errorf("burst offered/admitted = %d/%d, want 25/5 -- must be unaffected by ActualSentAt", burstOffered, burstAdmitted)
+	}
+}

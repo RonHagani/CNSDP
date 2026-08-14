@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 )
 
@@ -42,46 +43,70 @@ type intakeResponse struct {
 // request -- offered-rate control in the sustained-run phase maps one
 // HTTP POST to one "submission attempt", matching AC-022's own unit of
 // measure unambiguously, rather than leaving "attempt" ambiguous over a
-// batched request. Returns the admitted submission id.
-func (c *APIClient) PostAuditEvent(ctx context.Context, item json.RawMessage) (submissionID int64, statusCode int, err error) {
+// batched request. Returns the admitted submission id, and the response's
+// Retry-After value (zero if absent or unparseable) so a caller that needs
+// to react to capacity backpressure -- currently only the recovery phase's
+// seeding step, see recovery.go's seedOneAdmission -- can honor it without
+// this method embedding any retry policy of its own. AC-022's own load
+// generation (sustained_run.go) deliberately ignores this value: a 429
+// there is evidence being measured, not something to react to.
+func (c *APIClient) PostAuditEvent(ctx context.Context, item json.RawMessage) (submissionID int64, statusCode int, retryAfter time.Duration, err error) {
 	envelope, err := json.Marshal(map[string]any{"items": []json.RawMessage{item}})
 	if err != nil {
-		return 0, 0, fmt.Errorf("marshal envelope: %w", err)
+		return 0, 0, 0, fmt.Errorf("marshal envelope: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/v1/audit-events", bytes.NewReader(envelope))
 	if err != nil {
-		return 0, 0, fmt.Errorf("build request: %w", err)
+		return 0, 0, 0, fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.Token)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return 0, 0, fmt.Errorf("do request: %w", err)
+		return 0, 0, 0, fmt.Errorf("do request: %w", err)
 	}
 	defer resp.Body.Close()
+	retryAfter = parseRetryAfterSeconds(resp.Header.Get("Retry-After"))
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return 0, resp.StatusCode, fmt.Errorf("read response body: %w", err)
+		return 0, resp.StatusCode, retryAfter, fmt.Errorf("read response body: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return 0, resp.StatusCode, fmt.Errorf("intake returned %d: %s", resp.StatusCode, truncate(body, 500))
+		return 0, resp.StatusCode, retryAfter, fmt.Errorf("intake returned %d: %s", resp.StatusCode, truncate(body, 500))
 	}
 
 	var out intakeResponse
 	if err := json.Unmarshal(body, &out); err != nil {
-		return 0, resp.StatusCode, fmt.Errorf("unmarshal intake response: %w", err)
+		return 0, resp.StatusCode, retryAfter, fmt.Errorf("unmarshal intake response: %w", err)
 	}
 	if len(out.Results) != 1 {
-		return 0, resp.StatusCode, fmt.Errorf("intake response had %d results, want 1", len(out.Results))
+		return 0, resp.StatusCode, retryAfter, fmt.Errorf("intake response had %d results, want 1", len(out.Results))
 	}
 	if out.Results[0].Error != "" {
-		return 0, resp.StatusCode, fmt.Errorf("intake rejected item: %s", out.Results[0].Error)
+		return 0, resp.StatusCode, retryAfter, fmt.Errorf("intake rejected item: %s", out.Results[0].Error)
 	}
-	return out.Results[0].ID, resp.StatusCode, nil
+	return out.Results[0].ID, resp.StatusCode, retryAfter, nil
+}
+
+// parseRetryAfterSeconds interprets a Retry-After header value as a plain
+// integer count of seconds -- the only form the product ever sends (see
+// internal/intake/intake.go's Retry-After: "1"). An absent, negative, or
+// unparseable value (e.g. the HTTP-date form Retry-After also permits, per
+// RFC 9110 §10.2.3) yields zero, leaving the caller to apply its own
+// fallback rather than guessing.
+func parseRetryAfterSeconds(v string) time.Duration {
+	if v == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return time.Duration(n) * time.Second
 }
 
 // TimedGet issues an authenticated GET against path and returns the

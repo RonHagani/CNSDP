@@ -5,6 +5,11 @@
 // submission. It performs no content-shape classification -- FR-005's
 // four-way validation outcome is a later checkpoint's responsibility, not
 // this module's.
+//
+// Submissions offered above the documented v0.1 capacity envelope
+// (NFR-003) are visibly rejected at admission, per submission, never
+// silently accepted or dropped (NFR-004, NFR-013; AC-022) -- see
+// admission.go for the limiter and its rationale.
 package intake
 
 import (
@@ -35,6 +40,13 @@ type Handler struct {
 	DB           submission.DB
 	Token        string
 	MaxBodyBytes int64
+	// Limiter gates per-submission admission against the approved v0.1
+	// capacity envelope (NFR-003, NFR-004; AC-022). A nil Limiter applies
+	// no admission control -- every existing construction site (tests,
+	// and any future caller that doesn't set it) keeps its current
+	// unrestricted behavior unchanged. cmd/platform wires a real
+	// *SlidingWindowLimiter in production.
+	Limiter Limiter
 }
 
 type admissionResult struct {
@@ -79,7 +91,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	results := make([]admissionResult, len(items))
 	var anyFailure, anyConflict bool
+	capacityRejected := 0
 	for i, raw := range items {
+		// Admission is gated per submission, not per HTTP request: a
+		// batch may contain both admitted and capacity-rejected items
+		// (NFR-003, NFR-004; AC-022). A capacity-rejected item never
+		// reaches submission.Admit -- no submissions row, and therefore
+		// no validation_outcomes row, can ever be created for it.
+		if h.Limiter != nil && !h.Limiter.Allow() {
+			results[i] = admissionResult{Index: i, Error: "rejected: over capacity"}
+			capacityRejected++
+			continue
+		}
+
 		auditID, stage := extractIdentity(raw)
 		id, err := submission.Admit(r.Context(), h.DB, bytes.Clone(raw), auditID, stage)
 		switch {
@@ -99,8 +123,30 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case anyFailure:
 		status = http.StatusServiceUnavailable
+	case capacityRejected > 0:
+		status = http.StatusTooManyRequests
 	case anyConflict:
 		status = http.StatusConflict
+	}
+
+	if capacityRejected > 0 {
+		// Admission-and-security outcome (NFR-004), distinct from a
+		// telemetry data-quality outcome and from the NFR-013 denied-access
+		// outcome logged by diagnostics.LogAccessDenied above -- never
+		// written to validation_outcomes (NFR-022). Logged whenever any
+		// item was capacity-rejected, independent of the response's final
+		// status below -- true and useful even if an unrelated failure
+		// elsewhere in the batch ends up dominating that status.
+		diagnostics.LogCapacityRejected(r, capacityRejected)
+	}
+	if status == http.StatusTooManyRequests {
+		// Retry-After reflects the admission-control refill window
+		// specifically and is only meaningful when capacity rejection is
+		// the response's actual, dominant outcome (status == 429). A batch
+		// where an unrelated platform fault also occurred reports 503
+		// instead (anyFailure takes precedence above) and must not carry
+		// a capacity-derived retry hint alongside an unrelated failure.
+		w.Header().Set("Retry-After", "1")
 	}
 
 	w.Header().Set("Content-Type", "application/json")

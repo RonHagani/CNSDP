@@ -1,7 +1,8 @@
 // Package diagnostics implements the operational diagnostics module
-// (ARCH-01 §2 module 9): the platform readiness endpoint (NFR-020) and a
-// shared structured-logging helper for denied-access events on every
-// authenticated product-exposed path (NFR-019, NFR-021, NFR-022).
+// (ARCH-01 §2 module 9): the platform readiness endpoint (NFR-020) and
+// shared structured-logging helpers for denied-access and capacity-
+// rejected admission-and-security outcomes on every authenticated
+// product-exposed path (NFR-019, NFR-021, NFR-022).
 //
 // It owns no artifact table: readiness is a live check against existing
 // state, never a persisted product artifact, and reads that state only
@@ -101,5 +102,23 @@ func LogAccessDenied(r *http.Request) {
 		"method", r.Method,
 		"path", r.URL.Path,
 		"outcome_family", "admission_security",
+	)
+}
+
+// LogCapacityRejected records one HTTP response in which one or more
+// submission attempts were denied at admission for exceeding the approved
+// v0.1 capacity envelope (NFR-004, NFR-013; AC-022): the same
+// admission-and-security outcome family as LogAccessDenied, distinguished
+// by reason rather than by family (NFR-022) -- never a telemetry
+// data-quality outcome, and never written to validation_outcomes. Safe
+// request metadata and the rejected-item count only -- never the bearer
+// token, request body, or raw telemetry content (NFR-015).
+func LogCapacityRejected(r *http.Request, rejectedCount int) {
+	slog.Warn("diagnostics: capacity-rejected submission attempt(s)",
+		"method", r.Method,
+		"path", r.URL.Path,
+		"outcome_family", "admission_security",
+		"reason", "capacity",
+		"rejected_count", rejectedCount,
 	)
 }
