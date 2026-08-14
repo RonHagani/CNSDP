@@ -7,10 +7,12 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"cnsdp/internal/submission"
 	"cnsdp/internal/testutil"
@@ -24,6 +26,42 @@ func newTestServer(t *testing.T, db submission.DB) *httptest.Server {
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 	return srv
+}
+
+// newTestServerWithLimiter is newTestServer plus an explicit admission
+// Limiter, for the capacity-control test cases below. Every other test in
+// this file uses newTestServer (Limiter left nil), proving those
+// pre-existing cases keep their exact prior behavior unchanged through the
+// Handler.Limiter field's nil-safe default.
+func newTestServerWithLimiter(t *testing.T, db submission.DB, limiter Limiter) *httptest.Server {
+	t.Helper()
+	h := &Handler{DB: db, Token: testToken, MaxBodyBytes: DefaultMaxBodyBytes, Limiter: limiter}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// makeItemsBody builds a {"items": [...]} envelope containing n distinct,
+// well-formed items (unique auditIDs, so submission.Admit never treats two
+// of them as the same retried submission).
+func makeItemsBody(t *testing.T, n int, prefix string) string {
+	t.Helper()
+	items := make([]json.RawMessage, n)
+	for i := 0; i < n; i++ {
+		item, err := json.Marshal(map[string]string{
+			"auditID": fmt.Sprintf("%s-%d", prefix, i),
+			"stage":   "ResponseComplete",
+		})
+		if err != nil {
+			t.Fatalf("marshal item %d: %v", i, err)
+		}
+		items[i] = item
+	}
+	body, err := json.Marshal(map[string]any{"items": items})
+	if err != nil {
+		t.Fatalf("marshal body: %v", err)
+	}
+	return string(body)
 }
 
 func postJSON(t *testing.T, srv *httptest.Server, body string, token string) (*http.Response, map[string]any) {
@@ -382,5 +420,284 @@ func TestServeHTTP_RetryAfterPartialFailure_CompletesWithoutDuplicates(t *testin
 
 	if n := countSubmissions(t, realDB); n != 2 {
 		t.Errorf("submissions count after retry = %d, want 2 (no duplicates)", n)
+	}
+}
+
+// ---- Admission-control (NFR-003, NFR-004, NFR-013; AC-022) --------------
+
+func TestServeHTTP_ExactlyTenItemsSimultaneously_AllAdmitted(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	limiter := NewSlidingWindowLimiter(10, time.Second, nil)
+	srv := newTestServerWithLimiter(t, db, limiter)
+
+	resp, decoded := postJSON(t, srv, makeItemsBody(t, 10, "ten"), testToken)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	results, _ := decoded["results"].([]any)
+	if len(results) != 10 {
+		t.Fatalf("results = %v, want 10 entries", results)
+	}
+	for i, r := range results {
+		rm, _ := r.(map[string]any)
+		if _, ok := rm["id"]; !ok {
+			t.Errorf("results[%d] = %v, want an id -- 10 simultaneous items is exactly the envelope, not over it", i, rm)
+		}
+	}
+	if n := countSubmissions(t, db); n != 10 {
+		t.Errorf("submissions count = %d, want 10", n)
+	}
+}
+
+func TestServeHTTP_ElevenItemsSimultaneously_TenAdmittedOneCapacityRejected(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	limiter := NewSlidingWindowLimiter(10, time.Second, nil)
+	srv := newTestServerWithLimiter(t, db, limiter)
+
+	resp, decoded := postJSON(t, srv, makeItemsBody(t, 11, "eleven"), testToken)
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want 429", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Retry-After"); got != "1" {
+		t.Errorf("Retry-After header = %q, want %q", got, "1")
+	}
+
+	results, _ := decoded["results"].([]any)
+	if len(results) != 11 {
+		t.Fatalf("results = %v, want 11 entries (one per offered item, admitted or rejected)", results)
+	}
+	admitted, rejected := 0, 0
+	for i, r := range results {
+		rm, _ := r.(map[string]any)
+		_, hasID := rm["id"]
+		errVal, hasErr := rm["error"]
+		switch {
+		case hasID && !hasErr:
+			admitted++
+		case hasErr && !hasID:
+			rejected++
+			if errVal != "rejected: over capacity" {
+				t.Errorf("results[%d] error = %v, want a capacity-specific message", i, errVal)
+			}
+		default:
+			t.Errorf("results[%d] = %v, want exactly one of id/error set, never both or neither", i, rm)
+		}
+	}
+	if admitted != 10 {
+		t.Errorf("admitted count = %d, want 10", admitted)
+	}
+	if rejected != 1 {
+		t.Errorf("capacity-rejected count = %d, want 1", rejected)
+	}
+	if n := countSubmissions(t, db); n != 10 {
+		t.Errorf("submissions count = %d, want 10 -- the capacity-rejected item must never reach submission.Admit or be persisted", n)
+	}
+}
+
+func TestServeHTTP_CapacityRefillsAcrossWindowBoundary(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	now, advance := newFakeClock(time.Unix(0, 0))
+	limiter := NewSlidingWindowLimiter(10, time.Second, now)
+	srv := newTestServerWithLimiter(t, db, limiter)
+
+	resp1, _ := postJSON(t, srv, makeItemsBody(t, 10, "first"), testToken)
+	if resp1.StatusCode != http.StatusOK {
+		t.Fatalf("first status = %d, want 200", resp1.StatusCode)
+	}
+
+	resp2, _ := postJSON(t, srv, makeItemsBody(t, 1, "second"), testToken)
+	if resp2.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("second status (capacity exhausted) = %d, want 429", resp2.StatusCode)
+	}
+
+	// Advance the injected clock exactly one window past the first
+	// admission (no real sleep) -- a slot becomes available again.
+	advance(time.Second)
+	resp3, decoded3 := postJSON(t, srv, makeItemsBody(t, 1, "third"), testToken)
+	if resp3.StatusCode != http.StatusOK {
+		t.Fatalf("third status (after window advance) = %d, want 200", resp3.StatusCode)
+	}
+	results3, _ := decoded3["results"].([]any)
+	if len(results3) != 1 {
+		t.Fatalf("third results = %v, want 1 entry", results3)
+	}
+	if _, ok := results3[0].(map[string]any)["id"]; !ok {
+		t.Errorf("third item = %v, want an id once the window has advanced", results3[0])
+	}
+
+	if n := countSubmissions(t, db); n != 11 {
+		t.Errorf("submissions count = %d, want 11 (10 initial + 1 after refill; the rejected middle attempt never persisted)", n)
+	}
+}
+
+func TestServeHTTP_UnauthenticatedUnderExhaustedCapacity_Returns401NotTooManyRequests(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	limiter := NewSlidingWindowLimiter(1, time.Hour, nil)
+	srv := newTestServerWithLimiter(t, db, limiter)
+
+	resp1, _ := postJSON(t, srv, makeItemsBody(t, 1, "only"), testToken)
+	if resp1.StatusCode != http.StatusOK {
+		t.Fatalf("first (authenticated) status = %d, want 200", resp1.StatusCode)
+	}
+
+	// Capacity is now fully exhausted (limit=1, window=1h). An
+	// unauthenticated attempt must still be reported as unauthorized
+	// (401), never as over-capacity (429): authentication is checked
+	// before the admission gate is ever consulted, so an unauthenticated
+	// caller cannot even observe that capacity is exhausted.
+	resp2, _ := postJSON(t, srv, makeItemsBody(t, 1, "unauth"), "wrong-token")
+	if resp2.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated status under exhausted capacity = %d, want 401", resp2.StatusCode)
+	}
+}
+
+func TestServeHTTP_UnauthenticatedAttempts_DoNotConsumeAdmissionCapacity(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	limiter := NewSlidingWindowLimiter(1, time.Hour, nil) // capacity for exactly one admission
+	srv := newTestServerWithLimiter(t, db, limiter)
+
+	for i := 0; i < 5; i++ {
+		resp, _ := postJSON(t, srv, makeItemsBody(t, 1, "unauth"), "wrong-token")
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("unauthenticated attempt %d status = %d, want 401", i, resp.StatusCode)
+		}
+	}
+
+	// The single slot of real capacity must still be fully available.
+	resp, decoded := postJSON(t, srv, makeItemsBody(t, 1, "auth"), testToken)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("authenticated status after 5 unauthenticated attempts = %d, want 200 -- unauthenticated attempts must never consume admission capacity", resp.StatusCode)
+	}
+	results, _ := decoded["results"].([]any)
+	if len(results) != 1 {
+		t.Fatalf("results = %v, want 1 entry", results)
+	}
+	if _, ok := results[0].(map[string]any)["id"]; !ok {
+		t.Errorf("authenticated item = %v, want an id", results[0])
+	}
+	if n := countSubmissions(t, db); n != 1 {
+		t.Errorf("submissions count = %d, want 1 (only the authenticated admission)", n)
+	}
+}
+
+// TestServeHTTP_CapacityRejectionAndConflictInSameBatch_Returns429WithDistinguishableResults
+// proves the approved status precedence (503 > 429 > 409 > 200) actually
+// holds in the real handler path when a capacity rejection and a
+// source-identity conflict occur in the very same batch, not merely in the
+// switch statement's textual order.
+func TestServeHTTP_CapacityRejectionAndConflictInSameBatch_Returns429WithDistinguishableResults(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	limiter := NewSlidingWindowLimiter(2, time.Hour, nil) // capacity for exactly two admissions
+	srv := newTestServerWithLimiter(t, db, limiter)
+
+	// Seed one submission that a later item will conflict against. Consumes
+	// the first of two available capacity slots.
+	seedBody := `{"items": [{"auditID":"mix-conflict-1","stage":"ResponseComplete","a":1,"b":2}]}`
+	seedResp, seedDecoded := postJSON(t, srv, seedBody, testToken)
+	if seedResp.StatusCode != http.StatusOK {
+		t.Fatalf("seed status = %d, want 200", seedResp.StatusCode)
+	}
+	seedID := seedDecoded["results"].([]any)[0].(map[string]any)["id"].(float64)
+
+	// One batch containing: (1) the same identity with different content --
+	// passes the gate (consuming the second and last capacity slot), then
+	// conflicts at submission.Admit -- and (2) a brand-new item arriving
+	// after capacity is now fully exhausted (capacity-rejected).
+	mixed := `{"items": [{"auditID":"mix-conflict-1","stage":"ResponseComplete","a":99,"b":100},{"auditID":"mix-capacity-1","stage":"ResponseComplete"}]}`
+	resp, decoded := postJSON(t, srv, mixed, testToken)
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want 429 (approved precedence 503 > 429 > 409 > 200; no failure occurred here, so capacity rejection outranks the conflict)", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Retry-After"); got != "1" {
+		t.Errorf("Retry-After = %q, want %q (final status is 429)", got, "1")
+	}
+
+	results, _ := decoded["results"].([]any)
+	if len(results) != 2 {
+		t.Fatalf("results = %v, want 2 entries", results)
+	}
+
+	conflictResult, _ := results[0].(map[string]any)
+	if errVal, _ := conflictResult["error"].(string); errVal != "conflict: an existing submission with different content already uses this source identity" {
+		t.Errorf("results[0] error = %v, want the existing conflict message", conflictResult["error"])
+	}
+	if _, hasID := conflictResult["id"]; hasID {
+		t.Errorf("results[0] = %v, want no id (conflict, not a fresh admission)", conflictResult)
+	}
+
+	capacityResult, _ := results[1].(map[string]any)
+	if errVal, _ := capacityResult["error"].(string); errVal != "rejected: over capacity" {
+		t.Errorf("results[1] error = %v, want %q", capacityResult["error"], "rejected: over capacity")
+	}
+	if _, hasID := capacityResult["id"]; hasID {
+		t.Errorf("results[1] = %v, want no id", capacityResult)
+	}
+
+	// Only the original seed submission exists: the conflict left the
+	// original row untouched (no new row created), and the
+	// capacity-rejected item never reached submission.Admit at all.
+	if n := countSubmissions(t, db); n != 1 {
+		t.Errorf("submissions count = %d, want 1", n)
+	}
+	var gotRaw []byte
+	if err := db.QueryRowContext(context.Background(),
+		`SELECT raw_event FROM submissions WHERE id = $1`, int64(seedID),
+	).Scan(&gotRaw); err != nil {
+		t.Fatalf("read seed submission: %v", err)
+	}
+	var gotVal map[string]any
+	if err := json.Unmarshal(gotRaw, &gotVal); err != nil {
+		t.Fatalf("stored raw_event is not valid JSON: %v", err)
+	}
+	if gotVal["a"] != float64(1) || gotVal["b"] != float64(2) {
+		t.Errorf("seed raw_event after conflict = %v, want unchanged original content (a=1,b=2)", gotVal)
+	}
+}
+
+// TestServeHTTP_FailureAndCapacityRejectionInSameBatch_Returns503WithoutCapacityRetryAfter
+// proves Retry-After is gated on the response's actual final status, not
+// merely on "a capacity rejection occurred somewhere in the batch": when an
+// unrelated platform fault also occurs and status ends up 503 (anyFailure
+// outranks capacity rejection), the capacity-derived Retry-After must not
+// be present, since it reflects the admission-control refill window
+// specifically and would misleadingly suggest the failure is
+// retry-after-one-second when it may not be.
+func TestServeHTTP_FailureAndCapacityRejectionInSameBatch_Returns503WithoutCapacityRetryAfter(t *testing.T) {
+	realDB := testutil.MigratedPostgres(t)
+	failing := &failNthDB{DB: realDB, failOn: 0}          // force the first item's Admit call to fail
+	limiter := NewSlidingWindowLimiter(1, time.Hour, nil) // capacity for exactly one admission
+	h := &Handler{DB: failing, Token: testToken, MaxBodyBytes: DefaultMaxBodyBytes, Limiter: limiter}
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	resp, decoded := postJSON(t, srv, makeItemsBody(t, 2, "fail-and-capacity"), testToken)
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503 (a genuine platform fault takes precedence over capacity rejection)", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Retry-After"); got != "" {
+		t.Errorf("Retry-After = %q, want no Retry-After header -- it is capacity-specific and the final status here is 503, not 429", got)
+	}
+
+	results, _ := decoded["results"].([]any)
+	if len(results) != 2 {
+		t.Fatalf("results = %v, want 2 entries", results)
+	}
+	r0, _ := results[0].(map[string]any)
+	if errVal, _ := r0["error"].(string); errVal != "internal error" {
+		t.Errorf("results[0] error = %v, want %q (the forced DB failure)", r0["error"], "internal error")
+	}
+	if _, hasID := r0["id"]; hasID {
+		t.Errorf("results[0] = %v, want no id (the item failed, not admitted)", r0)
+	}
+	r1, _ := results[1].(map[string]any)
+	if errVal, _ := r1["error"].(string); errVal != "rejected: over capacity" {
+		t.Errorf("results[1] error = %v, want %q (the capacity-rejected item)", r1["error"], "rejected: over capacity")
+	}
+	if _, hasID := r1["id"]; hasID {
+		t.Errorf("results[1] = %v, want no id", r1)
+	}
+
+	if n := countSubmissions(t, realDB); n != 0 {
+		t.Errorf("submissions count = %d, want 0 (the failed item's insert didn't complete, and the capacity-rejected item never reached Admit)", n)
 	}
 }

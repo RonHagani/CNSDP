@@ -89,7 +89,14 @@ func main() {
 	log.Println("database connected, migrations applied, detection definitions loaded")
 
 	mux := http.NewServeMux()
-	mux.Handle("POST /v1/audit-events", &intake.Handler{DB: conn, Token: token, MaxBodyBytes: maxBodyBytes})
+	mux.Handle("POST /v1/audit-events", &intake.Handler{
+		DB:           conn,
+		Token:        token,
+		MaxBodyBytes: maxBodyBytes,
+		// The approved v0.1 capacity envelope (NFR-003, NFR-004; AC-022) --
+		// see internal/intake/admission.go.
+		Limiter: intake.NewSlidingWindowLimiter(intake.AdmissionLimit, intake.AdmissionWindow, nil),
+	})
 	mux.Handle("GET /v1/alerts", &retrieval.ListHandler{DB: conn, Token: token})
 	mux.Handle("GET /v1/alerts/{id}", &retrieval.Handler{DB: conn, Token: token})
 	mux.Handle("GET /v1/detections", &retrieval.DetectionsHandler{DB: conn, Token: token})
