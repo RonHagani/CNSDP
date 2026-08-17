@@ -39,6 +39,7 @@ import (
 	"time"
 
 	"cnsdp/internal/alerting"
+	"cnsdp/internal/db"
 	"cnsdp/internal/detection"
 	"cnsdp/internal/evidence"
 	"cnsdp/internal/normalization"
@@ -169,6 +170,13 @@ func errorFamily(err error) string {
 		return "status_conflict"
 	case errors.Is(err, submission.ErrNotFound):
 		return "not_found"
+	case db.IsResourceExhausted(err):
+		// A stage's artifact insert or status advance hit the documented
+		// persistent-storage resource limit (NFR-036; AC-023) -- a
+		// platform-fault outcome, distinct from every processing_error
+		// above it: none of those represent the platform itself running
+		// out of a resource it depends on.
+		return "resource_exhausted"
 	default:
 		return "processing_error"
 	}
