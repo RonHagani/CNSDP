@@ -36,6 +36,67 @@
 #    "cnsdp" role. No override merge-key is needed for this one: the base
 #    file declares no postgres ports at all, so there is nothing to
 #    conflict with -- plain list addition is unambiguous here.
+#
+# 3. postgres-capacity-fixture and app-capacity-fixture: a second,
+#    entirely separate Postgres instance and a disposable instance of the
+#    same application image, used only by AC-023's final
+#    resource-exhaustion phase (NFR-036) -- never by AC-019 through
+#    AC-022, never by the primary postgres/app pair above, and never by
+#    the developer's own default-named stack.
+#
+#    Both carry `profiles: ["capacity-fixture"]`, Compose's own mechanism
+#    for "defined here, never started by a plain `up`" -- confirmed
+#    empirically (`docker compose config`/`up` against this repository's
+#    installed Compose version): a profile-gated service is silently
+#    omitted from every command that doesn't explicitly name the profile,
+#    so the ordinary compose_up phase (main.go) never starts these, and
+#    every other phase's evidence is captured before either one exists.
+#    The harness starts them explicitly, by name, only in the dedicated
+#    AC-023 phase, after AC-019 through AC-022 have already completed.
+#
+#    postgres-capacity-fixture's tmpfs mount is the empirically validated
+#    mechanism (AC-023 spike, 2026-08-15, against this repository's exact
+#    postgres:16-alpine image): Compose's SHORT tmpfs syntax, not the
+#    long `type: tmpfs` form -- the long form's schema accepts only `size`
+#    and `mode`, and CREATE TABLESPACE requires the mount to already be
+#    OWNED by the postgres OS user (uid/gid 70 on this Alpine-based
+#    image), which only the short form's raw mount-option passthrough can
+#    express (`uid=70,gid=70`). A `mode`-only, world-writable tmpfs lets
+#    the postgres process create files in it but not `chmod` the
+#    directory itself, which CREATE TABLESPACE does unconditionally and
+#    which then fails with SQLSTATE 42501 -- confirmed by hitting exactly
+#    this failure during the spike before landing on the uid/gid form
+#    below. The mount has no named volume and is never expected to
+#    survive a restart: this container is started once, used once, and
+#    discarded with the rest of this profile's teardown -- nothing in
+#    AC-023's design depends on tmpfs contents outliving that.
+#
+#    AC023_FIXTURE_TMPFS_SIZE_BYTES defaults to 2097152 (2 MiB) -- an
+#    empirically-derived AC-023 verification-fixture test constant, never
+#    a production or reference-environment storage recommendation.
+#    Derived by measuring real admission traffic's actual disk footprint
+#    (pg_total_relation_size summed across all six product tables,
+#    heap+index+TOAST) against an uncapped isolated stack: a fresh,
+#    migrated, empty schema measures ~180KB; 200 further real admitted
+#    submissions measured ~3072 bytes/submission (conservative -- a
+#    second 200-submission batch measured lower, ~2171 bytes/submission,
+#    consistent with ordinary Postgres page-allocation amortization, not
+#    instability). 2 MiB gives ~11.6x margin over the baseline (so
+#    fixture setup alone can never approach it) and is expected to take
+#    roughly 600 real admitted submissions -- around 90 seconds at the
+#    exhaustion phase's paced admission rate -- to reach, comfortably
+#    fast for a final phase while still exercising many real writes, not
+#    one or two. docker-compose.yml's own postgres-data volume remains
+#    completely unconstrained and is not touched by anything in this
+#    file.
+#
+#    app-capacity-fixture reuses the same build context/Dockerfile as the
+#    primary app service (Compose's build cache makes the repeat build
+#    effectively free) but points DATABASE_URL at
+#    postgres-capacity-fixture instead of postgres -- the disposable
+#    instance whose real HTTP intake path AC-023's phase drives to
+#    SQLSTATE 53100, never the primary app service, which keeps serving
+#    (or has already finished serving) the rest of the run undisturbed.
 
 services:
   app:
@@ -44,3 +105,38 @@ services:
   postgres:
     ports:
       - "127.0.0.1::5432"
+
+  postgres-capacity-fixture:
+    profiles: ["capacity-fixture"]
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: cnsdp
+      POSTGRES_USER: cnsdp
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+    tmpfs:
+      - /tsfixture:size=${AC023_FIXTURE_TMPFS_SIZE_BYTES:-2097152},uid=70,gid=70,mode=0700
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cnsdp -d cnsdp"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    ports:
+      - "127.0.0.1::5432"
+
+  app-capacity-fixture:
+    profiles: ["capacity-fixture"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      postgres-capacity-fixture:
+        condition: service_healthy
+    environment:
+      HTTP_ADDR: ":8080"
+      DATABASE_URL: postgres://cnsdp:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres-capacity-fixture:5432/cnsdp?sslmode=disable
+      API_TOKEN: ${API_TOKEN:?API_TOKEN must be set}
+      MAX_BODY_BYTES: ${MAX_BODY_BYTES:-10485760}
+      WORKER_POLL_INTERVAL: ${WORKER_POLL_INTERVAL:-1s}
+    ports:
+      - "127.0.0.1::8080"

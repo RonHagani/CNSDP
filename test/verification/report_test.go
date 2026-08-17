@@ -24,16 +24,6 @@ func TestRollupOverall(t *testing.T) {
 	}
 }
 
-func TestNewEvidenceOnlyACResult_NeverPassOrFail_EvenWithPassClauses(t *testing.T) {
-	// Defends the AC-023 guarantee: even if a future edit accidentally adds
-	// a PASS-status clause to AC-023's builder, newEvidenceOnlyACResult
-	// must not let that leak into Overall.
-	ac := newEvidenceOnlyACResult("AC-023", "title", []Verdict{{Clause: "x", Status: VerdictPass}})
-	if ac.Overall != VerdictEvidenceOnly {
-		t.Errorf("Overall = %s, want %s regardless of clause content", ac.Overall, VerdictEvidenceOnly)
-	}
-}
-
 func TestSetACResults_SmokeProfile_NeverEmitsACVerdicts(t *testing.T) {
 	r := NewReport(ProfileSmoke, "test-run")
 	r.SetACResults([]ACResult{

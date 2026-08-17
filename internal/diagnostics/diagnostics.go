@@ -122,3 +122,21 @@ func LogCapacityRejected(r *http.Request, rejectedCount int) {
 		"rejected_count", rejectedCount,
 	)
 }
+
+// LogResourceExhausted records one admission write that failed because the
+// documented persistent-storage resource limit was reached (NFR-036;
+// AC-023): a platform-fault outcome, distinct from both the data-quality
+// outcomes validation_outcomes records and the admission-security outcomes
+// LogAccessDenied/LogCapacityRejected report above (NFR-022). Never
+// written to validation_outcomes. Safe request metadata and the failed
+// item's index only -- never the bearer token, request body, raw
+// telemetry, or the underlying driver error text (NFR-015).
+func LogResourceExhausted(r *http.Request, index int) {
+	slog.Error("diagnostics: admission write failed: resource exhausted",
+		"method", r.Method,
+		"path", r.URL.Path,
+		"outcome_family", "platform_fault",
+		"error_family", "resource_exhausted",
+		"index", index,
+	)
+}

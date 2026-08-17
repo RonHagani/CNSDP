@@ -24,6 +24,7 @@ import (
 	auditv1 "k8s.io/apiserver/pkg/apis/audit/v1"
 
 	"cnsdp/internal/auth"
+	"cnsdp/internal/db"
 	"cnsdp/internal/diagnostics"
 	"cnsdp/internal/submission"
 )
@@ -110,6 +111,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, submission.ErrSourceConflict):
 			results[i] = admissionResult{Index: i, Error: "conflict: an existing submission with different content already uses this source identity"}
 			anyConflict = true
+		case db.IsResourceExhausted(err):
+			// The documented persistent-storage resource limit was reached
+			// mid-write (NFR-036; AC-023) -- a distinct, diagnosable
+			// platform-fault outcome, not an undifferentiated internal
+			// error. The HTTP response shape is unchanged (still a generic
+			// "internal error" under the existing 503 path below): only the
+			// structured log (diagnostics.LogResourceExhausted, the single
+			// log statement for this event -- matching LogAccessDenied/
+			// LogCapacityRejected's own single-call convention) gains the
+			// distinguishing classification.
+			diagnostics.LogResourceExhausted(r, i)
+			results[i] = admissionResult{Index: i, Error: "internal error"}
+			anyFailure = true
 		case err != nil:
 			slog.Error("intake: admit failed", "index", i, "error", err)
 			results[i] = admissionResult{Index: i, Error: "internal error"}

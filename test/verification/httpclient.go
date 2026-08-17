@@ -169,6 +169,38 @@ func (c *APIClient) ReadyDiag(ctx context.Context) (bool, string) {
 	return false, fmt.Sprintf("status %d: %s", resp.StatusCode, truncate(body, 200))
 }
 
+// GetJSON issues an authenticated GET against path and decodes the JSON
+// response body into a generic map -- used where the harness needs to
+// compare actual retrieved *content* (AC-023's early-artifact-
+// retrievability clause), not merely timing (TimedGet) or a bare status
+// code. Returns the decoded body even on a non-200 status when the body
+// itself parses as JSON (matching the product's own error responses,
+// which are always a JSON object), so a caller can inspect an error
+// response's content too.
+func (c *APIClient) GetJSON(ctx context.Context, path string) (statusCode int, body map[string]any, err error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+path, nil)
+	if err != nil {
+		return 0, nil, fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return 0, nil, fmt.Errorf("do request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return resp.StatusCode, nil, fmt.Errorf("read response body: %w", err)
+	}
+	var decoded map[string]any
+	if jsonErr := json.Unmarshal(raw, &decoded); jsonErr != nil {
+		return resp.StatusCode, nil, fmt.Errorf("unmarshal response body: %w (body: %s)", jsonErr, truncate(raw, 500))
+	}
+	return resp.StatusCode, decoded, nil
+}
+
 func truncate(b []byte, n int) string {
 	if len(b) <= n {
 		return string(b)

@@ -66,7 +66,7 @@ func run() int {
 		}
 	}
 
-	compose, err := NewCompose()
+	compose, err := NewCompose(params.CapacityFixtureTmpfsBytes)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cannot start: %v\n", err)
 		return exitEnvironmentError
@@ -154,6 +154,14 @@ func run() int {
 		return exitEnvironmentError
 	}
 
+	log.Printf("phase ac023_capture_retention_baseline: starting")
+	baselineStart := time.Now()
+	retentionBaseline, baselineErr := CaptureRetentionBaseline(runCtx, db, api, sustainedResult)
+	if !recordPhase(report, "ac023_capture_retention_baseline", baselineStart, baselineErr) {
+		finalize(report, resultsDir)
+		return exitEnvironmentError
+	}
+
 	log.Printf("phase verify_no_loss: starting")
 	noLossStart := time.Now()
 	noLossVerdict, noLossErr := AC022VerifyNoLoss(runCtx, db, sustainedResult)
@@ -185,11 +193,56 @@ func run() int {
 		return exitEnvironmentError
 	}
 
+	// From here on, AC-019 through AC-022's evidence is fully captured
+	// against the untouched primary postgres/app pair. ac023_retention_evidence
+	// re-checks retention against that same still-intact primary database,
+	// strictly before ac023_storage_exhaustion brings up the destructive,
+	// isolated capacity fixture -- so the destructive phase can never
+	// contaminate anything above it, even in principle.
+	//
+	// The app's host port is re-discovered rather than reusing the
+	// pre-recovery api client: recovery.go's own documented finding is
+	// that Docker does not guarantee the same host port survives a
+	// `docker compose start` cycle, and the recovery phase's own
+	// port-rediscovery is local to that phase, so this run's api variable
+	// is potentially stale for every retrieval call from here on.
+	recoveryAppPort, portErr := compose.Port(runCtx, "app", 8080)
+	if portErr != nil {
+		return abort(report, resultsDir, "rediscover_app_port_post_recovery", portErr)
+	}
+	api = NewAPIClient("http://127.0.0.1:"+recoveryAppPort, compose.APIToken())
+
+	log.Printf("phase ac023_retention_evidence: starting")
+	retentionStart := time.Now()
+	noDeleteVerdict, retrievableVerdict, retentionErr := VerifyRetentionLate(runCtx, db, api, compose.repoRoot, retentionBaseline)
+	if !recordPhase(report, "ac023_retention_evidence", retentionStart, retentionErr) {
+		finalize(report, resultsDir)
+		return exitEnvironmentError
+	}
+	log.Printf("ac023_retention_evidence: no_deletion_or_contradicting_lifecycle=%s (%s) early_artifact_retrievable=%s (%s)",
+		noDeleteVerdict.Status, noDeleteVerdict.Detail, retrievableVerdict.Status, retrievableVerdict.Detail)
+
+	log.Printf("phase ac023_storage_exhaustion: starting")
+	exhaustionStart := time.Now()
+	placementReport, exhaustionOutcome, exhaustionErr := RunStorageExhaustionPhase(runCtx, compose, params)
+	if !recordPhase(report, "ac023_storage_exhaustion", exhaustionStart, exhaustionErr) {
+		finalize(report, resultsDir)
+		return exitEnvironmentError
+	}
+	// Logged unconditionally (not gated by profile, unlike the AC-023
+	// verdict itself): an operator watching a smoke run benefits from
+	// seeing whether the mechanism actually triggered, same as every
+	// other phase's own progress logging above.
+	log.Printf("ac023_storage_exhaustion: placementAllInCapacity=%v placementProblems=%v attemptsSent=%d attemptsAdmitted=%d exhausted=%v observedVia=%q appLogHasMarker=%v postgresLogHasEnospc=%v platformUsableAfter=%v platformUsableDetail=%q",
+		placementReport.AllInCapacity, placementReport.Problems, exhaustionOutcome.AttemptsSent, exhaustionOutcome.AttemptsAdmitted,
+		exhaustionOutcome.Exhausted, exhaustionOutcome.ObservedVia, exhaustionOutcome.AppLogHasMarker,
+		exhaustionOutcome.PostgresLogHasENOSPC, exhaustionOutcome.PlatformUsableAfter, exhaustionOutcome.PlatformUsableDetail)
+
 	if params.Profile == ProfileFull {
 		ac020 := ac020Verdict(sustainedResult)
 		ac022 := replaceClause(ac022Verdict(params, sustainedResult), noLossVerdict)
 		ac021 := ac021Verdict(retrievalResult)
-		ac023 := ac023Verdict(resourceSamples)
+		ac023 := ac023Verdict(resourceSamples, noDeleteVerdict, retrievableVerdict, placementReport, exhaustionOutcome)
 		ac019 := ac019Verdict(params, recoveryResult)
 		report.SetACResults([]ACResult{ac020, ac021, ac022, ac023, ac019})
 	} else {

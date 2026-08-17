@@ -54,6 +54,17 @@ type Params struct {
 	// Resource sampling (AC-023) -- evidence collection only, no threshold.
 	ResourceSampleInterval time.Duration
 
+	// Storage-exhaustion fixture (AC-023; NFR-036). CapacityFixtureTmpfsBytes
+	// is an empirically-derived verification-fixture test constant (see
+	// docker-compose.verify.yml's own comment for the measurement), never a
+	// production sizing recommendation. CapacityFixtureMaxAttempts and
+	// CapacityFixtureDriveBudget are generous ceilings well above the
+	// expected real attempt count -- exhausting either without observing
+	// the condition is itself a reported FAIL, not a silent pass.
+	CapacityFixtureTmpfsBytes  int64
+	CapacityFixtureMaxAttempts int
+	CapacityFixtureDriveBudget time.Duration
+
 	// Overall watchdog: cancels every phase and triggers cleanup if exceeded.
 	OverallTimeout time.Duration
 }
@@ -124,10 +135,22 @@ func FullParams() Params {
 
 		ResourceSampleInterval: 30 * time.Second,
 
+		// 2 MiB: empirically derived (docker-compose.verify.yml's own
+		// comment documents the measurement) -- ~11.6x the fixture's own
+		// ~180KB post-migration baseline, expected to take roughly 600 real
+		// admitted submissions (~90s at the exhaustion phase's paced
+		// admission rate) to exhaust. MaxAttempts/DriveBudget are ceilings
+		// well above that expectation.
+		CapacityFixtureTmpfsBytes:  2 * 1024 * 1024,
+		CapacityFixtureMaxAttempts: 5000,
+		CapacityFixtureDriveBudget: 5 * time.Minute,
+
 		// Generous ceiling: 15min sustained + 3min drain + ~1min retrieval
 		// + up to 15min RTO budget + 2min recovery drain + first-time
-		// Docker image build time, all counted against this one watchdog.
-		OverallTimeout: 45 * time.Minute,
+		// Docker image build time + the AC-023 storage-exhaustion phase
+		// (fixture build/up + drive-to-exhaustion budget above), all
+		// counted against this one watchdog.
+		OverallTimeout: 55 * time.Minute,
 	}
 }
 
@@ -157,8 +180,17 @@ func SmokeParams() Params {
 
 		ResourceSampleInterval: 5 * time.Second,
 
-		// Generous enough to include a first-time Docker image build.
-		OverallTimeout: 12 * time.Minute,
+		// 512 KiB: small enough to exhaust in well under a minute of real
+		// paced traffic at smoke scale, while still comfortably (~2.9x)
+		// clearing the fixture's own ~180KB post-migration baseline.
+		CapacityFixtureTmpfsBytes:  512 * 1024,
+		CapacityFixtureMaxAttempts: 500,
+		CapacityFixtureDriveBudget: time.Minute,
+
+		// Generous enough to include a first-time Docker image build plus
+		// the AC-023 storage-exhaustion phase's own (small, at this scale)
+		// fixture build/up.
+		OverallTimeout: 15 * time.Minute,
 	}
 }
 

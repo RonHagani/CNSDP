@@ -42,7 +42,7 @@ const projectName = "cnsdp-verify"
 var sensitiveEnvDenylist = []string{
 	"API_TOKEN", "POSTGRES_PASSWORD", "DATABASE_URL", "APP_PORT",
 	"WORKER_POLL_INTERVAL", "MAX_BODY_BYTES", "HTTP_ADDR",
-	"COMPOSE_PROJECT_NAME",
+	"COMPOSE_PROJECT_NAME", "AC023_FIXTURE_TMPFS_SIZE_BYTES",
 }
 
 // Compose drives the dedicated cnsdp-verify Compose project: the base
@@ -58,10 +58,14 @@ type Compose struct {
 }
 
 // NewCompose resolves the repository root, generates fresh random
-// credentials, and writes them to a dedicated temp env file -- never the
-// repository's own .env, never a value read from the calling shell. Call
-// Close when done to remove the temp file.
-func NewCompose() (*Compose, error) {
+// credentials, and writes them -- plus the profile's AC-023
+// capacity-fixture tmpfs size -- to a dedicated temp env file -- never
+// the repository's own .env, never a value read from the calling shell.
+// Call Close when done to remove the temp file. capacityFixtureTmpfsBytes
+// is written even for a run that never reaches the AC-023 phase: the
+// fixture service is profile-gated and never starts unless explicitly
+// requested (UpCapacityFixture), so an unused env var here is harmless.
+func NewCompose(capacityFixtureTmpfsBytes int64) (*Compose, error) {
 	root, err := repoRootDir()
 	if err != nil {
 		return nil, wrapEnvErr("resolve repository root", err)
@@ -81,7 +85,8 @@ func NewCompose() (*Compose, error) {
 		return nil, wrapEnvErr("create verification env file", err)
 	}
 	defer envFile.Close()
-	if _, err := fmt.Fprintf(envFile, "API_TOKEN=%s\nPOSTGRES_PASSWORD=%s\n", apiToken, pgPassword); err != nil {
+	if _, err := fmt.Fprintf(envFile, "API_TOKEN=%s\nPOSTGRES_PASSWORD=%s\nAC023_FIXTURE_TMPFS_SIZE_BYTES=%d\n",
+		apiToken, pgPassword, capacityFixtureTmpfsBytes); err != nil {
 		os.Remove(envFile.Name())
 		return nil, wrapEnvErr("write verification env file", err)
 	}
@@ -243,6 +248,44 @@ func (c *Compose) Kill(ctx context.Context, service string) error {
 	args := append(c.baseArgs(), "kill", service)
 	_, _, err := c.run(ctx, 30*time.Second, "compose kill "+service, args...)
 	return err
+}
+
+// UpCapacityFixture brings up only the profile-gated capacity-fixture
+// services (postgres-capacity-fixture, app-capacity-fixture) --
+// docker-compose.verify.yml scopes both to profiles: ["capacity-fixture"],
+// so the ordinary Up call above never starts them regardless of call
+// order. Called only by the AC-023 storage-exhaustion phase, only after
+// every other phase's evidence has already been captured (main.go),
+// never touching the primary app/postgres pair those phases used.
+func (c *Compose) UpCapacityFixture(ctx context.Context) error {
+	args := append(c.baseArgs(), "--profile", "capacity-fixture", "up", "-d", "--build",
+		"--wait", "--wait-timeout", "120", "postgres-capacity-fixture", "app-capacity-fixture")
+	_, _, err := c.run(ctx, 3*time.Minute, "compose up capacity-fixture", args...)
+	return err
+}
+
+// DownCapacityFixture stops and removes only the two capacity-fixture
+// containers -- explicit, rather than relying solely on the final
+// whole-project teardown (main.go's deferred compose.Down), so the
+// fault-injection fixture never lingers alongside any further harness
+// work. The final compose.Down still runs unconditionally regardless.
+func (c *Compose) DownCapacityFixture(ctx context.Context) error {
+	args := append(c.baseArgs(), "--profile", "capacity-fixture", "rm", "--force", "--stop", "--volumes",
+		"postgres-capacity-fixture", "app-capacity-fixture")
+	_, _, err := c.run(ctx, time.Minute, "compose rm capacity-fixture", args...)
+	return err
+}
+
+// Logs returns service's captured stdout+stderr since container start --
+// diagnostic evidence only (AC-023's "the condition is observable through
+// diagnostics" clause). The harness only ever greps this for a known,
+// safe, static substring (the structured error_family/outcome_family
+// classification) -- it is never parsed as structured data and never
+// reported verbatim beyond that substring check.
+func (c *Compose) Logs(ctx context.Context, service string) (string, error) {
+	args := append(c.baseArgs(), "logs", "--no-color", service)
+	out, _, err := c.run(ctx, 30*time.Second, "compose logs "+service, args...)
+	return out, err
 }
 
 // StartService issues `docker compose start service` -- a lightweight

@@ -1,6 +1,8 @@
 // Package db owns the platform's PostgreSQL connection and schema
 // migrations. It has no knowledge of any workflow-stage module's artifact
-// tables — it only opens a connection pool and applies migrations.
+// tables — it opens a connection pool, applies migrations, and classifies
+// the one PostgreSQL-native error condition (resource.go) multiple
+// callers need to distinguish from an ordinary processing failure.
 package db
 
 import (

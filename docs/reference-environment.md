@@ -201,6 +201,33 @@ outcome, normalized event, detection result, and alert already committed
 to PostgreSQL survives an application-container interruption untouched;
 only the application process itself needs restarting.
 
+## Behavior at persistent-storage exhaustion
+
+`docker-compose.yml`'s `postgres-data` volume carries no size limit of its
+own — its usable capacity is whatever the host's Docker installation and
+underlying filesystem actually provide. This environment does not document
+or configure a storage-capacity number (ARCH-01 §7), and none is set here:
+sizing a production or reference deployment's storage is an operational
+decision for whoever provisions the underlying disk/volume, not something
+this repository prescribes.
+
+If that environment-supplied capacity is ever exhausted, the platform does
+not silently continue or corrupt state (NFR-036): the in-flight write fails
+and rolls back cleanly, every previously committed submission, validation
+outcome, normalized event, detection result, and alert remains intact and
+retrievable exactly as before, and the condition is visible in the
+application's structured logs as a distinct `resource_exhausted` outcome,
+not an undifferentiated error. No action beyond restoring available capacity
+to the volume/disk is required or defined by the product itself.
+
+`test/verification`'s AC-023 phase reproduces this exact condition on
+demand, against a disposable, isolated fixture — never against this
+reference environment's own `postgres-data` volume — to verify the behavior
+above holds. See `test/verification`'s own source for how that fixture is
+constructed and sized; its capacity is a deliberately small test value
+chosen to reproduce the condition quickly, not a suggested size for this
+volume.
+
 ## Loading development alerts
 
 `scripts/dev-seed-alerts.ps1` submits the same real, committed fixtures

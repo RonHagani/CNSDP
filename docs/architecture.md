@@ -244,6 +244,43 @@ the platform's deployment target.
   load-testing product, matching NFR-003's modest envelope.
 - Exact frameworks and tools are deferred (§9).
 
+**Persistent-storage resource limit (NFR-036; AC-023).** This resolves only
+the persistent-storage half of the delegated resource-limit item (§9); the
+remaining NFR-035 resource classes (memory, execution resources, handles,
+temporary processing state) stay deferred exactly as before — no numeric
+bound is decided for them, and `test/verification`'s corresponding evidence
+clause remains permanently EVIDENCE_ONLY by design, since the approved
+documents define no number, percentage, or trend rule to adjudicate against.
+
+The platform enforces no application-level storage quota of its own. The
+single PostgreSQL persistence store's usable capacity is bounded entirely by
+whatever the deployment environment supplies — the reference environment's
+`postgres-data` Docker volume (`docker-compose.yml`, unconstrained, and
+unaffected by anything below), or an operator-provisioned volume/disk in any
+other deployment — never a value the product decides or sizes. NFR-036's
+obligation is behavioral, not a capacity number: when the environment-
+supplied capacity is exhausted, the platform must fail visibly,
+transactionally, and without silent artifact loss or corrupted continuation.
+This is implemented by classifying PostgreSQL's SQLSTATE `53100`
+(`disk_full`) specifically — never the whole class-53 "Insufficient
+Resources" family, which also covers unrelated conditions like out-of-memory
+and too-many-connections — into a distinct `resource_exhausted` outcome
+family alongside the platform's existing data-quality, admission-security,
+and platform-fault outcome families (`internal/db.IsResourceExhausted`,
+consumed by `internal/worker` and `internal/intake`).
+
+`test/verification`'s AC-023 phase reproduces this condition deterministically:
+a disposable, size-bounded `tmpfs` mount and a dedicated, isolated PostgreSQL
+fixture — entirely separate from both the reference environment and the
+primary instance the rest of the verification run uses — is brought up only
+after every other phase's evidence has already been captured, so the
+destructive test cannot contaminate it. This fixture is a fault-injection
+mechanism for reproducing the documented behavior on demand, not a model of
+the product's persistence architecture and not a production capacity
+recommendation; its capacity is an empirically-derived test constant (see
+`test/verification`'s own source for how it was derived), never a suggested
+production sizing.
+
 ## 8. Walking-skeleton definition
 
 The smallest slice proving the architecture above works end to end:
@@ -281,7 +318,7 @@ revision-1 id, negative-control fixtures.
 | Change-isolation mechanism (NFR-023) | ADR-0001, §2 |
 | Revision-identification mechanisms (NFR-025, NFR-026) | ADR-0004; §3 |
 | Reference-environment identity (NFR-033) | §7 |
-| Resource-limit values (NFR-035, NFR-036) | Deferred — implementation value, not architecturally fixed |
+| Resource-limit values (NFR-035, NFR-036) | Split: NFR-036 (persistent storage) resolved by §7 — no application-level quota, bounded by the environment-supplied deployment capacity. Remaining NFR-035 resource classes (memory, execution resources, handles, temporary processing state) stay deferred — no numeric bound decided |
 
 ### ADR index
 
