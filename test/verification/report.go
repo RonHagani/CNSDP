@@ -89,15 +89,6 @@ func newACResult(ac, title string, clauses []Verdict) ACResult {
 	return ACResult{AC: ac, Title: title, Overall: rollupOverall(clauses), Clauses: clauses}
 }
 
-// newEvidenceOnlyACResult is for AC-023: no clause here is ever
-// PASS/FAIL, by design (item 6/4 of the corrected design) -- Overall is
-// hardcoded to EVIDENCE_ONLY regardless of clause content, never derived,
-// so a future clause addition cannot accidentally make this AC report
-// PASS/FAIL without a deliberate code change to this function itself.
-func newEvidenceOnlyACResult(ac, title string, clauses []Verdict) ACResult {
-	return ACResult{AC: ac, Title: title, Overall: VerdictEvidenceOnly, Clauses: clauses}
-}
-
 // PhaseHealth records whether one harness phase executed to completion
 // without an environment-level failure -- independent of what its AC
 // verdicts came out as. A phase that ran fully and found a genuine
