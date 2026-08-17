@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // ScenarioID names the three approved detection scenarios, matching the
@@ -143,7 +144,7 @@ func cloneWithFreshAuditID(m map[string]json.RawMessage) (item json.RawMessage, 
 // scenario clones that must accumulate matching alerts.
 func NewFillerEvent(seq int) (item json.RawMessage, auditID string) {
 	id := uuid.NewString()
-	now := time.Now().UTC().Format(time.RFC3339Nano)
+	now := time.Now().UTC().Format(metav1.RFC3339Micro)
 	name := fmt.Sprintf("verification-filler-%d", seq)
 
 	m := map[string]any{

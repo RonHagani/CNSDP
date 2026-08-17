@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"testing"
+
+	"cnsdp/internal/validation"
 )
 
 func loadTestFixtures(t *testing.T) *ScenarioFixtures {
@@ -72,6 +74,17 @@ func TestNewFillerEvent_ValidatesAsValid_NeverMatchesAnyScenario(t *testing.T) {
 	_, id2 := NewFillerEvent(2)
 	if id1 == id2 {
 		t.Error("NewFillerEvent should produce a fresh auditID per call")
+	}
+
+	// The name of this test promises OutcomeValid -- assert it against the
+	// real classifier, not just structural field presence: a
+	// requestReceivedTimestamp/stageTimestamp that fails to parse as
+	// metav1.MicroTime makes json.Unmarshal itself fail, which
+	// internal/validation.Classify reports as OutcomeInvalid, not
+	// OutcomeIncomplete or a silently wrong date -- exactly the failure
+	// mode this test must catch.
+	if result := validation.Classify(item); result.Outcome != validation.OutcomeValid {
+		t.Errorf("validation.Classify(filler event) = %s (%s), want %s", result.Outcome, result.Reason, validation.OutcomeValid)
 	}
 
 	var m map[string]any

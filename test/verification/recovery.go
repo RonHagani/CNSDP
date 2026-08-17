@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // seedAdmitRetryBudget bounds how long RunRecoveryPhase's seeding step will
@@ -88,7 +89,7 @@ type RecoveryResult struct {
 // not just uniform valid traffic.
 func recoveryMixEvent(kind string, seq int) json.RawMessage {
 	id := uuid.NewString()
-	now := time.Now().UTC().Format(time.RFC3339Nano)
+	now := time.Now().UTC().Format(metav1.RFC3339Micro)
 	switch kind {
 	case "unsupported":
 		m := map[string]any{"kind": "NotAnEvent", "apiVersion": "v1", "auditID": id, "note": fmt.Sprintf("recovery-mix-unsupported-%d", seq)}

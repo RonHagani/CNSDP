@@ -10,7 +10,28 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"cnsdp/internal/validation"
 )
+
+// TestRecoveryMixEvent_IncompleteCase_ReachesOutcomeIncomplete proves the
+// "incomplete" case's requestReceivedTimestamp round-trips through the real
+// metav1.MicroTime parser: if it didn't, internal/validation.Classify's
+// json.Unmarshal would fail before missingCoreField's user.username check
+// ever runs, misclassifying this case OutcomeInvalid instead of the
+// intended OutcomeIncomplete (AC-019's mixed-outcome batch requires the
+// genuine outcome this case's name promises).
+func TestRecoveryMixEvent_IncompleteCase_ReachesOutcomeIncomplete(t *testing.T) {
+	item := recoveryMixEvent("incomplete", 1)
+
+	result := validation.Classify(item)
+	if result.Outcome != validation.OutcomeIncomplete {
+		t.Fatalf("validation.Classify(recoveryMixEvent(\"incomplete\")) = %s (%s), want %s", result.Outcome, result.Reason, validation.OutcomeIncomplete)
+	}
+	if !strings.Contains(result.Reason, "user") {
+		t.Errorf("reason = %q, want it to name the deliberately-omitted user.username field", result.Reason)
+	}
+}
 
 func TestSeedOneAdmission_RetriesOn429WithRetryAfterAndEventuallySucceeds(t *testing.T) {
 	var requestCount int64
