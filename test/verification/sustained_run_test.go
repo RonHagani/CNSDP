@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
+	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -613,5 +617,291 @@ func TestAC022OfferedAdmittedCounts_UnaffectedByActualDispatchTime(t *testing.T)
 	}
 	if burstOffered != 25 || burstAdmitted != 5 {
 		t.Errorf("burst offered/admitted = %d/%d, want 25/5 -- must be unaffected by ActualSentAt", burstOffered, burstAdmitted)
+	}
+}
+
+// ---- topUpShortScenarios (AC-020 admission-aware sample top-up) ----------
+
+func TestTopUpShortScenarios_AllScenariosSatisfied_NoTopUp(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("topUpShortScenarios must not send any request when every scenario already satisfies the minimum")
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	api := NewAPIClient(server.URL, "test-token")
+	f := loadTestFixtures(t)
+
+	var attempts []Attempt
+	for _, sid := range []ScenarioID{Scenario1, Scenario2, Scenario3} {
+		for i := 0; i < ac020MinPerScenario; i++ {
+			attempts = append(attempts, Attempt{Scenario: sid, OK: true})
+		}
+		// Even a scenario that also saw a 429 must not be topped up once
+		// it already satisfies the minimum -- eligibility alone is not
+		// sufficient, the scenario must also be deficient.
+		attempts = append(attempts, Attempt{Scenario: sid, OK: false, StatusCode: http.StatusTooManyRequests})
+	}
+
+	got := topUpShortScenarios(context.Background(), api, f, attempts, ac020TopUpMaxExtraPerScenario, ac020TopUpBudget)
+	if len(got) != 0 {
+		t.Errorf("topUpShortScenarios returned %d attempts, want 0 when every scenario already satisfies the minimum", len(got))
+	}
+}
+
+func TestTopUpShortScenarios_OnlyDeficientEligibleScenarioIsToppedUp(t *testing.T) {
+	var requestCount int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt64(&requestCount, 1)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"results":[{"index":0,"id":1}]}`))
+	}))
+	defer server.Close()
+	api := NewAPIClient(server.URL, "test-token")
+	f := loadTestFixtures(t)
+
+	var attempts []Attempt
+	// scenario-1: 15 admitted plus a 429 -- deficient AND eligible, needs
+	// exactly 5 top-ups to reach the minimum.
+	for i := 0; i < 15; i++ {
+		attempts = append(attempts, Attempt{Scenario: Scenario1, OK: true})
+	}
+	attempts = append(attempts, Attempt{Scenario: Scenario1, OK: false, StatusCode: http.StatusTooManyRequests})
+	// scenario-2: 15 admitted, no 429 at all -- deficient but NOT eligible.
+	for i := 0; i < 15; i++ {
+		attempts = append(attempts, Attempt{Scenario: Scenario2, OK: true})
+	}
+	// scenario-3: already at the minimum, has a 429 -- eligible but not deficient.
+	for i := 0; i < ac020MinPerScenario; i++ {
+		attempts = append(attempts, Attempt{Scenario: Scenario3, OK: true})
+	}
+	attempts = append(attempts, Attempt{Scenario: Scenario3, OK: false, StatusCode: http.StatusTooManyRequests})
+
+	got := topUpShortScenarios(context.Background(), api, f, attempts, ac020TopUpMaxExtraPerScenario, ac020TopUpBudget)
+
+	if n := atomic.LoadInt64(&requestCount); n != 5 {
+		t.Errorf("request count = %d, want exactly 5 (scenario-1's shortfall alone)", n)
+	}
+	if len(got) != 5 {
+		t.Fatalf("len(topUps) = %d, want 5", len(got))
+	}
+	for _, a := range got {
+		if a.Scenario != Scenario1 {
+			t.Errorf("top-up attempt for scenario %s, want only scenario-1 (the only deficient, eligible scenario)", a.Scenario)
+		}
+		if !a.OK {
+			t.Errorf("top-up attempt OK = false, want true (server always succeeds)")
+		}
+	}
+}
+
+func TestTopUpShortScenarios_429IsRetried_EventuallyAdmitted(t *testing.T) {
+	var requestCount int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt64(&requestCount, 1)
+		if n <= 2 {
+			// No Retry-After header -- exercises seedOneAdmission's
+			// fallback backoff, matching TestSeedOneAdmission_
+			// PersistentRejectionWithSmallRetryAfter_StaysBounded's own
+			// approach, so this test stays fast (~500ms) rather than
+			// waiting out a full second per retry.
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"results":[{"index":0,"error":"rejected: over capacity"}]}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"results":[{"index":0,"id":42}]}`))
+	}))
+	defer server.Close()
+	api := NewAPIClient(server.URL, "test-token")
+	f := loadTestFixtures(t)
+
+	attempts := []Attempt{{Scenario: Scenario1, OK: false, StatusCode: http.StatusTooManyRequests}}
+	for i := 0; i < ac020MinPerScenario-1; i++ {
+		attempts = append(attempts, Attempt{Scenario: Scenario1, OK: true})
+	}
+
+	got := topUpShortScenarios(context.Background(), api, f, attempts, ac020TopUpMaxExtraPerScenario, ac020TopUpBudget)
+
+	if len(got) != 1 {
+		t.Fatalf("len(topUps) = %d, want exactly 1 (one more admits scenario-1 at the minimum)", len(got))
+	}
+	if !got[0].OK {
+		t.Errorf("topUps[0].OK = false, want true after the 429s were retried and eventually succeeded")
+	}
+	if got[0].SubmissionID != 42 {
+		t.Errorf("topUps[0].SubmissionID = %d, want 42", got[0].SubmissionID)
+	}
+	if n := atomic.LoadInt64(&requestCount); n != 3 {
+		t.Errorf("request count = %d, want 3 (2 retried 429s + 1 success)", n)
+	}
+}
+
+func TestTopUpShortScenarios_NonCapacityFailure_NotRetried_RecordedHonestly(t *testing.T) {
+	var requestCount int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt64(&requestCount, 1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"results":[{"index":0,"error":"internal error"}]}`))
+	}))
+	defer server.Close()
+	api := NewAPIClient(server.URL, "test-token")
+	f := loadTestFixtures(t)
+
+	attempts := []Attempt{{Scenario: Scenario1, OK: false, StatusCode: http.StatusTooManyRequests}}
+	for i := 0; i < ac020MinPerScenario-1; i++ {
+		attempts = append(attempts, Attempt{Scenario: Scenario1, OK: true})
+	}
+
+	got := topUpShortScenarios(context.Background(), api, f, attempts, ac020TopUpMaxExtraPerScenario, ac020TopUpBudget)
+
+	if len(got) != 1 {
+		t.Fatalf("len(topUps) = %d, want exactly 1: a non-429 failure must stop this scenario's top-up immediately, not be retried into further attempts", len(got))
+	}
+	if got[0].OK {
+		t.Error("topUps[0].OK = true, want false: a 503 must not be silently treated as success")
+	}
+	if got[0].Err == "" {
+		t.Error("topUps[0].Err is empty, want the non-429 failure recorded")
+	}
+	if n := atomic.LoadInt64(&requestCount); n != 1 {
+		t.Errorf("request count = %d, want exactly 1 (a non-429 failure must not be retried)", n)
+	}
+}
+
+func TestTopUpShortScenarios_MaxExtraPerScenarioBound_StopsAtCap(t *testing.T) {
+	var requestCount int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt64(&requestCount, 1)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"results":[{"index":0,"id":1}]}`))
+	}))
+	defer server.Close()
+	api := NewAPIClient(server.URL, "test-token")
+	f := loadTestFixtures(t)
+
+	var attempts []Attempt
+	for i := 0; i < 12; i++ { // shortfall = 20-12 = 8, well above the injected cap of 3
+		attempts = append(attempts, Attempt{Scenario: Scenario1, OK: true})
+	}
+	attempts = append(attempts, Attempt{Scenario: Scenario1, OK: false, StatusCode: http.StatusTooManyRequests})
+
+	got := topUpShortScenarios(context.Background(), api, f, attempts, 3, ac020TopUpBudget)
+
+	if len(got) != 3 {
+		t.Fatalf("len(topUps) = %d, want exactly 3 (the injected per-scenario cap), even though the shortfall (8) is larger", len(got))
+	}
+	if n := atomic.LoadInt64(&requestCount); n != 3 {
+		t.Errorf("request count = %d, want exactly 3", n)
+	}
+}
+
+func TestTopUpShortScenarios_TimeBudgetBound_StopsAtDeadline(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(30 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"results":[{"index":0,"id":1}]}`))
+	}))
+	defer server.Close()
+	api := NewAPIClient(server.URL, "test-token")
+	f := loadTestFixtures(t)
+
+	var attempts []Attempt
+	for i := 0; i < 12; i++ { // shortfall = 8, would need 8 successful top-ups without the budget bound
+		attempts = append(attempts, Attempt{Scenario: Scenario1, OK: true})
+	}
+	attempts = append(attempts, Attempt{Scenario: Scenario1, OK: false, StatusCode: http.StatusTooManyRequests})
+
+	start := time.Now()
+	got := topUpShortScenarios(context.Background(), api, f, attempts, 100, 60*time.Millisecond)
+	elapsed := time.Since(start)
+
+	if len(got) >= 8 {
+		t.Errorf("len(topUps) = %d, want fewer than the full shortfall (8) -- the 60ms budget should cut this off first", len(got))
+	}
+	if elapsed > 500*time.Millisecond {
+		t.Errorf("elapsed = %s, want the function to return promptly once its time budget is exhausted, not hang", elapsed)
+	}
+}
+
+// TestAC020Verdict_TopUpSamples_CountTowardPerScenarioMinimum proves
+// ac020Verdict folds TopUpAttempts into the same resolved/unresolved
+// accounting as Attempts: a scenario one short of the minimum from the
+// main run alone must no longer be reported deficient once a single
+// successful top-up sample is added.
+func TestAC020Verdict_TopUpSamples_CountTowardPerScenarioMinimum(t *testing.T) {
+	now := time.Now()
+	var attempts []Attempt
+	correlations := map[int64]AlertCorrelation{}
+	var id int64 = 1
+	for i := 0; i < ac020MinPerScenario-1; i++ {
+		attempts = append(attempts, Attempt{SubmissionID: id, Scenario: Scenario1, OK: true})
+		correlations[id] = AlertCorrelation{SubmissionID: id, AdmittedAt: now, AlertID: int64Ptr(id), AlertAt: timePtr(now.Add(time.Second))}
+		id++
+	}
+	topUpID := id
+	correlations[topUpID] = AlertCorrelation{SubmissionID: topUpID, AdmittedAt: now, AlertID: int64Ptr(topUpID), AlertAt: timePtr(now.Add(time.Second))}
+	topUp := []Attempt{{SubmissionID: topUpID, Scenario: Scenario1, OK: true}}
+
+	without := ac020Verdict(&SustainedRunResult{Attempts: attempts, Correlations: correlations})
+	withTopUp := ac020Verdict(&SustainedRunResult{Attempts: attempts, TopUpAttempts: topUp, Correlations: correlations})
+
+	if !strings.Contains(without.Clauses[0].Detail, string(Scenario1)) {
+		t.Fatalf("without the top-up sample, scenario-1's shortfall must be reported: %q", without.Clauses[0].Detail)
+	}
+	if strings.Contains(withTopUp.Clauses[0].Detail, string(Scenario1)) {
+		t.Errorf("with the top-up sample, scenario-1 must no longer be reported short: %q", withTopUp.Clauses[0].Detail)
+	}
+
+	count, _ := withTopUp.Clauses[0].Numbers["perScenarioCount"].(map[string]int)
+	if count[string(Scenario1)] != ac020MinPerScenario {
+		t.Errorf("perScenarioCount[scenario-1] = %d, want %d", count[string(Scenario1)], ac020MinPerScenario)
+	}
+	topUpAdmitted, _ := withTopUp.Clauses[0].Numbers["topUpAdmitted"].(int)
+	if topUpAdmitted != 1 {
+		t.Errorf("topUpAdmitted = %d, want 1", topUpAdmitted)
+	}
+}
+
+// TestAC022Verdicts_UnaffectedByPopulatedTopUpAttempts is the critical
+// isolation guard: every ac022* verdict function must produce byte-
+// identical output whether or not SustainedRunResult.TopUpAttempts is
+// populated, since none of them may ever read that field.
+func TestAC022Verdicts_UnaffectedByPopulatedTopUpAttempts(t *testing.T) {
+	p := mediumBurstParams()
+	p.RateBucketWidth = 1 * time.Second // ac022AdmittedRateEnvelope divides by this; mediumBurstParams itself only sets what capacity_rejection_defer needs
+	attempts := makeAllOKAttempts(30)
+	for i := 5; i < 25; i++ {
+		attempts[i].OK = false
+		attempts[i].StatusCode = http.StatusTooManyRequests
+	}
+	base := &SustainedRunResult{
+		Attempts:      attempts,
+		BurstStartIdx: 5,
+		StatusSeries:  []StatusSample{{At: time.Now(), Counts: map[string]int64{"admitted": 3, "evidenced": 10}}},
+	}
+
+	withTopUp := *base
+	withTopUp.TopUpAttempts = []Attempt{
+		{Scenario: Scenario1, OK: true, SubmissionID: 9001, SentAt: time.Now(), ActualSentAt: time.Now(), StatusCode: 200},
+		{Scenario: Scenario2, OK: false, StatusCode: http.StatusServiceUnavailable},
+	}
+
+	checks := []struct {
+		name string
+		fn   func(*SustainedRunResult) Verdict
+	}{
+		{"admitted_rate_envelope", func(r *SustainedRunResult) Verdict { return ac022AdmittedRateEnvelope(p, r) }},
+		{"offered_admitted_counts", func(r *SustainedRunResult) Verdict { return ac022OfferedAdmittedCounts(p, r) }},
+		{"capacity_rejection_defer", func(r *SustainedRunResult) Verdict { return ac022CapacityRejectionDefer(p, r) }},
+		{"no_silent_loss", func(r *SustainedRunResult) Verdict { return ac022NoSilentLoss(r) }},
+		{"backlog_drain", func(r *SustainedRunResult) Verdict { return ac022BacklogDrain(r) }},
+	}
+
+	for _, c := range checks {
+		wantV := c.fn(base)
+		gotV := c.fn(&withTopUp)
+		if !reflect.DeepEqual(wantV, gotV) {
+			t.Errorf("%s: verdict changed when TopUpAttempts was populated:\n without: %+v\n with:    %+v", c.name, wantV, gotV)
+		}
 	}
 }
