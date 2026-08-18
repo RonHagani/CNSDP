@@ -187,6 +187,23 @@ FINDINGS.md`):
   `docs/acceptance-criteria.md` (AC-012); this document does not restate
   that content, only enforces it architecturally.
 
+**Decision (second source family):** a second, dedicated intake endpoint
+for AWS CloudTrail management events, reusing ADR-0003's dual-layer
+pattern (external contract → canonical internal model) rather than
+re-deciding it. Delivery: CloudTrail Trail (Write management events,
+us-east-1) → EventBridge (rule matching `source: aws.iam`, default
+`ENABLED` state) → SQS → bridge/poller → the new endpoint, authenticated
+by the same shared bearer token already governing every other
+product-exposed path. See ADR-0006.
+
+Confirmed field-mapping realities, verified against current AWS
+documentation during this design pass, not yet by an executed spike (§9
+Open assumptions): a Trail is required for any CloudTrail event to reach
+EventBridge at all; IAM API calls and root sign-in are always us-east-1,
+deterministically; an IAM user's console sign-in is not — which is why
+the live detection set (scenarios 4–6) uses only plain IAM API calls, and
+why scenario 7 (root-account activity) stays fixture/test-only.
+
 ## 6. Security and trust boundaries
 
 **Authentication:** a shared bearer token / API key represents the single
@@ -215,7 +232,12 @@ Neither is needed by the current baseline.
 application and PostgreSQL — on a single host (NFR-033, NFR-034, AC-028). A
 separate, optional local Kubernetes cluster may be used purely as a
 telemetry-fixture-generation tool, exactly as Spike 1 used one — it is never
-the platform's deployment target.
+the platform's deployment target. A separate, optional AWS CloudTrail
+delivery bridge (the EventBridge rule, SQS queue, and small poller process
+of §5's second intake decision) may likewise be used purely as a
+telemetry-delivery tool for the AWS CloudTrail source family — it is never
+a third service in the platform's own two-service deployment target, and
+does not change NFR-033/NFR-034/AC-028's "exactly two services" guarantee.
 
 **Operability:**
 - Structured, submission/artifact-correlated logs (NFR-021), distinguishing
@@ -310,7 +332,8 @@ revision-1 id, negative-control fixtures.
 
 | PD-04 / PD-06 delegated item | Resolved by |
 | --- | --- |
-| Telemetry delivery mechanism/protocol (PD-04 deleg. 1) | ADR-0003 |
+| Telemetry delivery mechanism/protocol (PD-04 deleg. 1) | ADR-0003 (Kubernetes); ADR-0006 (AWS CloudTrail) |
+| Exact AWS CloudTrail fields required (second source family) | ADR-0006 (verified against current AWS documentation; not yet spike-validated — see Open assumptions) |
 | Detection-definition storage/maintenance mechanism (PD-04 deleg. 2) | ADR-0004 |
 | Normalized-representation format (PD-04 deleg. 3) | §3, §4 (no dedicated ADR) |
 | Exact Kubernetes audit-event fields required (PD-04 deleg. 9) | ADR-0003, spike 1 |
@@ -328,6 +351,7 @@ revision-1 id, negative-control fixtures.
 | ADR-0002 | PostgreSQL persistence and database-backed durable worker | Accepted |
 | ADR-0003 | Kubernetes audit-webhook-compatible dual-layer intake | Accepted |
 | ADR-0004 | Version-controlled declarative detection definitions | Accepted |
+| ADR-0006 | AWS CloudTrail delivery mechanism and second-endpoint topology | Proposed |
 
 ### Deferred implementation choices — not silently decided
 
@@ -348,3 +372,9 @@ revision-1 id, negative-control fixtures.
 - Live audit-webhook network delivery mechanics (retries, backpressure,
   TLS) were not exercised — Spike 1 substituted the audit log-file backend
   by disclosed necessity; wire-format shape only was validated.
+- Whether the documented AWS CloudTrail→EventBridge behavior (Trail
+  requirement, event shapes, regional determinism) holds as implemented
+  and operated against a real AWS account — presently verified against
+  AWS's current official documentation during design (see ADR-0006), not
+  yet exercised end-to-end against a live account the way Spike 1
+  validated the Kubernetes path.
