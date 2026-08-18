@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Proposed (pending this scope gate's approval) |
+| Status | Accepted |
 | Document | `docs/architecture.md` (ARCH-01) §5 |
 
 ## Context
