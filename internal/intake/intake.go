@@ -106,7 +106,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		auditID, stage := extractIdentity(raw)
-		id, err := submission.Admit(r.Context(), h.DB, bytes.Clone(raw), auditID, stage)
+		id, err := submission.Admit(r.Context(), h.DB, bytes.Clone(raw), submission.FamilyKubernetes, auditID, stage, "")
 		switch {
 		case errors.Is(err, submission.ErrSourceConflict):
 			results[i] = admissionResult{Index: i, Error: "conflict: an existing submission with different content already uses this source identity"}

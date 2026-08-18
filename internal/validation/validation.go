@@ -15,11 +15,13 @@
 package validation
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	rbacv1 "k8s.io/api/rbac/v1"
 	auditv1 "k8s.io/apiserver/pkg/apis/audit/v1"
@@ -56,8 +58,20 @@ const (
 // Classify assesses one submission's raw source event — exactly the bytes
 // stored in submissions.raw_event — in the documented precedence order
 // (FR-006): unsupported, invalid, incomplete, valid. Exactly one outcome is
-// returned (FR-005); Classify never panics on any input.
-func Classify(raw []byte) Result {
+// returned (FR-005); Classify never panics on any input. family selects
+// which of the two approved source-event families' documented supported
+// form (FR-002) raw is assessed against.
+func Classify(raw []byte, family submission.Family) Result {
+	if family == submission.FamilyCloudTrail {
+		return classifyCloudTrail(raw)
+	}
+	return classifyKubernetes(raw)
+}
+
+// classifyKubernetes is Classify's Kubernetes-family path — unchanged
+// Kubernetes classification logic, preserved exactly as it was before the
+// CloudTrail family was added.
+func classifyKubernetes(raw []byte) Result {
 	var ev auditv1.Event
 	decodeErr := json.Unmarshal(raw, &ev)
 
@@ -218,6 +232,174 @@ func missingScenarioField(ev auditv1.Event) (reason string, missing bool) {
 	}
 }
 
+// supportedCloudTrailEventCategory is the documented supported source-event
+// form's family-attribution axis for AWS CloudTrail (FR-002, scope.md
+// "Restricting this family to management events -- not data events, not
+// Insights"): only a record whose eventCategory is exactly "Management" is
+// attributable to the platform's supported CloudTrail family. There is no
+// single self-declaring "kind" field on a CloudTrail record the way
+// audit.k8s.io/v1 Events carry kind/apiVersion; eventCategory is CloudTrail's
+// own documented category discriminator and plays the equivalent role here.
+const supportedCloudTrailEventCategory = "Management"
+
+// cloudTrailRecord is the documented supported CloudTrail management-event
+// record form (FR-002): the fields validation and normalization need,
+// decoded with encoding/json's ordinary partial-population behavior --
+// every field it can decode is populated even when another field later
+// fails to type-decode, and every field stays at its zero value when raw
+// isn't a parseable JSON object at all. This is what lets the Unsupported
+// check below run safely before consulting decodeErr, exactly mirroring
+// classifyKubernetes's kind/apiVersion check.
+type cloudTrailRecord struct {
+	EventTime         time.Time              `json:"eventTime"`
+	EventSource       string                 `json:"eventSource"`
+	EventName         string                 `json:"eventName"`
+	EventCategory     string                 `json:"eventCategory"`
+	UserIdentity      cloudTrailUserIdentity `json:"userIdentity"`
+	RequestParameters json.RawMessage        `json:"requestParameters"`
+	ResponseElements  json.RawMessage        `json:"responseElements"`
+	EventID           string                 `json:"eventID"`
+	ErrorCode         string                 `json:"errorCode"`
+}
+
+type cloudTrailUserIdentity struct {
+	Type     string `json:"type"`
+	ARN      string `json:"arn"`
+	UserName string `json:"userName"`
+}
+
+// cloudTrailRequestingIdentity derives FR-007(c)'s "requesting identity"
+// from userIdentity: the ARN when present (the most specific, universally
+// available identity form), else the bare username, else the literal
+// "root" for AWS account root-user activity (scenario 7, FR-040), which
+// carries neither an arn nor a userName in the same way an IAM principal
+// does.
+func cloudTrailRequestingIdentity(rec cloudTrailRecord) string {
+	switch {
+	case rec.UserIdentity.ARN != "":
+		return rec.UserIdentity.ARN
+	case rec.UserIdentity.UserName != "":
+		return rec.UserIdentity.UserName
+	case rec.UserIdentity.Type == "Root":
+		return "root"
+	default:
+		return ""
+	}
+}
+
+// isEmptyJSON reports whether raw is absent or JSON null -- the CloudTrail
+// analog of a nil/absent Kubernetes objectRef, used to check FR-007(e)'s
+// "target resource or principal information" core-completeness item
+// without asserting any single AWS API's specific parameter names.
+func isEmptyJSON(raw json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(raw)
+	return len(trimmed) == 0 || string(trimmed) == "null"
+}
+
+// ctScenario identifies which approved CloudTrail-family detection
+// scenario, if any, a record's recorded API action belongs to -- the
+// CloudTrail analog of scenario/scenarioOf above. Named distinctly (ct
+// prefix) so it cannot collide with the Kubernetes-family scenario type in
+// this same package.
+type ctScenario int
+
+const (
+	ctScenarioNone ctScenario = iota
+	ctScenario4               // MFA device deactivated
+	ctScenario5               // new IAM access key created
+	ctScenario6               // IAM policy attachment
+)
+
+func ctScenarioOf(rec cloudTrailRecord) ctScenario {
+	switch rec.EventName {
+	case "DeactivateMFADevice", "DeleteVirtualMFADevice":
+		return ctScenario4
+	case "CreateAccessKey":
+		return ctScenario5
+	case "AttachUserPolicy", "AttachRolePolicy":
+		return ctScenario6
+	default:
+		return ctScenarioNone
+	}
+}
+
+// classifyCloudTrail is Classify's AWS CloudTrail-family path, assessed in
+// the same documented precedence order as classifyKubernetes: unsupported,
+// invalid, incomplete, valid (FR-006).
+func classifyCloudTrail(raw []byte) Result {
+	var rec cloudTrailRecord
+	decodeErr := json.Unmarshal(raw, &rec)
+
+	// Attribution (FR-010) is checked directly against the decoded
+	// eventCategory marker, never against decodeErr -- see cloudTrailRecord's
+	// doc comment. This also classifies CloudTrail's own excluded variants
+	// (Data events, Insights events) as unsupported, per scope.md.
+	if rec.EventCategory != supportedCloudTrailEventCategory {
+		return Result{OutcomeUnsupported, fmt.Sprintf(
+			"submission is not attributable to the supported AWS CloudTrail management-event form (found eventCategory %q)",
+			rec.EventCategory)}
+	}
+
+	if decodeErr != nil {
+		return Result{OutcomeInvalid, fmt.Sprintf(
+			"submission does not conform to the documented AWS CloudTrail management-event record structure: %v", decodeErr)}
+	}
+
+	if reason, missing := missingCloudTrailCoreField(rec); missing {
+		return Result{OutcomeIncomplete, reason}
+	}
+	if reason, missing := missingCloudTrailScenarioField(rec); missing {
+		return Result{OutcomeIncomplete, reason}
+	}
+
+	return Result{OutcomeValid, ""}
+}
+
+// missingCloudTrailCoreField checks FR-007 items (a) through (e): the core
+// CloudTrail event information every valid submission must contain,
+// regardless of scenario. Item (f) (recorded outcome information) has no
+// possible "missing" case for CloudTrail: errorCode's presence or absence
+// is always structurally determinable once the record decodes, unlike
+// Kubernetes' responseStatus, which can be a genuinely absent nested
+// object -- so no check for it appears here.
+func missingCloudTrailCoreField(rec cloudTrailRecord) (reason string, missing bool) {
+	if rec.EventID == "" {
+		return "missing source event identity (eventID) required by FR-007(a)", true
+	}
+	if rec.EventTime.IsZero() {
+		return "missing event time (eventTime) required by FR-007(b)", true
+	}
+	if cloudTrailRequestingIdentity(rec) == "" {
+		return "missing requesting identity (userIdentity) required by FR-007(c)", true
+	}
+	if rec.EventName == "" || rec.EventSource == "" {
+		return "missing recorded API action (eventName and/or eventSource) required by FR-007(d)", true
+	}
+	if isEmptyJSON(rec.RequestParameters) && isEmptyJSON(rec.ResponseElements) {
+		return "missing target resource or principal information (requestParameters/responseElements) required by FR-007(e)", true
+	}
+	return "", false
+}
+
+// missingCloudTrailScenarioField checks FR-007(g)/FR-009's scenario-required
+// completeness for a scenario-relevant CloudTrail action. Scope is
+// deliberately conservative, mirroring missingScenarioField's own stated
+// scope: structural presence of a request-parameter payload to evaluate
+// later, not any single AWS API's exact parameter names -- the precise
+// per-field content FR-018 will need (affected user/device/policy) is
+// scenario-definition-authoring work for the detection scenarios
+// themselves, out of this slice's scope (no AWS detection scenarios exist
+// yet).
+func missingCloudTrailScenarioField(rec cloudTrailRecord) (reason string, missing bool) {
+	if ctScenarioOf(rec) == ctScenarioNone {
+		return "", false
+	}
+	if isEmptyJSON(rec.RequestParameters) {
+		return "missing requestParameters required by FR-007(g)/FR-018 to evaluate the recorded IAM action", true
+	}
+	return "", false
+}
+
 // ErrOutcomeConflict is returned by Advance when a validation_outcomes row
 // already exists for the submission with a different outcome or reason
 // than what this call just computed -- a genuine disagreement between the
@@ -251,7 +433,7 @@ var ErrOutcomeConflict = errors.New("validation: existing validation outcome has
 // prior fully-committed call) yields ErrStatusConflict, not a silent
 // reapplication.
 func Advance(ctx context.Context, db *sql.DB, sub *submission.Submission) error {
-	result := Classify(sub.RawEvent)
+	result := Classify(sub.RawEvent, sub.SourceFamily)
 
 	var reason sql.NullString
 	if result.Reason != "" {

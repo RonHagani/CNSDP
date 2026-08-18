@@ -80,7 +80,7 @@ func TestAdvance_PersistsNormalizedEventAndAdvancesStatus(t *testing.T) {
 		t.Fatalf("normalized_events rows = %d, want 1", n)
 	}
 
-	wantEvent, err := Normalize([]byte(validEventJSON))
+	wantEvent, err := Normalize([]byte(validEventJSON), submission.FamilyKubernetes)
 	if err != nil {
 		t.Fatalf("Normalize: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestAdvance_PreexistingIdenticalArtifact_SafeRetrySucceeds(t *testing.T) {
 	db := testutil.MigratedPostgres(t)
 	sub := seedValidated(t, db, validEventJSON)
 
-	event, err := Normalize([]byte(validEventJSON))
+	event, err := Normalize([]byte(validEventJSON), submission.FamilyKubernetes)
 	if err != nil {
 		t.Fatalf("Normalize: %v", err)
 	}
@@ -240,7 +240,7 @@ func TestGet_ReturnsPersistedRecord(t *testing.T) {
 		t.Fatalf("Advance: %v", err)
 	}
 
-	want, err := Normalize([]byte(validEventJSON))
+	want, err := Normalize([]byte(validEventJSON), submission.FamilyKubernetes)
 	if err != nil {
 		t.Fatalf("Normalize: %v", err)
 	}

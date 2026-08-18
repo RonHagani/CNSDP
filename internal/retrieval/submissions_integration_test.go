@@ -43,7 +43,7 @@ func newSubmissionsTestServer(t *testing.T, db *sql.DB) *httptest.Server {
 // no validation_outcomes row, exactly the "pending" filter's subject.
 func seedPendingSubmission(t *testing.T, db *sql.DB, rawEvent, auditID, auditStage string) int64 {
 	t.Helper()
-	id, err := submission.Admit(context.Background(), db, json.RawMessage(rawEvent), auditID, auditStage)
+	id, err := submission.Admit(context.Background(), db, json.RawMessage(rawEvent), submission.FamilyKubernetes, auditID, auditStage, "")
 	if err != nil {
 		t.Fatalf("admit: %v", err)
 	}
@@ -59,7 +59,7 @@ func seedPendingSubmission(t *testing.T, db *sql.DB, rawEvent, auditID, auditSta
 func seedValidatedSubmission(t *testing.T, db *sql.DB, rawEvent, auditID, auditStage string) int64 {
 	t.Helper()
 	ctx := context.Background()
-	id, err := submission.Admit(ctx, db, json.RawMessage(rawEvent), auditID, auditStage)
+	id, err := submission.Admit(ctx, db, json.RawMessage(rawEvent), submission.FamilyKubernetes, auditID, auditStage, "")
 	if err != nil {
 		t.Fatalf("admit: %v", err)
 	}

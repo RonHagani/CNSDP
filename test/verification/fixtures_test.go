@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"cnsdp/internal/submission"
 	"cnsdp/internal/validation"
 )
 
@@ -83,7 +84,7 @@ func TestNewFillerEvent_ValidatesAsValid_NeverMatchesAnyScenario(t *testing.T) {
 	// internal/validation.Classify reports as OutcomeInvalid, not
 	// OutcomeIncomplete or a silently wrong date -- exactly the failure
 	// mode this test must catch.
-	if result := validation.Classify(item); result.Outcome != validation.OutcomeValid {
+	if result := validation.Classify(item, submission.FamilyKubernetes); result.Outcome != validation.OutcomeValid {
 		t.Errorf("validation.Classify(filler event) = %s (%s), want %s", result.Outcome, result.Reason, validation.OutcomeValid)
 	}
 

@@ -52,9 +52,10 @@ type Event struct {
 	Outcome     Outcome   `json:"outcome"`
 	RequestTime time.Time `json:"requestTime"`
 
-	Exec               *ExecCharacteristics               `json:"exec,omitempty"`
-	PodCreation        *PodCreationCharacteristics        `json:"podCreation,omitempty"`
-	ClusterRoleBinding *ClusterRoleBindingCharacteristics `json:"clusterRoleBinding,omitempty"`
+	Exec                *ExecCharacteristics               `json:"exec,omitempty"`
+	PodCreation         *PodCreationCharacteristics        `json:"podCreation,omitempty"`
+	ClusterRoleBinding  *ClusterRoleBindingCharacteristics `json:"clusterRoleBinding,omitempty"`
+	CloudTrailIAMAction *CloudTrailIAMAction               `json:"cloudTrailIAMAction,omitempty"`
 }
 
 // Subject conveys the requesting subject (FR-017).
@@ -88,9 +89,22 @@ type Target struct {
 // sufficient to determine successful completion where a documented
 // detection condition requires it (FR-017). Code is 0 when the source
 // event carries no responseStatus -- permitted for non-scenario-2/3
-// events by FR-007(f).
+// events by FR-007(f). ErrorCode is CloudTrail's own native outcome
+// signal (empty means success) and is always empty for a Kubernetes
+// event; Code is always 0 for a CloudTrail event. Both are retained,
+// family-specific and descriptive only, for evidence/explainability
+// fidelity (FR-029, FR-032).
+//
+// Successful is the single source-neutral signal every detection
+// condition actually needs: derived here, per family, at normalization
+// time (Kubernetes: an HTTP response code in 200-299; CloudTrail: an
+// absent errorCode) so that internal/detection's generic evaluator never
+// has to know how any one family encodes success -- it reads only this
+// field, never Code or ErrorCode.
 type Outcome struct {
-	Code int32 `json:"code,omitempty"`
+	Code       int32  `json:"code,omitempty"`
+	ErrorCode  string `json:"errorCode,omitempty"`
+	Successful bool   `json:"successful"`
 }
 
 // ExecCharacteristics conveys scenario 1's documented interactive-execution
@@ -120,6 +134,19 @@ type ClusterRoleBindingCharacteristics struct {
 	Subjects    []rbacv1.Subject `json:"subjects,omitempty"`
 }
 
+// CloudTrailIAMAction conveys the CloudTrail-family scenario-specific
+// content FR-018 requires for scenarios 4-6: the identity of the affected
+// user and MFA device (scenario 4, FR-037); the affected user (scenario 5,
+// FR-038); or the affected principal and referenced policy (scenario 6,
+// FR-039). One struct covers all three rather than three near-identical
+// single-field types, since they share the same "affected principal, plus
+// an optional device or policy" shape.
+type CloudTrailIAMAction struct {
+	AffectedUser   string `json:"affectedUser,omitempty"`
+	AffectedDevice string `json:"affectedDevice,omitempty"`
+	PolicyName     string `json:"policyName,omitempty"`
+}
+
 // Normalize transforms one submission's raw source event into its
 // normalized representation. raw is assumed already classified valid
 // (FR-014 ensures Normalize is only ever invoked for a valid submission;
@@ -127,8 +154,19 @@ type ClusterRoleBindingCharacteristics struct {
 // An error return here reflects a source event that did not actually
 // carry what its valid classification promised -- an engineering fault
 // (functional-requirements.md, "Excluded requirement candidates" #8), not
-// a product data-quality outcome.
-func Normalize(raw []byte) (Event, error) {
+// a product data-quality outcome. family selects which of the two
+// approved source-event families raw is normalized as.
+func Normalize(raw []byte, family submission.Family) (Event, error) {
+	if family == submission.FamilyCloudTrail {
+		return normalizeCloudTrail(raw)
+	}
+	return normalizeKubernetes(raw)
+}
+
+// normalizeKubernetes is Normalize's Kubernetes-family path — unchanged
+// Kubernetes normalization logic, preserved exactly as it was before the
+// CloudTrail family was added.
+func normalizeKubernetes(raw []byte) (Event, error) {
 	var ev auditv1.Event
 	if err := json.Unmarshal(raw, &ev); err != nil {
 		return Event{}, fmt.Errorf("normalization: unmarshal source event: %w", err)
@@ -174,11 +212,19 @@ func targetOf(ref *auditv1.ObjectReference) Target {
 	}
 }
 
+// outcomeOf derives Kubernetes' Outcome, including Successful: an HTTP
+// response code in the inclusive range 200-299 (the same "success" rule
+// internal/detection's generic evaluator previously applied directly to
+// Code -- relocated here so the evaluator never needs family-specific
+// knowledge of how "success" is encoded). rs == nil (permitted for
+// non-scenario-2/3 events by FR-007(f)) yields Successful: false, which is
+// never actually consulted for such an event: a definition's
+// requires_outcome is empty exactly when no responseStatus was required.
 func outcomeOf(rs *metav1.Status) Outcome {
 	if rs == nil {
 		return Outcome{}
 	}
-	return Outcome{Code: rs.Code}
+	return Outcome{Code: rs.Code, Successful: rs.Code >= 200 && rs.Code < 300}
 }
 
 func execCharacteristics(requestURI string) *ExecCharacteristics {
@@ -308,6 +354,178 @@ func resolveScenario(ref *auditv1.ObjectReference, verb string) scenario {
 	}
 }
 
+// cloudTrailRecord is the documented supported CloudTrail management-event
+// record form (FR-002), decoded independently of internal/validation's own
+// copy of this shape: ARCH-01's module-ownership boundary does not permit
+// normalization to depend on validation (see package doc), so this is its
+// own small, locally used decode target, not an imported one -- the same
+// deliberate duplication resolveScenario's doc comment already explains
+// for the Kubernetes scenario resolver.
+type cloudTrailRecord struct {
+	EventTime         time.Time              `json:"eventTime"`
+	EventSource       string                 `json:"eventSource"`
+	EventName         string                 `json:"eventName"`
+	UserIdentity      cloudTrailUserIdentity `json:"userIdentity"`
+	RequestParameters json.RawMessage        `json:"requestParameters"`
+	ResponseElements  json.RawMessage        `json:"responseElements"`
+	ErrorCode         string                 `json:"errorCode"`
+}
+
+type cloudTrailUserIdentity struct {
+	Type     string `json:"type"`
+	ARN      string `json:"arn"`
+	UserName string `json:"userName"`
+}
+
+// ctScenario identifies which approved CloudTrail-family detection
+// scenario, if any, a record's recorded API action belongs to -- the
+// CloudTrail analog of scenario/resolveScenario above, named distinctly (ct
+// prefix) to avoid colliding with the Kubernetes-family scenario type in
+// this same package.
+type ctScenario int
+
+const (
+	ctScenarioNone ctScenario = iota
+	ctScenario4               // MFA device deactivated
+	ctScenario5               // new IAM access key created
+	ctScenario6               // IAM policy attachment
+)
+
+func resolveCloudTrailScenario(eventName string) ctScenario {
+	switch eventName {
+	case "DeactivateMFADevice", "DeleteVirtualMFADevice":
+		return ctScenario4
+	case "CreateAccessKey":
+		return ctScenario5
+	case "AttachUserPolicy", "AttachRolePolicy":
+		return ctScenario6
+	default:
+		return ctScenarioNone
+	}
+}
+
+// normalizeCloudTrail is Normalize's AWS CloudTrail-family path.
+func normalizeCloudTrail(raw []byte) (Event, error) {
+	var rec cloudTrailRecord
+	if err := json.Unmarshal(raw, &rec); err != nil {
+		return Event{}, fmt.Errorf("normalization: unmarshal cloudtrail record: %w", err)
+	}
+
+	out := Event{
+		Subject:     Subject{Username: cloudTrailRequestingIdentity(rec)},
+		Operation:   Operation{Verb: rec.EventName},
+		Target:      cloudTrailTargetOf(rec),
+		Outcome:     cloudTrailOutcomeOf(rec),
+		RequestTime: rec.EventTime,
+	}
+
+	if resolveCloudTrailScenario(rec.EventName) != ctScenarioNone {
+		out.CloudTrailIAMAction = cloudTrailIAMActionOf(rec)
+	}
+
+	return out, nil
+}
+
+// cloudTrailRequestingIdentity derives the requesting subject (FR-017)
+// from userIdentity: the ARN when present, else the bare username, else
+// the literal "root" for AWS account root-user activity (scenario 7,
+// FR-040), which carries neither an arn nor a userName the way an IAM
+// principal does.
+func cloudTrailRequestingIdentity(rec cloudTrailRecord) string {
+	switch {
+	case rec.UserIdentity.ARN != "":
+		return rec.UserIdentity.ARN
+	case rec.UserIdentity.UserName != "":
+		return rec.UserIdentity.UserName
+	case rec.UserIdentity.Type == "Root":
+		return "root"
+	default:
+		return ""
+	}
+}
+
+// cloudTrailTargetOf conveys the operation's target resource (FR-017):
+// Resource is the AWS service that recorded the event (eventSource); Name
+// is a best-effort affected-principal name drawn from the well-established,
+// stable IAM request-parameter names shared across the platform's
+// CloudTrail scenarios. This is deliberately not an exhaustive per-API
+// field mapping -- exact per-scenario field extraction beyond this belongs
+// to the future detection-scenario-authoring pass (no AWS detection
+// scenarios exist yet).
+func cloudTrailTargetOf(rec cloudTrailRecord) Target {
+	params := decodeCloudTrailParams(rec.RequestParameters)
+	name := stringField(params, "userName")
+	if name == "" {
+		name = stringField(params, "roleName")
+	}
+	return Target{Resource: rec.EventSource, Name: name}
+}
+
+// cloudTrailOutcomeOf derives CloudTrail's Outcome: ErrorCode conveyed
+// verbatim for evidence/explainability (FR-029, FR-032), and Successful
+// derived as "no recorded errorCode" -- CloudTrail's own native outcome
+// signal, always structurally determinable once the record decodes.
+func cloudTrailOutcomeOf(rec cloudTrailRecord) Outcome {
+	return Outcome{ErrorCode: rec.ErrorCode, Successful: rec.ErrorCode == ""}
+}
+
+// cloudTrailIAMActionOf conveys FR-018's scenario 4-6 content (see
+// CloudTrailIAMAction's doc comment) using the same well-established IAM
+// request/response parameter names cloudTrailTargetOf relies on.
+// CreateAccessKey's affected user falls back to the response's own
+// accessKey.userName when the request omitted an explicit userName (AWS
+// permits self-service key creation with no userName parameter, but always
+// records the actual affected username in the response on success).
+func cloudTrailIAMActionOf(rec cloudTrailRecord) *CloudTrailIAMAction {
+	reqParams := decodeCloudTrailParams(rec.RequestParameters)
+	respElements := decodeCloudTrailParams(rec.ResponseElements)
+
+	action := &CloudTrailIAMAction{}
+	switch resolveCloudTrailScenario(rec.EventName) {
+	case ctScenario4:
+		action.AffectedUser = stringField(reqParams, "userName")
+		action.AffectedDevice = stringField(reqParams, "serialNumber")
+	case ctScenario5:
+		action.AffectedUser = stringField(reqParams, "userName")
+		if action.AffectedUser == "" {
+			if accessKey, ok := respElements["accessKey"].(map[string]any); ok {
+				action.AffectedUser, _ = accessKey["userName"].(string)
+			}
+		}
+	case ctScenario6:
+		action.AffectedUser = stringField(reqParams, "userName")
+		if action.AffectedUser == "" {
+			action.AffectedUser = stringField(reqParams, "roleName")
+		}
+		action.PolicyName = stringField(reqParams, "policyArn")
+	}
+	return action
+}
+
+// decodeCloudTrailParams permissively decodes a requestParameters/
+// responseElements payload into a generic map -- CloudTrail's per-API
+// parameter shape varies by eventName, so no fixed struct fits every
+// action. A nil or unparseable payload yields a nil map rather than an
+// error: raw is assumed already classified valid, and a missing optional
+// field here is not an engineering fault the way a missing required
+// FR-007 item would be.
+func decodeCloudTrailParams(raw json.RawMessage) map[string]any {
+	if len(raw) == 0 {
+		return nil
+	}
+	var m map[string]any
+	_ = json.Unmarshal(raw, &m)
+	return m
+}
+
+func stringField(m map[string]any, key string) string {
+	if m == nil {
+		return ""
+	}
+	s, _ := m[key].(string)
+	return s
+}
+
 // ErrArtifactConflict is returned by Advance when a normalized_events row
 // already exists for the submission with different content or a
 // different representation revision than what this call just computed --
@@ -339,7 +557,7 @@ var ErrArtifactConflict = errors.New("normalization: existing normalized event h
 // prior fully-committed call) yields ErrStatusConflict, not a silent
 // reapplication.
 func Advance(ctx context.Context, db *sql.DB, sub *submission.Submission) error {
-	event, err := Normalize(sub.RawEvent)
+	event, err := Normalize(sub.RawEvent, sub.SourceFamily)
 	if err != nil {
 		return fmt.Errorf("normalization: advance submission %d: %w", sub.ID, err)
 	}

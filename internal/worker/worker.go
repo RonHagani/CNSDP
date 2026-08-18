@@ -228,7 +228,7 @@ func oldestEligible(ctx context.Context, db *sql.DB) (*submission.Submission, er
 // touching any table. after == nil reproduces oldestEligible's original,
 // unrestricted query exactly.
 func oldestEligibleAfter(ctx context.Context, db *sql.DB, after *cursor) (*submission.Submission, error) {
-	query := `SELECT s.id, s.status, s.raw_event, s.audit_id, s.audit_stage, s.created_at
+	query := `SELECT s.id, s.status, s.raw_event, s.audit_id, s.audit_stage, s.source_family, s.source_event_id, s.created_at
 		 FROM submissions s
 		 LEFT JOIN validation_outcomes v ON v.submission_id = s.id
 		 WHERE (s.status = $1
@@ -249,13 +249,14 @@ func oldestEligibleAfter(ctx context.Context, db *sql.DB, after *cursor) (*submi
 	row := db.QueryRowContext(ctx, query, args...)
 
 	var sub submission.Submission
-	var status string
-	if err := row.Scan(&sub.ID, &status, &sub.RawEvent, &sub.AuditID, &sub.AuditStage, &sub.CreatedAt); err != nil {
+	var status, family string
+	if err := row.Scan(&sub.ID, &status, &sub.RawEvent, &sub.AuditID, &sub.AuditStage, &family, &sub.SourceEventID, &sub.CreatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, submission.ErrNoWork
 		}
 		return nil, fmt.Errorf("worker: select oldest eligible submission: %w", err)
 	}
 	sub.Status = submission.Status(status)
+	sub.SourceFamily = submission.Family(family)
 	return &sub, nil
 }

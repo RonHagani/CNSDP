@@ -86,7 +86,7 @@ func TestServeHTTP_OneSubmission_ReportsSingleEventAndItsTimestamp(t *testing.T)
 	db := testutil.MigratedPostgres(t)
 	ctx := context.Background()
 
-	if _, err := submission.Admit(ctx, db, json.RawMessage(rawEventJSON), "audit-only", "ResponseComplete"); err != nil {
+	if _, err := submission.Admit(ctx, db, json.RawMessage(rawEventJSON), submission.FamilyKubernetes, "audit-only", "ResponseComplete", ""); err != nil {
 		t.Fatalf("admit: %v", err)
 	}
 
@@ -136,13 +136,13 @@ func TestServeHTTP_MultipleSubmissions_ReportsCountAndLatestTimestamp(t *testing
 	db := testutil.MigratedPostgres(t)
 	ctx := context.Background()
 
-	if _, err := submission.Admit(ctx, db, json.RawMessage(rawEventJSON), "audit-1", "ResponseComplete"); err != nil {
+	if _, err := submission.Admit(ctx, db, json.RawMessage(rawEventJSON), submission.FamilyKubernetes, "audit-1", "ResponseComplete", ""); err != nil {
 		t.Fatalf("admit 1: %v", err)
 	}
-	if _, err := submission.Admit(ctx, db, json.RawMessage(rawEventJSON), "audit-2", "ResponseComplete"); err != nil {
+	if _, err := submission.Admit(ctx, db, json.RawMessage(rawEventJSON), submission.FamilyKubernetes, "audit-2", "ResponseComplete", ""); err != nil {
 		t.Fatalf("admit 2: %v", err)
 	}
-	if _, err := submission.Admit(ctx, db, json.RawMessage(rawEventJSON), "audit-3", "ResponseComplete"); err != nil {
+	if _, err := submission.Admit(ctx, db, json.RawMessage(rawEventJSON), submission.FamilyKubernetes, "audit-3", "ResponseComplete", ""); err != nil {
 		t.Fatalf("admit 3: %v", err)
 	}
 

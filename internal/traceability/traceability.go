@@ -77,18 +77,18 @@ type DB interface {
 // an operational fault (AC-016).
 func VerifyAlert(ctx context.Context, db DB, alertID int64) (Result, error) {
 	var (
-		auditID, auditStage, storedSourceKey string
-		rawEvent, storedDigest               []byte
+		auditID, auditStage, family, sourceEventID, storedSourceKey string
+		rawEvent, storedDigest                                      []byte
 	)
 	err := db.QueryRowContext(ctx,
-		`SELECT s.audit_id, s.audit_stage, s.raw_event, s.source_key, s.raw_event_sha256
+		`SELECT s.audit_id, s.audit_stage, s.source_family, s.source_event_id, s.raw_event, s.source_key, s.raw_event_sha256
 		 FROM alerts a
 		 JOIN detection_results r ON r.id = a.detection_result_id
 		 JOIN normalized_events n ON n.id = r.normalized_event_id
 		 JOIN submissions s ON s.id = n.submission_id
 		 WHERE a.id = $1`,
 		alertID,
-	).Scan(&auditID, &auditStage, &rawEvent, &storedSourceKey, &storedDigest)
+	).Scan(&auditID, &auditStage, &family, &sourceEventID, &rawEvent, &storedSourceKey, &storedDigest)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Result{Intact: false, FailedLink: "alert"}, nil
 	}
@@ -96,7 +96,7 @@ func VerifyAlert(ctx context.Context, db DB, alertID int64) (Result, error) {
 		return Result{}, fmt.Errorf("traceability: verify alert %d: %w", alertID, err)
 	}
 
-	if submission.SourceKey(rawEvent, auditID, auditStage) != storedSourceKey {
+	if submission.SourceKey(rawEvent, submission.Family(family), auditID, auditStage, sourceEventID) != storedSourceKey {
 		return Result{Intact: false, FailedLink: "source_key"}, nil
 	}
 

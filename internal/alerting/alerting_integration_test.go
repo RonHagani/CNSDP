@@ -39,7 +39,7 @@ const benignPodCreateEventJSON = `{"kind":"Event","apiVersion":"audit.k8s.io/v1"
 func seedEvaluated(t *testing.T, db *sql.DB, rawEvent string) *submission.Submission {
 	t.Helper()
 
-	event, err := normalization.Normalize([]byte(rawEvent))
+	event, err := normalization.Normalize([]byte(rawEvent), submission.FamilyKubernetes)
 	if err != nil {
 		t.Fatalf("normalize fixture: %v", err)
 	}

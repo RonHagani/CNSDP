@@ -175,7 +175,7 @@ func TestAdvance_NotFound(t *testing.T) {
 func TestAdmit_CreatesAdmittedSubmission(t *testing.T) {
 	db := testutil.MigratedPostgres(t)
 
-	id, err := Admit(context.Background(), db, []byte(`{"auditID":"a1"}`), "a1", "ResponseComplete")
+	id, err := Admit(context.Background(), db, []byte(`{"auditID":"a1"}`), FamilyKubernetes, "a1", "ResponseComplete", "")
 	if err != nil {
 		t.Fatalf("admit: %v", err)
 	}
@@ -190,16 +190,19 @@ func TestAdmit_CreatesAdmittedSubmission(t *testing.T) {
 	if got.AuditID != "a1" || got.AuditStage != "ResponseComplete" {
 		t.Errorf("audit_id/audit_stage = %q/%q, want a1/ResponseComplete", got.AuditID, got.AuditStage)
 	}
+	if got.SourceFamily != FamilyKubernetes {
+		t.Errorf("source_family = %q, want %q", got.SourceFamily, FamilyKubernetes)
+	}
 }
 
 func TestAdmit_AssignsDistinctIDs(t *testing.T) {
 	db := testutil.MigratedPostgres(t)
 
-	id1, err := Admit(context.Background(), db, []byte(`{}`), "a1", "ResponseComplete")
+	id1, err := Admit(context.Background(), db, []byte(`{}`), FamilyKubernetes, "a1", "ResponseComplete", "")
 	if err != nil {
 		t.Fatalf("admit 1: %v", err)
 	}
-	id2, err := Admit(context.Background(), db, []byte(`{}`), "a2", "ResponseComplete")
+	id2, err := Admit(context.Background(), db, []byte(`{}`), FamilyKubernetes, "a2", "ResponseComplete", "")
 	if err != nil {
 		t.Fatalf("admit 2: %v", err)
 	}
@@ -212,11 +215,11 @@ func TestAdmit_RetryReturnsSameID(t *testing.T) {
 	db := testutil.MigratedPostgres(t)
 	raw := []byte(`{"auditID":"a1","stage":"ResponseComplete"}`)
 
-	id1, err := Admit(context.Background(), db, raw, "a1", "ResponseComplete")
+	id1, err := Admit(context.Background(), db, raw, FamilyKubernetes, "a1", "ResponseComplete", "")
 	if err != nil {
 		t.Fatalf("first admit: %v", err)
 	}
-	id2, err := Admit(context.Background(), db, raw, "a1", "ResponseComplete")
+	id2, err := Admit(context.Background(), db, raw, FamilyKubernetes, "a1", "ResponseComplete", "")
 	if err != nil {
 		t.Fatalf("retry admit: %v", err)
 	}
@@ -423,7 +426,7 @@ func TestAdmit_DifferentlyFormattedEquivalentJSON_ReturnsErrSourceConflict(t *te
 	db := testutil.MigratedPostgres(t)
 
 	original := []byte(`{"a":1,"b":2}`)
-	id1, err := Admit(context.Background(), db, original, "a1", "ResponseComplete")
+	id1, err := Admit(context.Background(), db, original, FamilyKubernetes, "a1", "ResponseComplete", "")
 	if err != nil {
 		t.Fatalf("first admit: %v", err)
 	}
@@ -433,7 +436,7 @@ func TestAdmit_DifferentlyFormattedEquivalentJSON_ReturnsErrSourceConflict(t *te
 	// be rejected as a conflict, not silently treated as "the same event",
 	// even though a JSONB-level comparison would have called it equal.
 	reformatted := []byte(`{"b": 2, "a": 1}`)
-	_, err = Admit(context.Background(), db, reformatted, "a1", "ResponseComplete")
+	_, err = Admit(context.Background(), db, reformatted, FamilyKubernetes, "a1", "ResponseComplete", "")
 	if !errors.Is(err, ErrSourceConflict) {
 		t.Fatalf("expected ErrSourceConflict, got %v", err)
 	}
@@ -454,5 +457,121 @@ func TestAdmit_DifferentlyFormattedEquivalentJSON_ReturnsErrSourceConflict(t *te
 	}
 	if count != 1 {
 		t.Errorf("row count = %d, want 1 (no duplicate/second row from the conflicting attempt)", count)
+	}
+}
+
+// --- AWS CloudTrail family (ADR-0006): Admit's eventID-keyed dedup branch
+// and source-family attribution, proven at the same level of directness as
+// the Kubernetes cases above.
+
+func TestAdmit_CloudTrail_CreatesAdmittedSubmissionWithSourceEventID(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+
+	id, err := Admit(context.Background(), db, []byte(`{"eventID":"evt-1"}`), FamilyCloudTrail, "", "", "evt-1")
+	if err != nil {
+		t.Fatalf("admit: %v", err)
+	}
+
+	got, err := Get(context.Background(), db, id)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.SourceFamily != FamilyCloudTrail {
+		t.Errorf("source_family = %q, want %q", got.SourceFamily, FamilyCloudTrail)
+	}
+	if got.SourceEventID != "evt-1" {
+		t.Errorf("source_event_id = %q, want %q", got.SourceEventID, "evt-1")
+	}
+	if got.AuditID != "" || got.AuditStage != "" {
+		t.Errorf("audit_id/audit_stage = %q/%q, want both empty for a CloudTrail submission", got.AuditID, got.AuditStage)
+	}
+}
+
+// TestAdmit_CloudTrail_ByteIdenticalRedeliveryReturnsSameID proves
+// idempotent redelivery for the CloudTrail family: the same eventID and
+// the same raw bytes twice resolves to the existing row, never a
+// duplicate -- the CloudTrail analog of TestAdmit_RetryReturnsSameID above.
+func TestAdmit_CloudTrail_ByteIdenticalRedeliveryReturnsSameID(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	raw := []byte(`{"eventID":"evt-2","eventName":"CreateAccessKey"}`)
+
+	id1, err := Admit(context.Background(), db, raw, FamilyCloudTrail, "", "", "evt-2")
+	if err != nil {
+		t.Fatalf("first admit: %v", err)
+	}
+	id2, err := Admit(context.Background(), db, raw, FamilyCloudTrail, "", "", "evt-2")
+	if err != nil {
+		t.Fatalf("retry admit: %v", err)
+	}
+	if id1 != id2 {
+		t.Errorf("retry returned id %d, want the original id %d", id2, id1)
+	}
+
+	var count int
+	if err := db.QueryRowContext(context.Background(),
+		`SELECT count(*) FROM submissions WHERE source_event_id = 'evt-2'`,
+	).Scan(&count); err != nil {
+		t.Fatalf("count rows: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("row count = %d, want 1 (no duplicate on byte-identical redelivery)", count)
+	}
+}
+
+// TestAdmit_CloudTrail_SameEventIDDifferentContent_ReturnsErrSourceConflict
+// is the CloudTrail analog of
+// TestAdmit_DifferentlyFormattedEquivalentJSON_ReturnsErrSourceConflict:
+// the same eventID with genuinely different raw bytes is a conflict, never
+// silently accepted as a retry.
+func TestAdmit_CloudTrail_SameEventIDDifferentContent_ReturnsErrSourceConflict(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+
+	original := []byte(`{"eventID":"evt-3","eventName":"CreateAccessKey"}`)
+	id1, err := Admit(context.Background(), db, original, FamilyCloudTrail, "", "", "evt-3")
+	if err != nil {
+		t.Fatalf("first admit: %v", err)
+	}
+
+	different := []byte(`{"eventID":"evt-3","eventName":"DeactivateMFADevice"}`)
+	_, err = Admit(context.Background(), db, different, FamilyCloudTrail, "", "", "evt-3")
+	if !errors.Is(err, ErrSourceConflict) {
+		t.Fatalf("expected ErrSourceConflict, got %v", err)
+	}
+
+	got, getErr := Get(context.Background(), db, id1)
+	if getErr != nil {
+		t.Fatalf("get: %v", getErr)
+	}
+	if !bytes.Equal(got.RawEvent, original) {
+		t.Errorf("raw_event after rejected conflict = %s, want unchanged original %s", got.RawEvent, original)
+	}
+}
+
+// TestAdmit_KubernetesAndCloudTrail_SameIdentityStringNeverCollide proves
+// families cannot be misclassified as one another at the Admit level, not
+// only at the SourceKey level (sourcekey_test.go): a Kubernetes submission
+// and a CloudTrail submission sharing the same identity string produce two
+// distinct rows, never a false dedup collision across families.
+func TestAdmit_KubernetesAndCloudTrail_SameIdentityStringNeverCollide(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+
+	k8sID, err := Admit(context.Background(), db, []byte(`{"a":1}`), FamilyKubernetes, "shared-id", "ResponseComplete", "")
+	if err != nil {
+		t.Fatalf("admit kubernetes: %v", err)
+	}
+	ctID, err := Admit(context.Background(), db, []byte(`{"a":1}`), FamilyCloudTrail, "", "", "shared-id")
+	if err != nil {
+		t.Fatalf("admit cloudtrail: %v", err)
+	}
+	if k8sID == ctID {
+		t.Errorf("expected distinct submissions for the same identity string across families, got the same id %d for both", k8sID)
+	}
+
+	var count int
+	if err := db.QueryRowContext(context.Background(), `SELECT count(*) FROM submissions`).Scan(&count); err != nil {
+		t.Fatalf("count rows: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("row count = %d, want 2 (both families admitted as distinct rows)", count)
 	}
 }

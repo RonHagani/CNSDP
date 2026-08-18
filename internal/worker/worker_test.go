@@ -47,7 +47,7 @@ func seedAuditIdentity(t *testing.T) (auditID, auditStage, sourceKey string) {
 	t.Helper()
 	auditID = testutil.UniqueKey(t)
 	auditStage = "ResponseComplete"
-	return auditID, auditStage, submission.SourceKey(nil, auditID, auditStage)
+	return auditID, auditStage, submission.SourceKey(nil, submission.FamilyKubernetes, auditID, auditStage, "")
 }
 
 func seedAdmitted(t *testing.T, db *sql.DB, rawEvent string) int64 {
@@ -127,7 +127,7 @@ func seedNormalizedWithCreatedAt(t *testing.T, db *sql.DB, rawEvent string, crea
 	t.Helper()
 	id := seedAtStatusWithCreatedAt(t, db, submission.StatusNormalized, rawEvent, createdAt)
 
-	event, err := normalization.Normalize([]byte(rawEvent))
+	event, err := normalization.Normalize([]byte(rawEvent), submission.FamilyKubernetes)
 	if err != nil {
 		t.Fatalf("normalize fixture: %v", err)
 	}
