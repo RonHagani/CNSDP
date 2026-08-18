@@ -351,7 +351,7 @@ revision-1 id, negative-control fixtures.
 | ADR-0002 | PostgreSQL persistence and database-backed durable worker | Accepted |
 | ADR-0003 | Kubernetes audit-webhook-compatible dual-layer intake | Accepted |
 | ADR-0004 | Version-controlled declarative detection definitions | Accepted |
-| ADR-0006 | AWS CloudTrail delivery mechanism and second-endpoint topology | Proposed |
+| ADR-0006 | AWS CloudTrail delivery mechanism and second-endpoint topology | Accepted |
 
 ### Deferred implementation choices — not silently decided
 
