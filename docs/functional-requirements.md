@@ -37,11 +37,12 @@ This document defines functional requirements only. It does not define:
 
 No user interface, product API, CLI, internal data format, database,
 queue, service, framework, deployment mechanism, or presentation
-mechanism is assumed by any requirement. The only concrete external data
-schema selected by this document is the approved Kubernetes
-audit.k8s.io/v1 source-event contract defined by FR-002, which defines
-the product input contract without selecting any implementation or
-delivery mechanism.
+mechanism is assumed by any requirement. The concrete external data
+schemas selected by this document are the approved Kubernetes
+audit.k8s.io/v1 source-event contract and the approved AWS CloudTrail
+management-event contract, both defined by FR-002 and FR-007, each of
+which defines its own product input contract without selecting any
+implementation or delivery mechanism.
 
 ## Conventions
 
@@ -63,27 +64,32 @@ delivery mechanism.
 ## Definitions
 
 - **Submission** — the unit of telemetry received at the defined intake. In
-  v0.1 each submission carries a single Kubernetes API server audit event.
-  How any batched delivery maps onto per-event submissions is delegated to
-  architecture together with the delivery mechanism (PD-04 delegated
-  decision 1).
-- **Source event** — the Kubernetes API server audit event carried by a
-  submission, in the content and form received at the defined intake.
-- **Supported source-event form** — the documented form of a Kubernetes API
-  server audit event that the platform supports (FR-002): a Kubernetes
-  audit.k8s.io/v1 Event, including its documented structural constraints
-  and the required event information defined in FR-002 and FR-007. The
-  supported form is the product input contract only; it does not select
-  the mechanism that produces, collects, or delivers events.
+  v0.1 each submission carries a single event from one of the platform's
+  approved source-event families — a Kubernetes API server audit event or
+  an AWS CloudTrail management-event record. How any batched delivery maps
+  onto per-event submissions is delegated to architecture together with the
+  applicable delivery mechanism (PD-04 delegated decision 1).
+- **Source event** — the Kubernetes API server audit event or AWS
+  CloudTrail management-event record carried by a submission, in the
+  content and form received at the defined intake for its source-event
+  family.
+- **Supported source-event form** — the documented form of a source event
+  that the platform supports (FR-002): for Kubernetes API server audit
+  events, a Kubernetes audit.k8s.io/v1 Event; for AWS CloudTrail management
+  events, a CloudTrail management-event record — in each case including the
+  documented structural constraints and the required event information
+  defined in FR-002 and FR-007. Each supported form is the product input
+  contract only for its own source-event family; neither selects the
+  mechanism that produces, collects, or delivers events.
 - **Validation outcome** — exactly one of: valid, invalid, incomplete, or
   unsupported (PC-G-002), defined mutually exclusively:
-  - **Unsupported** — the submission is not attributable to the supported
-    Kubernetes API server audit-event source family, or belongs to a
-    documented source-event variant, version, or audit-event form that v0.1
-    explicitly does not support.
-  - **Invalid** — the submission is attributable to the supported source
-    family and a supported event form, but cannot be parsed or violates the
-    documented structural constraints of that form.
+  - **Unsupported** — the submission is not attributable to any of the
+    platform's supported source-event families, or belongs to a documented
+    source-event variant, version, or form that v0.1 explicitly does not
+    support for its family.
+  - **Invalid** — the submission is attributable to one of the platform's supported
+    source-event families and a supported event form, but cannot be
+    parsed or violates the documented structural constraints of that form.
   - **Incomplete** — the submission is parseable and structurally valid,
     but lacks information required for the normalization or detection
     behavior applicable to that event.
@@ -93,9 +99,14 @@ delivery mechanism.
   A submission is assessed in the order unsupported, invalid, incomplete,
   valid, and receives exactly one outcome.
 - **Scenario-relevant operation** — an operation covered by one of the
-  three approved detection scenarios: a request to the pods/exec
+  platform's approved detection scenarios: a request to the pods/exec
   subresource of a pod (scenario 1); a Pod-creation request (scenario 2);
-  or the creation of a ClusterRoleBinding (scenario 3).
+  the creation of a ClusterRoleBinding (scenario 3); a DeactivateMFADevice
+  or DeleteVirtualMFADevice API call (scenario 4); a CreateAccessKey API
+  call (scenario 5); an AttachUserPolicy or AttachRolePolicy API call
+  referencing the AdministratorAccess policy (scenario 6); or any AWS API
+  call or console sign-in attributable to the AWS account's root user
+  (scenario 7).
 - **Normalized event** — the representation of a valid source event after
   transformation into the documented normalized representation (PC-G-003).
 - **Detection definition** — the identifiable definition of one detection
@@ -120,10 +131,10 @@ delivery mechanism.
 
 ## Section A — Telemetry intake
 
-### FR-001 — Defined intake for Kubernetes API server audit events
+### FR-001 — Defined intake for each approved source-event family
 
-The platform shall receive telemetry submissions of the Kubernetes API
-server audit-event source family through a defined intake.
+The platform shall receive telemetry submissions of each of the platform's
+approved source-event families through a defined intake.
 
 **Traceability:** UC-001; PER-003; PC-G-001; PD-04 in-scope 1, scope
 decision 1.
@@ -134,19 +145,34 @@ mechanism is deliberately unstated (PD-04 delegated decision 1).
 
 ### FR-002 — Documented supported source-event form
 
-The platform shall document the supported source-event form as a
-Kubernetes audit.k8s.io/v1 Event that: (a) preserves the source request
-identity, including the auditID and the audit stage; (b) contains the
-requesting subject, the request time, the verb, the request URI, the
-target resource reference, and the recorded outcome information;
-(c) contains the request details required by an applicable detection
-scenario — for Pod-creation and ClusterRoleBinding operations, the
-recorded request content required by FR-025 or FR-026, and for pods/exec
-operations, the recorded request URI or equivalent request
+The platform shall document the supported source-event form of each of the
+platform's approved source-event families:
+
+For Kubernetes API server audit events, a Kubernetes audit.k8s.io/v1 Event
+that: (a) preserves the source request identity, including the auditID and
+the audit stage; (b) contains the requesting subject, the request time,
+the verb, the request URI, the target resource reference, and the
+recorded outcome information; (c) contains the request details required by
+an applicable detection scenario — for Pod-creation and ClusterRoleBinding
+operations, the recorded request content required by FR-025 or FR-026, and
+for pods/exec operations, the recorded request URI or equivalent request
 characteristics required by FR-024; and (d) provides outcome information
 from an event stage sufficient to determine whether an operation
 completed successfully where a documented detection condition requires
 successful completion.
+
+For AWS CloudTrail management events, a management-event record that:
+(a) preserves the source event's own recorded identity, the eventID;
+(b) contains the requesting identity, the event time, the recorded API
+action and its source service, and the target resource information
+carried in the recorded request or response parameters; (c) contains the
+request or response details required by an applicable detection scenario
+— for IAM access-key creation, MFA-device deactivation, and IAM
+policy-attachment operations, the recorded request parameters identifying
+the affected principal, key, device, or policy required by FR-037, FR-038,
+or FR-039; and (d) provides outcome information sufficient to determine
+whether an operation completed successfully where a documented detection
+condition requires successful completion.
 
 **Traceability:** UC-001; PER-003; PC-G-001, PC-G-002; PD-04 delegated
 decision 9.
@@ -209,8 +235,11 @@ FR-005 achievable and reviewable.
 ### FR-007 — Criteria for the valid outcome
 
 The platform shall classify a submission as valid only if it is supported,
-parseable, and structurally conformant to the documented supported
-source-event form (FR-002), and contains: (a) the source event identity,
+parseable, and structurally conformant to its family's documented
+supported source-event form (FR-002), and contains the following,
+according to its source-event family:
+
+For Kubernetes API server audit events: (a) the source event identity,
 including the auditID and the audit stage; (b) the time of the request;
 (c) the requesting subject; (d) the operation performed, including the
 verb and the request URI; (e) the target resource of the operation;
@@ -220,6 +249,16 @@ where an applicable documented detection condition requires successful
 completion; and (g) where the recorded operation is a scenario-relevant
 operation, the information required to evaluate the documented detection
 conditions of the applicable scenario.
+
+For AWS CloudTrail management events: (a) the source event identity, the
+eventID; (b) the time of the event; (c) the requesting identity; (d) the
+recorded API action performed, including its source service; (e) the
+resource or principal targeted by the action; (f) the recorded outcome
+information of the action, sufficient to determine whether it completed
+successfully where an applicable documented detection condition requires
+successful completion; and (g) where the recorded action is a
+scenario-relevant operation, the information required to evaluate the
+documented detection conditions of the applicable scenario.
 
 **Traceability:** UC-001; PER-003; PC-G-002; PD-04 delegated decision 9,
 scope decision 5.
@@ -234,8 +273,9 @@ silent non-match (Section E).
 ### FR-008 — Criteria for the invalid outcome
 
 The platform shall classify as invalid a submission that is attributable
-to the supported source family and a supported event form, but cannot be
-parsed or violates the documented structural constraints of that form.
+to one of the platform's supported source-event families and a
+supported event form, but cannot be parsed or violates the documented
+structural constraints of that form.
 
 **Traceability:** UC-001 (failure outcome); PER-003; PC-G-002; PD-04
 in-scope 2.
@@ -246,10 +286,10 @@ distinctly from unsupported telemetry.
 ### FR-009 — Criteria for the incomplete outcome
 
 The platform shall classify as incomplete a submission that is parseable
-and structurally valid against the documented supported source-event form
-but lacks one or more of the information items required by FR-007 —
-whether core event information, items (a) through (f), or the
-scenario-required information of item (g).
+and structurally valid against its family's documented supported
+source-event form but lacks one or more of the information items required
+by FR-007 for the submission's source-event family — whether core event
+information or the scenario-required information.
 
 **Traceability:** UC-001 (failure outcome); PER-003; PC-G-002; PD-04 scope
 decision 5.
@@ -262,9 +302,10 @@ does not proceed (FR-014), never a silent non-match.
 ### FR-010 — Criteria for the unsupported outcome
 
 The platform shall classify as unsupported a submission that is not
-attributable to the supported Kubernetes API server audit-event source
-family, or belongs to a documented source-event variant, version, or
-audit-event form that v0.1 explicitly does not support.
+attributable to any of the platform's supported source-event families
+(Kubernetes API server audit events; AWS CloudTrail management events), or
+belongs to a documented source-event variant, version, or form that v0.1
+explicitly does not support for its family.
 
 **Traceability:** UC-001 (failure outcome); PER-003; PC-G-001, PC-G-002;
 PD-04 exclusion 12.
@@ -374,9 +415,12 @@ by the documented detection conditions of the applicable scenario: for
 pods/exec requests, the recorded exec request characteristics conveyed by
 the recorded request URI or equivalent recorded request information; for
 Pod-creation requests, the parts of the Pod specification covered by the
-documented high-risk characteristics; and for ClusterRoleBinding creation
+documented high-risk characteristics; for ClusterRoleBinding creation
 requests, the identity of the target binding, the referenced role, and
-the bound subjects.
+the bound subjects; for MFA-device-deactivation calls, the identity of
+the affected user and MFA device; for access-key-creation calls, the
+identity of the affected user; and for IAM policy-attachment calls, the
+identity of the affected principal and the referenced policy.
 
 **Traceability:** UC-002; PER-002; PC-G-003, PC-G-004; PD-04 delegated
 decision 9.
@@ -390,8 +434,9 @@ information (FR-007); normalization must not lose it.
 
 Each normalized event shall unambiguously reference the source submission
 from which it was produced and shall preserve or unambiguously reference
-the source audit-event identity, including the auditID and the audit
-stage.
+the source event's own recorded identity — for Kubernetes audit events,
+the auditID and the audit stage; for AWS CloudTrail management events, the
+eventID.
 
 **Traceability:** UC-002, UC-003; PER-002, PER-001; PC-G-007; PD-04
 in-scope 7.
@@ -417,7 +462,7 @@ scope decision 7).
 ### FR-020 — Detection definitions for the approved scenarios
 
 The platform shall provide an identifiable detection definition for each of
-the three approved v0.1 detection scenarios.
+the platform's approved detection scenarios.
 
 **Traceability:** UC-002; PER-002; PC-G-004; PD-04 in-scope 4, scope
 decision 2.
@@ -451,7 +496,7 @@ lifecycle management are excluded.
 ### FR-023 — Evaluation of every normalized event
 
 The platform shall evaluate every normalized event individually against the
-documented conditions of each of the three detection definitions.
+documented conditions of each of the platform's detection definitions.
 
 **Traceability:** UC-002; PER-002; PC-G-004; PD-04 in-scope 4,
 exclusion 10.
@@ -534,6 +579,65 @@ therefore deferred rather than approximated with an unreliable signal
 successful operations because their approved definitions describe
 completed creation (PD-04), in contrast to scenario 1's request-level
 definition.
+
+### FR-037 — Scenario 4 match — MFA device deactivated
+
+The platform shall identify a detection match for scenario 4 when a
+normalized event records a DeactivateMFADevice or DeleteVirtualMFADevice
+API call whose recorded outcome indicates the call completed successfully.
+
+**Traceability:** UC-002, UC-003; PER-002, PER-001; PC-G-004, PC-G-005;
+PD-04 scenario 4.
+
+**Rationale:** Matches only successful completion because the scenario
+describes a completed weakening of a security control, mirroring
+scenarios 2 and 3's completed-action pattern rather than scenario 1's
+attempt-level pattern.
+
+### FR-038 — Scenario 5 match — new IAM access key created
+
+The platform shall identify a detection match for scenario 5 when a
+normalized event records a CreateAccessKey API call whose recorded
+outcome indicates the call completed successfully.
+
+**Traceability:** UC-002, UC-003; PER-002, PER-001; PC-G-004, PC-G-005;
+PD-04 scenario 5.
+
+**Rationale:** Mirrors scenario 4's completed-action pattern; issuing a
+new access key is a state change worth recording only once it has
+actually occurred.
+
+### FR-039 — Scenario 6 match — IAM privilege escalation via broad policy grant
+
+The platform shall identify a detection match for scenario 6 when a
+normalized event records an AttachUserPolicy or AttachRolePolicy API call
+whose recorded outcome indicates the call completed successfully and
+whose recorded request parameters reference the AdministratorAccess
+managed policy.
+
+**Traceability:** UC-002, UC-003; PER-002, PER-001; PC-G-004, PC-G-005;
+PD-04 scenario 6.
+
+**Rationale:** The AWS-IAM analog of FR-026 (scenario 3, cluster-admin
+ClusterRoleBinding); matches only successful completion for the same
+reason as scenarios 4 and 5.
+
+### FR-040 — Scenario 7 match — root-account activity (fixture/test coverage only)
+
+The platform shall identify a detection match for scenario 7 when a
+normalized event records any AWS API call or console sign-in attributable
+to the AWS account's root user, regardless of the recorded outcome.
+Scenario 7's detection definition and normalization support shall be
+maintained and evaluated as approved product behavior; its exercise in
+demonstration is not required to use a live root session — fixture or
+recorded evidence is sufficient (see ADR-0006).
+
+**Traceability:** UC-002, UC-003; PER-002, PER-001; PC-G-004, PC-G-005;
+PD-04 scenario 7.
+
+**Rationale:** Matches regardless of outcome, mirroring scenario 1
+(FR-024): attempted root usage is itself the signal, whether or not the
+underlying call succeeded.
 
 ## Section F — Match reasons and alert generation
 
@@ -676,7 +780,7 @@ insufficient-evidence outcome.
 
 ### FR-036 — Retrospective ingestion-channel summary
 
-The platform shall make available, for the defined telemetry intake, a
+The platform shall make available, for each defined telemetry intake, a
 retrospective summary consisting of: the count of submissions already
 admitted through it, and the timestamp of the most recently admitted
 submission, or an explicit indication that none has yet been admitted. This
@@ -733,6 +837,10 @@ channel-level summary.
 | FR-034 | UC-003 | PER-001 | PC-G-007 | In-scope 7 |
 | FR-035 | UC-002, UC-003 | PER-001, PER-002 | PC-G-005, PC-G-006, PC-G-007 | In-scope 6, 7 |
 | FR-036 | UC-001 | PER-003 | PC-G-001 | Decision 6 (clarified) |
+| FR-037 | UC-002, UC-003 | PER-002, PER-001 | PC-G-004, PC-G-005 | Scenario 4 |
+| FR-038 | UC-002, UC-003 | PER-002, PER-001 | PC-G-004, PC-G-005 | Scenario 5 |
+| FR-039 | UC-002, UC-003 | PER-002, PER-001 | PC-G-004, PC-G-005 | Scenario 6 |
+| FR-040 | UC-002, UC-003 | PER-002, PER-001 | PC-G-004, PC-G-005 | Scenario 7 |
 
 Behavior required by more than one use case or persona is stated once with
 shared traceability. In particular: "never silently dropped and never
@@ -813,14 +921,15 @@ are resolved by this document:
    proceed (FR-007, FR-009, FR-014); a non-match occurs only when all
    required information was available and the documented conditions were
    not satisfied (Section E).
-7. **Supported source-event contract** — the supported source-event form
-   is a Kubernetes audit.k8s.io/v1 Event that preserves the source
-   request identity (auditID and audit stage), carries the core and
-   scenario-required request information, and provides outcome
-   information from an event stage sufficient to determine successful
-   completion where a detection condition requires it (FR-002, FR-007).
-   The mechanisms that produce, collect, and deliver events remain
-   undecided.
+7. **Supported source-event contracts** — the supported source-event
+   form, for each of the platform's approved source-event families,
+   preserves that family's own recorded event identity, carries the core
+   and scenario-required request information, and provides outcome
+   information sufficient to determine successful completion where a
+   detection condition requires it (FR-002, FR-007). For Kubernetes API
+   server audit events this is the auditID and audit stage; for AWS
+   CloudTrail management events, the eventID. The mechanisms that
+   produce, collect, and deliver events remain undecided.
 8. **One-to-one normalization and alerting** — each valid submission
    produces exactly one normalized event (FR-015), and each matching
    detection result produces exactly one alert (FR-027). Deduplication,

@@ -35,7 +35,7 @@ product outcome (PC-005):
 > Telemetry collection → validation and normalization → detection →
 > alert generation → evidence-based investigation
 
-for one deliberately limited telemetry source family and three detection
+for a deliberately limited set of telemetry source families and detection
 scenarios, with explainable alerts, a defined minimum evidence set, and
 end-to-end traceability (PC-P-001, PC-P-003, PC-P-005).
 
@@ -43,12 +43,15 @@ Breadth of integrations, detection volume, automation, and enterprise
 workflow features are not v0.1 success measures (PC-010). The non-goals in
 PC-011 remain binding.
 
-## Selected telemetry source family
+## Selected telemetry source families
 
-The single v0.1 telemetry source family is **Kubernetes API server audit
-events**: the audit records produced by a Kubernetes API server that describe
-requests to the cluster control plane, including the requesting subject, the
-operation performed, the target resource, and the outcome of the request.
+### Kubernetes API server audit events
+
+The first supported telemetry source family is **Kubernetes API server
+audit events**: the audit records produced by a Kubernetes API server that
+describe requests to the cluster control plane, including the requesting
+subject, the operation performed, the target resource, and the outcome of
+the request.
 
 Selecting this source family is a product data-scope decision: it defines
 which telemetry the product accepts. It is not a decision about the
@@ -71,11 +74,36 @@ Justification:
    conditions (UC-002), and investigation from an alert back to the source
    event (UC-003).
 
+### AWS CloudTrail management events
+
+The second supported telemetry source family is **AWS CloudTrail management
+events**: the activity records CloudTrail produces for requests made to AWS
+service control-plane APIs, including the requesting identity, the recorded
+action, the affected resource or principal, and the outcome of the request.
+
+Justification:
+
+1. A second, deliberately limited source family extends PC-C-002's
+   controlled scope without abandoning the end-to-end-before-breadth
+   principle (PC-P-001): the platform's detection, alerting, evidence, and
+   traceability behavior is proven reusable across a genuinely different
+   cloud control plane, not merely re-demonstrated on more Kubernetes data.
+2. AWS CloudTrail management events are security-relevant, cloud-native
+   control-plane telemetry, structurally analogous to Kubernetes API server
+   audit events (actor, action, target, and outcome in one record) —
+   directly aligned with the problem statement (PC-003).
+3. The family supports UC-001, UC-002, and UC-003 identically to the first
+   source family, through the same existing use-case definitions — no new
+   use case is required.
+4. Restricting this family to management events — not data events, not
+   Insights — preserves the deliberate limitation required by PC-C-002.
+
 ## Selected detection scenarios
 
-v0.1 includes exactly three detection scenarios. Each scenario is evaluated
-against individual audit events; stateful, aggregation-based, and
-baseline-driven detection semantics are excluded from v0.1. Each scenario's
+v0.1 includes seven detection scenarios across the two supported
+source-event families. Each scenario is evaluated against individual
+telemetry events; stateful, aggregation-based, and baseline-driven
+detection semantics are excluded from v0.1. Each scenario's
 detection conditions must be documented and reviewable (UC-002), and each
 resulting alert must be explainable and backed by the minimum evidence set
 defined in scope decision 8. The exact initial detection conditions for every
@@ -142,15 +170,74 @@ the requesting subject, the ClusterRoleBinding, and the referenced
 cluster-admin ClusterRole, so the alert can state which documented conditions
 matched and which event supports the match.
 
+### Scenario 4 — MFA device deactivated on an IAM user
+
+Detection of the removal of a multi-factor-authentication device from an IAM
+user.
+
+Security relevance: deactivating or deleting an MFA device weakens an
+account's authentication posture and is a recognized precursor to further
+credential misuse, regardless of who performs it or why.
+
+Explainability and evidence expectation: the supported CloudTrail record
+identifies the requesting identity, the affected user and MFA device, and
+the recorded outcome, so the alert can state which documented condition
+matched and which event supports it.
+
+### Scenario 5 — New IAM access key created
+
+Detection of the creation of a new programmatic access key for an IAM user.
+
+Security relevance: issuing a new long-lived credential is a classic
+persistence technique, whether performed legitimately or as part of a
+compromise.
+
+Explainability and evidence expectation: the supported CloudTrail record
+identifies the requesting identity, the affected user, and the recorded
+outcome.
+
+### Scenario 6 — IAM privilege escalation via an AdministratorAccess grant
+
+Detection of a request that attaches the AWS-managed AdministratorAccess
+policy to an IAM user or role.
+
+Security relevance: granting unrestricted account-wide administrative
+privilege through a managed-policy attachment is a high-impact
+privilege-escalation and persistence action — the AWS-IAM analog of scenario
+3's cluster-admin ClusterRoleBinding grant.
+
+Explainability and evidence expectation: the supported CloudTrail record
+identifies the requesting identity, the affected principal, and the
+referenced policy.
+
+### Scenario 7 — Root-account activity (fixture and test coverage only)
+
+Detection of any AWS API call or console sign-in attributable to the AWS
+account's root user.
+
+Security relevance: routine use of the root account for anything beyond a
+small set of account-level tasks is one of the most widely recognized AWS
+security anti-patterns.
+
+Explainability and evidence expectation: as scenarios 4–6.
+
+This scenario is deliberately supported for fixture and test evidence only,
+not as part of the live demonstration: a root-user console sign-in is not
+reliably delivered by the single-region live delivery path chosen for this
+source family (see `docs/architecture.md` ADR-0006), and requiring a live
+root session as a routine demonstration step is avoidable without losing
+security relevance, since the credential- and privilege-escalation risks
+root activity represents are already covered live by scenarios 5 and 6.
+
 ## Scope decisions
 
 The following resolutions correspond, by number, to the deferred decisions
 recorded in PD-03:
 
 1. **Concrete v0.1 telemetry sources** — resolved. Kubernetes API server
-   audit events are the single supported source family (see "Selected
-   telemetry source family").
-2. **Concrete v0.1 detection scenarios** — resolved. The three scenarios
+   audit events and AWS CloudTrail management events are the supported
+   source families (see "Selected telemetry source families").
+2. **Concrete v0.1 detection scenarios** — resolved. The seven scenarios
    defined in "Selected detection scenarios".
 3. **Mechanism for defining and maintaining detection content** — boundary
    resolved. Detection definitions and their documented conditions are
@@ -207,9 +294,9 @@ recorded in PD-03:
 2. Validation that classifies each received submission as valid, invalid,
    incomplete, or unsupported, with a per-submission visible outcome and a
    stated reason (UC-001, PC-G-002, PC-P-004).
-3. A documented normalized representation of supported audit events
+3. A documented normalized representation of supported source events
    (PC-G-003).
-4. The three selected detection scenarios, each with documented, reviewable
+4. The seven selected detection scenarios, each with documented, reviewable
    detection conditions (UC-002, PC-G-004).
 5. A recorded match reason for every matching detection result that produces
    an alert (UC-002, PC-G-004, PC-G-005).
@@ -244,14 +331,16 @@ unless the approved product scope changes.
 9. Aggregate validation reporting (scope decision 9).
 10. Stateful, aggregation-based, or baseline/anomaly detection semantics.
 11. Contextual evidence beyond the minimum evidence set (scope decision 8).
-12. Any telemetry source family other than Kubernetes API server audit
-    events.
+12. Any telemetry source family other than the source families explicitly
+    selected in this document (Kubernetes API server audit events; AWS
+    CloudTrail management events).
 13. Unlimited coverage of privileged or host-access workload characteristics
     in scenario 2.
 
 ## Deferred to later releases
 
-1. Additional telemetry source families.
+1. Additional telemetry source families beyond the two now selected
+   (Kubernetes API server audit events; AWS CloudTrail management events).
 2. Additional detection scenarios, including multi-event correlation and
    stateful detection semantics.
 3. Source-health and missing-delivery visibility.
@@ -301,8 +390,9 @@ unless the approved product scope changes.
    the validation outcome, the normalized event, the detection definition
    and documented conditions, the detection result and its recorded match
    reason, and the generated alert (refines PC-A-004).
-2. Three detection scenarios evaluated against individual audit events are
-   sufficient to credibly demonstrate the complete PC-005 workflow, including
+2. Seven detection scenarios across the two supported telemetry source
+   families, evaluated against individual events, are sufficient to
+   credibly demonstrate the complete PC-005 workflow, including
    for portfolio review (PC-A-002, PC-G-009).
 3. A bounded, explicitly documented set of high-risk privilege and
    host-access characteristics can be defined during requirements work
@@ -321,7 +411,7 @@ remaining Phase 0 definition work.
 
 | Scope element | Use cases | Personas | Product goals |
 | --- | --- | --- | --- |
-| Intake for the selected source family | UC-001 | PER-003 | PC-G-001 |
+| Intake for the selected source families | UC-001 | PER-003 | PC-G-001 |
 | Validation and per-submission outcome visibility | UC-001 | PER-003 | PC-G-002 |
 | Normalized representation | UC-002 | PER-002 | PC-G-003 |
 | Detection scenarios and reviewable conditions | UC-002 | PER-002 | PC-G-004 |
