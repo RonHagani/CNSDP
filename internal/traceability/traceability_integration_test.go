@@ -21,7 +21,7 @@ func seedChain(t *testing.T, db *sql.DB, rawEvent, auditID, auditStage string) (
 	t.Helper()
 	ctx := context.Background()
 
-	key := submission.SourceKey([]byte(rawEvent), auditID, auditStage)
+	key := submission.SourceKey([]byte(rawEvent), submission.FamilyKubernetes, auditID, auditStage, "")
 	digest := sha256.Sum256([]byte(rawEvent))
 	if err := db.QueryRowContext(ctx,
 		`INSERT INTO submissions (raw_event, audit_id, audit_stage, source_key, raw_event_sha256)

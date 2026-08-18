@@ -1,0 +1,16 @@
+-- AWS CloudTrail's own recorded event identity (eventID, FR-002(a)/
+-- FR-007(a) for the CloudTrail family) -- additive and separate from
+-- audit_id/audit_stage, which stay exclusively Kubernetes-shaped: an
+-- auditID+stage pair has no CloudTrail equivalent, and a CloudTrail record
+-- carries a single eventID with no stage concept at all. Reusing audit_id
+-- for eventID was considered and rejected: it would leave a column named
+-- for Kubernetes audit identity holding a non-audit-specific value for
+-- CloudTrail rows.
+--
+-- NOT NULL with an empty-string default, not nullable: the same
+-- "NOT NULL, empty string means not applicable or not extracted"
+-- convention audit_id/audit_stage already use for a submission whose
+-- identity could not be extracted (internal/intake never rejects on
+-- content -- FR-001). Every existing (Kubernetes) row correctly gets ''
+-- since this column simply does not apply to that family.
+ALTER TABLE submissions ADD COLUMN source_event_id TEXT NOT NULL DEFAULT '';

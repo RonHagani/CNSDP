@@ -42,7 +42,7 @@ func seedAlerted(t *testing.T, db *sql.DB, rawEvent, auditID, auditStage string)
 	t.Helper()
 	ctx := context.Background()
 
-	id, err := submission.Admit(ctx, db, json.RawMessage(rawEvent), auditID, auditStage)
+	id, err := submission.Admit(ctx, db, json.RawMessage(rawEvent), submission.FamilyKubernetes, auditID, auditStage, "")
 	if err != nil {
 		t.Fatalf("admit: %v", err)
 	}

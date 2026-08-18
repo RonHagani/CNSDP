@@ -62,17 +62,20 @@ func operationMatches(op Operation, event normalization.Event) bool {
 
 // outcomeSatisfied checks a definition's requires_outcome constraint. An
 // empty constraint means the definition matches regardless of outcome
-// (scenario 1, FR-024). "success" is defined as an HTTP response code in
-// the inclusive range 200-299. Any other declared value is a definition
-// authoring error that Validate does not currently reject; treated here
-// as never satisfied rather than an error, so an unrecognized constraint
-// fails closed (no match) instead of failing open.
+// (scenario 1, FR-024). "success" reads normalization's own source-neutral
+// Successful signal -- derived per source-event family at normalization
+// time (Kubernetes: HTTP response code 200-299; CloudTrail: no recorded
+// errorCode) -- so this generic evaluator never branches on family itself.
+// Any other declared value is a definition authoring error that Validate
+// does not currently reject; treated here as never satisfied rather than
+// an error, so an unrecognized constraint fails closed (no match) instead
+// of failing open.
 func outcomeSatisfied(requiresOutcome string, event normalization.Event) bool {
 	switch requiresOutcome {
 	case "":
 		return true
 	case "success":
-		return event.Outcome.Code >= 200 && event.Outcome.Code < 300
+		return event.Outcome.Successful
 	default:
 		return false
 	}

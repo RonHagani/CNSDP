@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"cnsdp/internal/submission"
 	"cnsdp/internal/validation"
 )
 
@@ -24,7 +25,7 @@ import (
 func TestRecoveryMixEvent_IncompleteCase_ReachesOutcomeIncomplete(t *testing.T) {
 	item := recoveryMixEvent("incomplete", 1)
 
-	result := validation.Classify(item)
+	result := validation.Classify(item, submission.FamilyKubernetes)
 	if result.Outcome != validation.OutcomeIncomplete {
 		t.Fatalf("validation.Classify(recoveryMixEvent(\"incomplete\")) = %s (%s), want %s", result.Outcome, result.Reason, validation.OutcomeIncomplete)
 	}

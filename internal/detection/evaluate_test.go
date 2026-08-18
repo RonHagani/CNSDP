@@ -92,26 +92,31 @@ func TestOperationMatches(t *testing.T) {
 
 // --- outcomeSatisfied ---
 
+// TestOutcomeSatisfied proves outcomeSatisfied reads only Successful --
+// the source-neutral signal normalization derives per family -- and never
+// branches on any source-specific field (Code, ErrorCode). The 200-299
+// derivation rule itself now lives in normalization (see
+// TestOutcomeOf_SuccessfulDerivation in internal/normalization), not here:
+// this evaluator is deliberately ignorant of how any one family encodes
+// success.
 func TestOutcomeSatisfied(t *testing.T) {
 	tests := []struct {
-		name     string
-		requires string
-		code     int32
-		want     bool
+		name       string
+		requires   string
+		successful bool
+		want       bool
 	}{
-		{"no constraint, zero code", "", 0, true},
-		{"success lower bound 200", "success", 200, true},
-		{"success upper bound 299", "success", 299, true},
-		{"success just below range", "success", 199, false},
-		{"success just above range", "success", 300, false},
-		{"success with zero code", "success", 0, false},
-		{"unrecognized constraint fails closed", "bogus", 200, false},
+		{"no constraint, unsuccessful", "", false, true},
+		{"no constraint, successful", "", true, true},
+		{"success, successful", "success", true, true},
+		{"success, unsuccessful", "success", false, false},
+		{"unrecognized constraint fails closed", "bogus", true, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			event := normalization.Event{Outcome: normalization.Outcome{Code: tt.code}}
+			event := normalization.Event{Outcome: normalization.Outcome{Successful: tt.successful}}
 			if got := outcomeSatisfied(tt.requires, event); got != tt.want {
-				t.Errorf("outcomeSatisfied(%q, code=%d) = %v, want %v", tt.requires, tt.code, got, tt.want)
+				t.Errorf("outcomeSatisfied(%q, successful=%v) = %v, want %v", tt.requires, tt.successful, got, tt.want)
 			}
 		})
 	}
@@ -213,7 +218,7 @@ func TestEvaluate_Scenario2_MatchesOnSuccessWithAnyCharacteristic(t *testing.T) 
 	event := normalization.Event{
 		Target:      normalization.Target{Resource: "pods"},
 		Operation:   normalization.Operation{Verb: "create"},
-		Outcome:     normalization.Outcome{Code: 201},
+		Outcome:     normalization.Outcome{Code: 201, Successful: true},
 		PodCreation: &normalization.PodCreationCharacteristics{Privileged: true, HostIPC: true},
 	}
 
@@ -238,7 +243,7 @@ func TestEvaluate_Scenario2_NegativeControl_NoHighRiskCharacteristics(t *testing
 	event := normalization.Event{
 		Target:      normalization.Target{Resource: "pods"},
 		Operation:   normalization.Operation{Verb: "create"},
-		Outcome:     normalization.Outcome{Code: 201},
+		Outcome:     normalization.Outcome{Code: 201, Successful: true},
 		PodCreation: &normalization.PodCreationCharacteristics{},
 	}
 
@@ -266,7 +271,7 @@ func TestEvaluate_Scenario3_MatchesClusterAdminGrant(t *testing.T) {
 	event := normalization.Event{
 		Target:    normalization.Target{Resource: "clusterrolebindings"},
 		Operation: normalization.Operation{Verb: "create"},
-		Outcome:   normalization.Outcome{Code: 201},
+		Outcome:   normalization.Outcome{Code: 201, Successful: true},
 		ClusterRoleBinding: &normalization.ClusterRoleBindingCharacteristics{
 			RoleRef: rbacv1.RoleRef{Kind: "ClusterRole", Name: "cluster-admin"},
 		},
@@ -290,7 +295,7 @@ func TestEvaluate_Scenario3_NegativeControl_ModificationNotCreation(t *testing.T
 	event := normalization.Event{
 		Target:    normalization.Target{Resource: "clusterrolebindings"},
 		Operation: normalization.Operation{Verb: "update"},
-		Outcome:   normalization.Outcome{Code: 200},
+		Outcome:   normalization.Outcome{Code: 200, Successful: true},
 		ClusterRoleBinding: &normalization.ClusterRoleBindingCharacteristics{
 			RoleRef: rbacv1.RoleRef{Kind: "ClusterRole", Name: "cluster-admin"},
 		},
@@ -306,7 +311,7 @@ func TestEvaluate_Scenario3_WrongRole_NoMatch(t *testing.T) {
 	event := normalization.Event{
 		Target:    normalization.Target{Resource: "clusterrolebindings"},
 		Operation: normalization.Operation{Verb: "create"},
-		Outcome:   normalization.Outcome{Code: 201},
+		Outcome:   normalization.Outcome{Code: 201, Successful: true},
 		ClusterRoleBinding: &normalization.ClusterRoleBindingCharacteristics{
 			RoleRef: rbacv1.RoleRef{Kind: "ClusterRole", Name: "edit"},
 		},
@@ -342,7 +347,7 @@ func TestEvaluate_CrossScenario_EventOnlyMatchesItsOwnDefinition(t *testing.T) {
 	podEvent := normalization.Event{
 		Target:      normalization.Target{Resource: "pods"},
 		Operation:   normalization.Operation{Verb: "create"},
-		Outcome:     normalization.Outcome{Code: 201},
+		Outcome:     normalization.Outcome{Code: 201, Successful: true},
 		PodCreation: &normalization.PodCreationCharacteristics{Privileged: true},
 	}
 	if matched, _ := evaluate(podEvent, def1); matched {

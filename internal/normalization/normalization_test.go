@@ -9,7 +9,10 @@ import (
 	"testing"
 	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	auditv1 "k8s.io/apiserver/pkg/apis/audit/v1"
+
+	"cnsdp/internal/submission"
 )
 
 // readValidationFixture reuses internal/validation's existing testdata
@@ -41,7 +44,7 @@ func mustParseTime(t *testing.T, s string) time.Time {
 func TestNormalize_Scenario1Exec(t *testing.T) {
 	raw := readValidationFixture(t, "boundary-4-valid.json")
 
-	got, err := Normalize(raw)
+	got, err := Normalize(raw, submission.FamilyKubernetes)
 	if err != nil {
 		t.Fatalf("Normalize: %v", err)
 	}
@@ -90,7 +93,7 @@ func TestNormalize_Scenario1Exec(t *testing.T) {
 func TestNormalize_Scenario2PodCreation(t *testing.T) {
 	raw := readValidationFixture(t, "scenario2-valid.json")
 
-	got, err := Normalize(raw)
+	got, err := Normalize(raw, submission.FamilyKubernetes)
 	if err != nil {
 		t.Fatalf("Normalize: %v", err)
 	}
@@ -130,7 +133,7 @@ func TestNormalize_Scenario2PodCreation(t *testing.T) {
 func TestNormalize_PodCreation_NoHighRiskCharacteristics(t *testing.T) {
 	const raw = `{"kind":"Event","apiVersion":"audit.k8s.io/v1","auditID":"22222222-2222-2222-2222-222222222222","stage":"ResponseComplete","requestURI":"/api/v1/namespaces/default/pods","verb":"create","user":{"username":"bob"},"objectRef":{"resource":"pods","namespace":"default","name":"safe-pod"},"responseStatus":{"code":201},"requestObject":{"kind":"Pod","apiVersion":"v1","metadata":{"name":"safe-pod"},"spec":{"containers":[{"name":"c","image":"busybox"}]}},"requestReceivedTimestamp":"2026-07-21T10:05:00.000000Z"}`
 
-	got, err := Normalize([]byte(raw))
+	got, err := Normalize([]byte(raw), submission.FamilyKubernetes)
 	if err != nil {
 		t.Fatalf("Normalize: %v", err)
 	}
@@ -149,7 +152,7 @@ func TestNormalize_PodCreation_NoHighRiskCharacteristics(t *testing.T) {
 func TestNormalize_Scenario3ClusterRoleBinding(t *testing.T) {
 	raw := readValidationFixture(t, "scenario3-valid.json")
 
-	got, err := Normalize(raw)
+	got, err := Normalize(raw, submission.FamilyKubernetes)
 	if err != nil {
 		t.Fatalf("Normalize: %v", err)
 	}
@@ -186,7 +189,7 @@ func TestNormalize_Scenario3ClusterRoleBinding(t *testing.T) {
 func TestNormalize_NonScenarioEvent_NoScenarioContent(t *testing.T) {
 	const raw = `{"kind":"Event","apiVersion":"audit.k8s.io/v1","auditID":"11111111-1111-1111-1111-111111111111","stage":"ResponseComplete","requestURI":"/api/v1/namespaces/default/configmaps/my-config","verb":"get","user":{"username":"alice"},"objectRef":{"resource":"configmaps","namespace":"default","name":"my-config"},"responseStatus":{"code":200},"requestReceivedTimestamp":"2026-07-21T10:00:00.000000Z"}`
 
-	got, err := Normalize([]byte(raw))
+	got, err := Normalize([]byte(raw), submission.FamilyKubernetes)
 	if err != nil {
 		t.Fatalf("Normalize: %v", err)
 	}
@@ -220,7 +223,7 @@ func TestNormalize_ExecCharacteristics_IndividualFlags(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			raw := []byte(fmt.Sprintf(template, tt.query))
-			got, err := Normalize(raw)
+			got, err := Normalize(raw, submission.FamilyKubernetes)
 			if err != nil {
 				t.Fatalf("Normalize: %v", err)
 			}
@@ -256,7 +259,7 @@ func TestNormalize_MissingRequestObject_ReturnsErrorNotPanic(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, err := Normalize([]byte(tt.raw)); err == nil {
+			if _, err := Normalize([]byte(tt.raw), submission.FamilyKubernetes); err == nil {
 				t.Fatal("Normalize: expected an error for a scenario-relevant event missing requestObject")
 			}
 		})
@@ -267,7 +270,7 @@ func TestNormalize_MissingRequestObject_ReturnsErrorNotPanic(t *testing.T) {
 // dropping a field once content is stored as JSONB and later re-read.
 func TestNormalize_JSONRoundTrip(t *testing.T) {
 	raw := readValidationFixture(t, "scenario3-valid.json")
-	want, err := Normalize(raw)
+	want, err := Normalize(raw, submission.FamilyKubernetes)
 	if err != nil {
 		t.Fatalf("Normalize: %v", err)
 	}
@@ -329,5 +332,214 @@ func TestResolveScenario(t *testing.T) {
 				t.Errorf("resolveScenario(%+v, %q) = %v, want %v", tt.ref, tt.verb, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestOutcomeOf_SuccessfulDerivation proves the 200-299 "success" rule --
+// relocated here from internal/detection's generic evaluator so that
+// evaluator never needs family-specific knowledge of how success is
+// encoded (see internal/detection's TestOutcomeSatisfied). This is the
+// Kubernetes-family half of that source-neutral Successful signal; see
+// TestNormalizeCloudTrail_Outcome below for the CloudTrail-family half.
+func TestOutcomeOf_SuccessfulDerivation(t *testing.T) {
+	tests := []struct {
+		name string
+		code int32
+		want bool
+	}{
+		{"lower bound 200", 200, true},
+		{"upper bound 299", 299, true},
+		{"just below range", 199, false},
+		{"just above range", 300, false},
+		{"zero code", 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := outcomeOf(&metav1.Status{Code: tt.code})
+			if got.Successful != tt.want {
+				t.Errorf("outcomeOf(code=%d).Successful = %v, want %v", tt.code, got.Successful, tt.want)
+			}
+			if got.Code != tt.code {
+				t.Errorf("outcomeOf(code=%d).Code = %d, want %d (unchanged descriptive field)", tt.code, got.Code, tt.code)
+			}
+		})
+	}
+	t.Run("nil responseStatus", func(t *testing.T) {
+		got := outcomeOf(nil)
+		if got.Successful {
+			t.Error("outcomeOf(nil).Successful = true, want false (never actually consulted for such an event)")
+		}
+	})
+}
+
+// --- AWS CloudTrail family (ADR-0006) ---
+
+// cloudTrailScenario5JSON is a real-shaped CreateAccessKey management
+// event with an explicit requestParameters.userName.
+const cloudTrailScenario5JSON = `{"eventVersion":"1.08","eventTime":"2026-08-18T12:34:56Z","eventSource":"iam.amazonaws.com","eventName":"CreateAccessKey","eventCategory":"Management","awsRegion":"us-east-1","userIdentity":{"type":"IAMUser","arn":"arn:aws:iam::123456789012:user/alice","userName":"alice"},"requestParameters":{"userName":"bob"},"responseElements":{"accessKey":{"userName":"bob","accessKeyId":"AKIAEXAMPLE","status":"Active"}},"eventID":"5f6a2b1c-0000-0000-0000-000000000001","eventType":"AwsApiCall"}`
+
+func TestNormalizeCloudTrail_Scenario5CreateAccessKey(t *testing.T) {
+	got, err := normalizeCloudTrail([]byte(cloudTrailScenario5JSON))
+	if err != nil {
+		t.Fatalf("normalizeCloudTrail: %v", err)
+	}
+	if got.Subject.Username != "arn:aws:iam::123456789012:user/alice" {
+		t.Errorf("Subject.Username = %q, want the requesting identity's ARN", got.Subject.Username)
+	}
+	if got.Operation.Verb != "CreateAccessKey" {
+		t.Errorf("Operation.Verb = %q, want %q", got.Operation.Verb, "CreateAccessKey")
+	}
+	if got.Target.Resource != "iam.amazonaws.com" {
+		t.Errorf("Target.Resource = %q, want the AWS source service", got.Target.Resource)
+	}
+	if !got.Outcome.Successful || got.Outcome.ErrorCode != "" {
+		t.Errorf("Outcome = %+v, want Successful=true ErrorCode=\"\" (no errorCode recorded)", got.Outcome)
+	}
+	wantTime := mustParseTime(t, "2026-08-18T12:34:56Z")
+	if !got.RequestTime.Equal(wantTime) {
+		t.Errorf("RequestTime = %v, want %v", got.RequestTime, wantTime)
+	}
+	if got.Exec != nil || got.PodCreation != nil || got.ClusterRoleBinding != nil {
+		t.Errorf("Kubernetes-only scenario fields populated for a CloudTrail event: %+v", got)
+	}
+	if got.CloudTrailIAMAction == nil {
+		t.Fatal("CloudTrailIAMAction = nil, want scenario 5 content (FR-018)")
+	}
+	if got.CloudTrailIAMAction.AffectedUser != "bob" {
+		t.Errorf("AffectedUser = %q, want %q (from requestParameters.userName)", got.CloudTrailIAMAction.AffectedUser, "bob")
+	}
+}
+
+// TestNormalizeCloudTrail_Scenario5_FallsBackToResponseUserName proves the
+// self-service CreateAccessKey case (no explicit requestParameters.userName
+// -- AWS creates the key for the caller) still resolves the affected user,
+// from responseElements.accessKey.userName.
+func TestNormalizeCloudTrail_Scenario5_FallsBackToResponseUserName(t *testing.T) {
+	const raw = `{"eventTime":"2026-08-18T12:00:00Z","eventSource":"iam.amazonaws.com","eventName":"CreateAccessKey","eventCategory":"Management","userIdentity":{"type":"IAMUser","userName":"carol"},"requestParameters":{},"responseElements":{"accessKey":{"userName":"carol","accessKeyId":"AKIASELF"}},"eventID":"evt-self"}`
+	got, err := normalizeCloudTrail([]byte(raw))
+	if err != nil {
+		t.Fatalf("normalizeCloudTrail: %v", err)
+	}
+	if got.CloudTrailIAMAction == nil || got.CloudTrailIAMAction.AffectedUser != "carol" {
+		t.Errorf("CloudTrailIAMAction = %+v, want AffectedUser=carol (from responseElements fallback)", got.CloudTrailIAMAction)
+	}
+}
+
+// cloudTrailScenario4JSON is a real-shaped DeactivateMFADevice event.
+const cloudTrailScenario4JSON = `{"eventTime":"2026-08-18T09:00:00Z","eventSource":"iam.amazonaws.com","eventName":"DeactivateMFADevice","eventCategory":"Management","userIdentity":{"type":"IAMUser","arn":"arn:aws:iam::123456789012:user/mallory"},"requestParameters":{"userName":"victim","serialNumber":"arn:aws:iam::123456789012:mfa/victim"},"responseElements":null,"eventID":"evt-mfa-1"}`
+
+func TestNormalizeCloudTrail_Scenario4DeactivateMFA(t *testing.T) {
+	got, err := normalizeCloudTrail([]byte(cloudTrailScenario4JSON))
+	if err != nil {
+		t.Fatalf("normalizeCloudTrail: %v", err)
+	}
+	if got.CloudTrailIAMAction == nil {
+		t.Fatal("CloudTrailIAMAction = nil, want scenario 4 content")
+	}
+	if got.CloudTrailIAMAction.AffectedUser != "victim" {
+		t.Errorf("AffectedUser = %q, want %q", got.CloudTrailIAMAction.AffectedUser, "victim")
+	}
+	if got.CloudTrailIAMAction.AffectedDevice != "arn:aws:iam::123456789012:mfa/victim" {
+		t.Errorf("AffectedDevice = %q, want the MFA device ARN", got.CloudTrailIAMAction.AffectedDevice)
+	}
+}
+
+// cloudTrailScenario6JSON is a real-shaped AttachUserPolicy event granting
+// AdministratorAccess.
+const cloudTrailScenario6JSON = `{"eventTime":"2026-08-18T09:30:00Z","eventSource":"iam.amazonaws.com","eventName":"AttachUserPolicy","eventCategory":"Management","userIdentity":{"type":"IAMUser","arn":"arn:aws:iam::123456789012:user/mallory"},"requestParameters":{"userName":"victim","policyArn":"arn:aws:iam::aws:policy/AdministratorAccess"},"eventID":"evt-policy-1"}`
+
+func TestNormalizeCloudTrail_Scenario6AttachUserPolicy(t *testing.T) {
+	got, err := normalizeCloudTrail([]byte(cloudTrailScenario6JSON))
+	if err != nil {
+		t.Fatalf("normalizeCloudTrail: %v", err)
+	}
+	if got.CloudTrailIAMAction == nil {
+		t.Fatal("CloudTrailIAMAction = nil, want scenario 6 content")
+	}
+	if got.CloudTrailIAMAction.AffectedUser != "victim" {
+		t.Errorf("AffectedUser = %q, want %q", got.CloudTrailIAMAction.AffectedUser, "victim")
+	}
+	if got.CloudTrailIAMAction.PolicyName != "arn:aws:iam::aws:policy/AdministratorAccess" {
+		t.Errorf("PolicyName = %q, want the policy ARN", got.CloudTrailIAMAction.PolicyName)
+	}
+}
+
+// TestNormalizeCloudTrail_RootIdentity proves scenario 7's (FR-040) "who"
+// signal is fully carried by core Subject content alone -- FR-018 does not
+// enumerate any scenario-7-specific field, so no CloudTrailIAMAction is
+// expected here.
+func TestNormalizeCloudTrail_RootIdentity(t *testing.T) {
+	const raw = `{"eventTime":"2026-08-18T03:00:00Z","eventSource":"signin.amazonaws.com","eventName":"ConsoleLogin","eventCategory":"Management","userIdentity":{"type":"Root"},"requestParameters":{},"eventID":"evt-root-1"}`
+	got, err := normalizeCloudTrail([]byte(raw))
+	if err != nil {
+		t.Fatalf("normalizeCloudTrail: %v", err)
+	}
+	if got.Subject.Username != "root" {
+		t.Errorf("Subject.Username = %q, want %q", got.Subject.Username, "root")
+	}
+	if got.CloudTrailIAMAction != nil {
+		t.Errorf("CloudTrailIAMAction = %+v, want nil for a non-scenario-4/5/6 event", got.CloudTrailIAMAction)
+	}
+}
+
+// TestNormalizeCloudTrail_NonScenarioEvent_NoScenarioContent mirrors
+// TestNormalize_NonScenarioEvent_NoScenarioContent for the CloudTrail
+// family: a valid record whose eventName is not scenario-relevant
+// normalizes its core content without populating CloudTrailIAMAction.
+func TestNormalizeCloudTrail_NonScenarioEvent_NoScenarioContent(t *testing.T) {
+	const raw = `{"eventTime":"2026-08-18T09:00:00Z","eventSource":"iam.amazonaws.com","eventName":"GetUser","eventCategory":"Management","userIdentity":{"type":"IAMUser","userName":"dave"},"requestParameters":{"userName":"dave"},"eventID":"evt-getuser-1"}`
+	got, err := normalizeCloudTrail([]byte(raw))
+	if err != nil {
+		t.Fatalf("normalizeCloudTrail: %v", err)
+	}
+	if got.CloudTrailIAMAction != nil {
+		t.Errorf("CloudTrailIAMAction = %+v, want nil for a non-scenario-relevant event", got.CloudTrailIAMAction)
+	}
+	if got.Target.Name != "dave" {
+		t.Errorf("Target.Name = %q, want %q", got.Target.Name, "dave")
+	}
+}
+
+// TestNormalizeCloudTrail_Outcome proves CloudTrail's own native outcome
+// signal (errorCode presence/absence), independent of Kubernetes' Code
+// field -- the CloudTrail-family half of the source-neutral Successful
+// signal (see TestOutcomeOf_SuccessfulDerivation above).
+func TestNormalizeCloudTrail_Outcome(t *testing.T) {
+	t.Run("no errorCode: successful", func(t *testing.T) {
+		got := cloudTrailOutcomeOf(cloudTrailRecord{})
+		if !got.Successful || got.ErrorCode != "" {
+			t.Errorf("Outcome = %+v, want Successful=true ErrorCode=\"\"", got)
+		}
+	})
+	t.Run("errorCode present: not successful", func(t *testing.T) {
+		got := cloudTrailOutcomeOf(cloudTrailRecord{ErrorCode: "AccessDenied"})
+		if got.Successful || got.ErrorCode != "AccessDenied" {
+			t.Errorf("Outcome = %+v, want Successful=false ErrorCode=AccessDenied", got)
+		}
+		if got.Code != 0 {
+			t.Errorf("Code = %d, want 0 (unused for CloudTrail)", got.Code)
+		}
+	})
+}
+
+// TestNormalize_DispatchesByFamily proves the exported Normalize entry
+// point routes to the correct family-specific path -- the same raw bytes
+// classified valid for a given family must never be normalized as if it
+// were the other family.
+func TestNormalize_DispatchesByFamily(t *testing.T) {
+	k8sEvent, err := Normalize(readValidationFixture(t, "boundary-4-valid.json"), submission.FamilyKubernetes)
+	if err != nil {
+		t.Fatalf("Normalize (kubernetes): %v", err)
+	}
+	if k8sEvent.Operation.Verb != "get" {
+		t.Errorf("kubernetes Operation.Verb = %q, want %q", k8sEvent.Operation.Verb, "get")
+	}
+
+	ctEvent, err := Normalize([]byte(cloudTrailScenario5JSON), submission.FamilyCloudTrail)
+	if err != nil {
+		t.Fatalf("Normalize (cloudtrail): %v", err)
+	}
+	if ctEvent.Operation.Verb != "CreateAccessKey" {
+		t.Errorf("cloudtrail Operation.Verb = %q, want %q", ctEvent.Operation.Verb, "CreateAccessKey")
 	}
 }

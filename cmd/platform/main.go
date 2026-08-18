@@ -88,14 +88,28 @@ func main() {
 
 	log.Println("database connected, migrations applied, detection definitions loaded")
 
+	// One shared limiter instance across both intake endpoints: the
+	// approved v0.1 capacity envelope (NFR-003, NFR-004; AC-022) is a
+	// single platform-wide budget, not a per-endpoint one -- both
+	// Kubernetes and AWS CloudTrail submissions feed the same
+	// single-threaded worker and persistence pipeline (ADR-0002), which
+	// has only ever been validated at this one combined rate. A second,
+	// independent limiter would silently double it. See
+	// internal/intake/admission.go.
+	admissionLimiter := intake.NewSlidingWindowLimiter(intake.AdmissionLimit, intake.AdmissionWindow, nil)
+
 	mux := http.NewServeMux()
 	mux.Handle("POST /v1/audit-events", &intake.Handler{
 		DB:           conn,
 		Token:        token,
 		MaxBodyBytes: maxBodyBytes,
-		// The approved v0.1 capacity envelope (NFR-003, NFR-004; AC-022) --
-		// see internal/intake/admission.go.
-		Limiter: intake.NewSlidingWindowLimiter(intake.AdmissionLimit, intake.AdmissionWindow, nil),
+		Limiter:      admissionLimiter,
+	})
+	mux.Handle("POST /v1/cloudtrail-events", &intake.CloudTrailHandler{
+		DB:           conn,
+		Token:        token,
+		MaxBodyBytes: maxBodyBytes,
+		Limiter:      admissionLimiter,
 	})
 	mux.Handle("GET /v1/alerts", &retrieval.ListHandler{DB: conn, Token: token})
 	mux.Handle("GET /v1/alerts/{id}", &retrieval.Handler{DB: conn, Token: token})

@@ -27,7 +27,7 @@ const validEventJSON = `{"kind":"Event","apiVersion":"audit.k8s.io/v1","auditID"
 // rather than by running the full upstream pipeline first.
 func seedNormalized(t *testing.T, db *sql.DB, rawEvent string) *submission.Submission {
 	t.Helper()
-	event, err := normalization.Normalize([]byte(rawEvent))
+	event, err := normalization.Normalize([]byte(rawEvent), submission.FamilyKubernetes)
 	if err != nil {
 		t.Fatalf("normalize fixture: %v", err)
 	}
