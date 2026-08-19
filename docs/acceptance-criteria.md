@@ -378,6 +378,84 @@ did not match.
 
 **Traceability:** UC-002, UC-003; FR-018, FR-026, FR-028; PER-002, PER-001.
 
+### AC-032 — Scenario 4 match: MFA device deactivated or deleted
+
+**Type:** Detection.
+
+**Context:** A normalized event records a DeactivateMFADevice or
+DeleteVirtualMFADevice API call whose recorded outcome indicates the call
+completed successfully.
+
+**Action or condition:** The normalized event is evaluated against the
+scenario 4 detection definition, alongside a negative-control fixture — a
+successful EnableMFADevice call, a neighboring IAM API call that does not
+remove an MFA device.
+
+**Pass conditions:** A match is identified for a successful
+DeactivateMFADevice call and, independently, for a successful
+DeleteVirtualMFADevice call, with a reason naming the specific documented
+characteristic satisfied; the negative-control fixture does not match.
+
+**Required evidence:** The match reason recorded for each matching fixture;
+the detection-evaluation result confirming that the negative-control fixture
+did not match.
+
+**Traceability:** UC-002, UC-003; FR-018, FR-037, FR-028; PER-002, PER-001.
+
+### AC-033 — Scenario 5 match: new IAM access key created
+
+**Type:** Detection.
+
+**Context:** A normalized event records a CreateAccessKey API call whose
+recorded outcome indicates the call completed successfully.
+
+**Action or condition:** The normalized event is evaluated against the
+scenario 5 detection definition, alongside two negative-control fixtures —
+a successful UpdateAccessKey or DeleteAccessKey call, and an unsuccessful
+CreateAccessKey call.
+
+**Pass conditions:** A match is identified only for a successful
+CreateAccessKey call, with a reason naming the satisfied characteristic;
+neither negative-control fixture matches.
+
+**Required evidence:** The match reason recorded for the matching fixture;
+the detection-evaluation result confirming that neither negative-control
+fixture matched.
+
+**Traceability:** UC-002, UC-003; FR-018, FR-038, FR-028; PER-002, PER-001.
+
+### AC-034 — Scenario 6 match: AdministratorAccess policy attachment
+
+**Type:** Detection.
+
+**Context:** A normalized event records an AttachUserPolicy or
+AttachRolePolicy API call whose recorded outcome indicates the call
+completed successfully and whose recorded request parameters reference the
+AWS-managed AdministratorAccess policy.
+
+**Action or condition:** The normalized event is evaluated against the
+scenario 6 detection definition, alongside two negative-control fixtures —
+a successful AttachUserPolicy or AttachRolePolicy call referencing a
+customer-managed policy that is also named AdministratorAccess but is not
+the AWS-managed policy, and a successful DetachUserPolicy or
+DetachRolePolicy call referencing the AWS-managed AdministratorAccess
+policy.
+
+**Pass conditions:** A match is identified for a successful
+AttachUserPolicy call and, independently, for a successful
+AttachRolePolicy call, in each case only when the referenced policy is
+identifiably the AWS-managed AdministratorAccess policy, with a reason
+naming the satisfied characteristics; neither negative-control fixture
+matches — the differently-owned policy that merely shares the
+AdministratorAccess name does not match, and neither detach operation
+matches.
+
+**Required evidence:** The match reason recorded for each matching
+fixture; the detection-evaluation result confirming that neither
+negative-control fixture matched.
+
+**Traceability:** UC-002, UC-003; FR-018, FR-039, FR-028; PER-002, PER-001.
+
 ### AC-013 — No alert from legitimate non-matching or non-valid telemetry
 
 **Type:** Detection.
@@ -885,15 +963,16 @@ multiple-submission case, and the denied-access case.
 | FR-001 | AC-001, AC-020, AC-022 | FR-013 | AC-003, AC-004, AC-005, AC-006, AC-021, AC-023 | FR-025 | AC-011 |
 | FR-002 | AC-003, AC-004, AC-006 | FR-014 | AC-003, AC-004, AC-005, AC-006, AC-013 | FR-026 | AC-012 |
 | FR-003 | AC-001 | FR-015 | AC-007 | FR-027 | AC-013, AC-014, AC-020 |
-| FR-004 | AC-003, AC-022 | FR-016 | AC-007 | FR-028 | AC-010, AC-011, AC-012, AC-014, AC-029 |
+| FR-004 | AC-003, AC-022 | FR-016 | AC-007 | FR-028 | AC-010, AC-011, AC-012, AC-014, AC-029, AC-032, AC-033, AC-034 |
 | FR-005 | AC-003, AC-004, AC-005, AC-006 | FR-017 | AC-007 | FR-029 | AC-014, AC-029 |
-| FR-006 | AC-003, AC-004, AC-005, AC-006 | FR-018 | AC-010, AC-011, AC-012 | FR-030 | AC-014, AC-020, AC-021 |
+| FR-006 | AC-003, AC-004, AC-005, AC-006 | FR-018 | AC-010, AC-011, AC-012, AC-032, AC-033, AC-034 | FR-030 | AC-014, AC-020, AC-021 |
 | FR-007 | AC-003 | FR-019 | AC-008 | FR-031 | AC-015, AC-021, AC-023, AC-029 |
 | FR-008 | AC-004 | FR-020 | AC-009 | FR-032 | AC-015 |
 | FR-009 | AC-005 | FR-021 | AC-009 | FR-033 | AC-016 |
 | FR-010 | AC-006 | FR-022 | AC-009 | FR-034 | AC-016 |
 | FR-011 | AC-003, AC-004, AC-005, AC-006 | FR-023 | AC-009, AC-013 | FR-035 | AC-016 |
 | FR-012 | AC-004, AC-005, AC-006, AC-029 | FR-024 | AC-010 | FR-036 | AC-031 |
+| FR-037 | AC-032 | FR-038 | AC-033 | FR-039 | AC-034 |
 
 ### Non-functional requirements
 
