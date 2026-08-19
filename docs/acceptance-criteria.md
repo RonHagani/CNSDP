@@ -81,7 +81,7 @@ non-functional requirement already mandates it.
 - **Reference dataset** — the documented accumulated dataset used by AC-021:
   at least 10,000 accumulated admitted submissions and at least 300 generated
   alerts, representing all four data-quality outcomes and containing
-  artifacts produced by all three approved detection scenarios.
+  artifacts produced by all implemented approved detection scenarios.
 - **Acceptance observation period** — the documented window, at least 30
   minutes, over which AC-023 samples resource usage at regular documented
   intervals. It may overlap the AC-022 sustained-capacity run only where the
@@ -294,7 +294,7 @@ against the original source event.
 
 **Type:** Documentation / Detection.
 
-**Context:** The three approved detection definitions exist as identifiable
+**Context:** The approved detection definitions exist as identifiable
 product content.
 
 **Action or condition:** Each definition is reviewed, and a sample of
@@ -302,13 +302,13 @@ normalized events is evaluated.
 
 **Pass conditions:** Each definition is identifiable and its documented
 conditions are available for review; every normalized event in the test set
-is evaluated individually against all three definitions, with no stateful,
+is evaluated individually against every approved detection definition, with no stateful,
 aggregated, or baseline evaluation observed.
 
 **Required evidence:** Documentation-review evidence confirming each
 definition's identity and documented conditions are inspectable; test
 execution evidence showing every normalized event in the sample was assessed
-against all three definitions.
+against every approved detection definition.
 
 **Traceability:** UC-002; FR-020, FR-021, FR-022, FR-023; PER-002.
 
@@ -411,7 +411,7 @@ fixture.
 **Type:** Explainability.
 
 **Context:** A normalized event produced a matching detection result under
-any of the three scenarios.
+one of the approved scenarios.
 
 **Action or condition:** The matching detection result is observed, and a
 subsequent change is applied to the matched detection definition.
@@ -490,8 +490,8 @@ PER-001, PER-002.
 **Type:** Reliability.
 
 **Context:** A fixture set reproducibly exercising each of the four
-data-quality outcomes and each of the three scenarios exists and is run
-multiple times.
+data-quality outcomes and each of the approved detection scenarios exists and
+is run multiple times.
 
 **Action or condition:** The fixture set is processed at least three times.
 
@@ -571,8 +571,9 @@ states for every pre-interruption admitted submission.
 **Type:** Performance.
 
 **Context:** A sample of at least 20 matching submissions per approved
-detection scenario, at least 60 total, processed within the approved 10
-submissions per second capacity envelope.
+live-demonstration detection scenario, aggregated across every approved
+live-demonstration scenario, processed within the approved 10 submissions
+per second capacity envelope.
 
 **Action or condition:** Each sampled submission is admitted and its
 resulting alert's availability time is measured.
@@ -761,8 +762,8 @@ representation change.
 
 **Pass conditions:** The confined change does not require changes to
 unrelated workflow stages, absent an intentional contract change; the
-automated test suite exercises all four data-quality outcomes and all three
-detection scenarios and is executed before the change is adopted; it is
+automated test suite exercises all four data-quality outcomes and all
+approved detection scenarios and is executed before the change is adopted; it is
 determinable which documented normalized-representation revision each
 normalized event conforms to, and representation changes are recorded in its
 documentation.
@@ -775,7 +776,7 @@ stored normalized events across a documented representation change.
 
 ## Section J — Reproducibility and Documentation
 
-### AC-028 — Clean reference-environment deployment and reproducible three-scenario demonstration
+### AC-028 — Clean reference-environment deployment and reproducible demonstration of the approved live-demonstration scenarios
 
 **Type:** Documentation / Recovery.
 
@@ -784,12 +785,12 @@ documented setup and demonstration procedures.
 
 **Action or condition:** The documented setup procedure is followed into a
 clean instance; the documented demonstration procedure is followed for each
-of the three approved scenarios.
+of the approved live-demonstration scenarios.
 
 **Pass conditions:** Following the documented setup procedure alone yields an
 operational platform; following documented steps alone reproduces the
-complete workflow for each of the three approved scenarios, from submission
-through full minimum-evidence-set inspection.
+complete workflow for each of the approved live-demonstration scenarios, from
+submission through full minimum-evidence-set inspection.
 
 **Required evidence:** A clean-environment deployment transcript; a
 per-scenario demonstration transcript with the resulting alert and evidence
@@ -916,9 +917,9 @@ multiple-submission case, and the denied-access case.
 | Parameter | Approved v0.1 acceptance profile |
 | --- | --- |
 | NFR-001 rule | All-samples: no sample may exceed 60 seconds. No percentile substitution. |
-| NFR-001 sample size | At least 20 matching submissions per approved detection scenario; at least 60 total. |
+| NFR-001 sample size | At least 20 matching submissions per approved live-demonstration detection scenario; the aggregate sample size is the sum of that per-scenario minimum across every approved live-demonstration scenario. |
 | NFR-002 rule | All-samples: no sampled retrieval may exceed 5 seconds. No percentile substitution. |
-| NFR-002 reference data volume | At least 10,000 accumulated admitted submissions; at least 300 generated alerts total; all four data-quality outcomes represented; artifacts from all three detection scenarios present. |
+| NFR-002 reference data volume | At least 10,000 accumulated admitted submissions; at least 300 generated alerts total; all four data-quality outcomes represented; artifacts from all implemented approved detection scenarios present. |
 | NFR-002 retrieval sample | Validation outcomes, alerts, and minimum-evidence-set artifacts all sampled; at least 10 retrievals per named class; each class includes one first retrieval following a documented idle or reset condition and repeated retrievals under an already-active condition. No caching or storage implementation is prescribed. |
 | NFR-003 sustained duration | 15 minutes sustained at 10 admitted submissions per second. |
 | NFR-003 overload profile | 15 submission attempts per second offered for 30 seconds during the sustained run; admitted rate stays within the supported envelope; excess attempts visibly rejected or deferred for capacity; no admitted submission silently lost. |
