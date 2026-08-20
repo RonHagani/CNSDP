@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { AppShell } from "@/app/AppShell";
 import { StatusBadge } from "@/components/StatusBadge/StatusBadge";
+import { formatOutcome } from "@/lib/outcome";
 import type { AlertSummaryListItem } from "@/types/contract";
 import { useAlertInventory } from "./hooks/useAlertInventory";
 import { useHorizontalOverflow } from "./hooks/useHorizontalOverflow";
@@ -42,7 +43,7 @@ function AlertRow({ item }: { item: AlertSummaryListItem }) {
       <td className={styles.cellTechnical} title={formatTarget(item)}>
         {formatTarget(item)}
       </td>
-      <td className={styles.cellTechnical}>{item.outcome.code ?? "—"}</td>
+      <td className={styles.cellTechnical}>{formatOutcome(item.outcome)}</td>
       <td className={styles.cellRequestTime}>{formatRequestTime(item.requestTime)}</td>
       <td className={styles.cellTraceability}>
         <StatusBadge tone={item.traceability.intact ? "intact" : "broken"}>

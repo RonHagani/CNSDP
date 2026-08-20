@@ -24,7 +24,7 @@ func newDetectionsTestServer(t *testing.T, db *sql.DB) *httptest.Server {
 	return srv
 }
 
-func TestDetectionsServeHTTP_ReturnsExactlyThreeActiveDefinitionsInScenarioOrder(t *testing.T) {
+func TestDetectionsServeHTTP_ReturnsExactlySixActiveDefinitionsInScenarioOrder(t *testing.T) {
 	db := testutil.MigratedPostgres(t)
 	if err := detection.Load(context.Background(), db); err != nil {
 		t.Fatalf("detection.Load: %v", err)
@@ -40,14 +40,14 @@ func TestDetectionsServeHTTP_ReturnsExactlyThreeActiveDefinitionsInScenarioOrder
 	if err := json.Unmarshal(body, &got); err != nil {
 		t.Fatalf("unmarshal response: %v", err)
 	}
-	if got.Total != 3 {
-		t.Fatalf("total = %d, want 3", got.Total)
+	if got.Total != 6 {
+		t.Fatalf("total = %d, want 6", got.Total)
 	}
-	if len(got.Detections) != 3 {
-		t.Fatalf("len(detections) = %d, want 3", len(got.Detections))
+	if len(got.Detections) != 6 {
+		t.Fatalf("len(detections) = %d, want 6", len(got.Detections))
 	}
 
-	wantScenarios := []string{"scenario-1", "scenario-2", "scenario-3"}
+	wantScenarios := []string{"scenario-1", "scenario-2", "scenario-3", "scenario-4", "scenario-5", "scenario-6"}
 	for i, want := range wantScenarios {
 		if got.Detections[i].Scenario != want {
 			t.Errorf("detections[%d].scenario = %q, want %q", i, got.Detections[i].Scenario, want)

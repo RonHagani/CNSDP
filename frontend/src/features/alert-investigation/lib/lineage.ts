@@ -1,4 +1,5 @@
-import type { NormalizedEvent, RawAuditEvent } from "@/types/contract";
+import type { CloudTrailRawRecord, NormalizedEvent, RawAuditEvent } from "@/types/contract";
+import { isCloudTrailRawEvent } from "@/types/contract";
 
 /**
  * One raw-to-normalized field lineage link. Derived from the real
@@ -18,13 +19,20 @@ export interface LineageLink {
 /**
  * Builds the real lineage links for one alert's raw/normalized event pair.
  * Only links whose raw field is actually present are returned, so this
- * degrades correctly for events lacking optional fields.
+ * degrades correctly for events lacking optional fields. Every rule below
+ * describes Kubernetes' own raw-to-normalized derivation
+ * (internal/normalization/normalization.go's `normalizeKubernetes` path);
+ * a CloudTrail-shaped raw event (ADR-0006, `isCloudTrailRawEvent`) is
+ * accepted in the type but always yields no links -- no structurally
+ * verified raw path exists yet for a CloudTrail-derived field, so those
+ * characteristics correctly resolve to the Partial provenance state
+ * (`lib/provenance.ts`) rather than an invented one.
  */
 export function buildLineageLinks(
   normalized: NormalizedEvent | undefined,
-  raw: RawAuditEvent | undefined,
+  raw: RawAuditEvent | CloudTrailRawRecord | undefined,
 ): LineageLink[] {
-  if (!normalized || !raw) return [];
+  if (!normalized || !raw || isCloudTrailRawEvent(raw)) return [];
 
   const links: LineageLink[] = [
     {

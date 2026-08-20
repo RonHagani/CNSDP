@@ -1,4 +1,5 @@
 import type { AlertInspection } from "@/features/alert-investigation/lib/artifactInspection";
+import { formatOutcome } from "@/lib/outcome";
 import styles from "./evidence-map.module.css";
 
 /**
@@ -43,7 +44,7 @@ export function GeneratedAlertMarker({
       </p>
       <p className={`${styles.technical} ${styles.wrapLongValue}`}>
         {summary.subject.username} {summary.operation.verb} {target}
-        {summary.target.name ? `/${summary.target.name}` : ""} — outcome {summary.outcome.code ?? "—"}
+        {summary.target.name ? `/${summary.target.name}` : ""} — outcome {formatOutcome(summary.outcome)}
       </p>
     </section>
   );

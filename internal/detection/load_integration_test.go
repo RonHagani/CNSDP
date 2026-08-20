@@ -39,15 +39,15 @@ conditions:
 
 // --- Clean load ---
 
-func TestLoadFS_CleanDatabaseReceivesExactlyThreeDefinitions(t *testing.T) {
+func TestLoadFS_CleanDatabaseReceivesExactlySixDefinitions(t *testing.T) {
 	db := testutil.MigratedPostgres(t)
 
 	if err := LoadFS(context.Background(), db, definitions.FS); err != nil {
 		t.Fatalf("load: %v", err)
 	}
 
-	if n := countDefinitions(t, db); n != 3 {
-		t.Errorf("row count = %d, want 3", n)
+	if n := countDefinitions(t, db); n != 6 {
+		t.Errorf("row count = %d, want 6", n)
 	}
 
 	rows, err := db.QueryContext(context.Background(), `SELECT scenario FROM detection_definitions ORDER BY scenario`)
@@ -63,7 +63,7 @@ func TestLoadFS_CleanDatabaseReceivesExactlyThreeDefinitions(t *testing.T) {
 		}
 		got = append(got, s)
 	}
-	want := []string{"scenario-1", "scenario-2", "scenario-3"}
+	want := []string{"scenario-1", "scenario-2", "scenario-3", "scenario-4", "scenario-5", "scenario-6"}
 	if len(got) != len(want) {
 		t.Fatalf("scenarios = %v, want %v", got, want)
 	}
@@ -152,8 +152,8 @@ func TestLoadFS_StoredColumnsMatchReconstructedContent(t *testing.T) {
 		}
 		checked++
 	}
-	if checked != 3 {
-		t.Fatalf("checked %d rows, want 3", checked)
+	if checked != 6 {
+		t.Fatalf("checked %d rows, want 6", checked)
 	}
 }
 
@@ -173,8 +173,8 @@ func TestLoadFS_IdempotentAcrossRepeatedCalls(t *testing.T) {
 	}
 	secondIDs := definitionIDs(t, db)
 
-	if n := countDefinitions(t, db); n != 3 {
-		t.Errorf("row count after second load = %d, want 3", n)
+	if n := countDefinitions(t, db); n != 6 {
+		t.Errorf("row count after second load = %d, want 6", n)
 	}
 	if len(firstIDs) != len(secondIDs) {
 		t.Fatalf("row id sets differ in size: %v vs %v", firstIDs, secondIDs)

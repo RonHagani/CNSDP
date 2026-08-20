@@ -11,14 +11,23 @@ import (
 	"cnsdp/internal/submission"
 )
 
+// administratorAccessPolicyARN is the AWS-managed AdministratorAccess
+// policy's fixed, account-independent ARN -- AWS reserves the literal "aws"
+// account segment of a policy ARN for its own managed policies, so this
+// exact string can never be a customer-managed policy's ARN. Scenario 6
+// (AC-034, FR-039) requires this exact identity: a customer-managed policy
+// that merely shares the AdministratorAccess name carries the caller's own
+// numeric account id in this position instead, and must not match.
+const administratorAccessPolicyARN = "arn:aws:iam::aws:policy/AdministratorAccess"
+
 // characteristicSet builds the flat, ID-keyed set of named
 // characteristics known to be true for event. This is the only
 // scenario-specific mapping in this file: it translates normalized Event
-// fields into the vocabulary the three definitions' requires_any /
+// fields into the vocabulary the six definitions' requires_any /
 // requires_all lists reference by id. The matching algorithm below
 // (evaluate, operationMatches, outcomeSatisfied) never branches on
 // scenario -- it only ever asks "is this characteristic id present in the
-// set", so a fourth scenario's definition would need a new entry here,
+// set", so a seventh scenario's definition would need a new entry here,
 // never a new evaluator.
 func characteristicSet(event normalization.Event) map[string]bool {
 	set := make(map[string]bool)
@@ -36,6 +45,20 @@ func characteristicSet(event normalization.Event) map[string]bool {
 	if event.ClusterRoleBinding != nil {
 		set["role_ref_cluster_admin"] = event.ClusterRoleBinding.RoleRef.Kind == "ClusterRole" &&
 			event.ClusterRoleBinding.RoleRef.Name == "cluster-admin"
+	}
+	if event.CloudTrailIAMAction != nil {
+		switch event.Operation.Verb {
+		case "DeactivateMFADevice":
+			set["mfa_device_deactivated"] = true
+		case "DeleteVirtualMFADevice":
+			set["mfa_device_deleted"] = true
+		case "CreateAccessKey":
+			set["access_key_created"] = true
+		case "AttachUserPolicy":
+			set["administrator_access_attached_to_user"] = event.CloudTrailIAMAction.PolicyName == administratorAccessPolicyARN
+		case "AttachRolePolicy":
+			set["administrator_access_attached_to_role"] = event.CloudTrailIAMAction.PolicyName == administratorAccessPolicyARN
+		}
 	}
 	return set
 }

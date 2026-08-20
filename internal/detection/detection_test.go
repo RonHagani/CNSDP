@@ -163,7 +163,7 @@ func TestValidate_RejectsMissingOrInvalidFields(t *testing.T) {
 		mutate func(*Definition)
 	}{
 		{"empty scenario", func(d *Definition) { d.Scenario = "" }},
-		{"unrecognized scenario", func(d *Definition) { d.Scenario = "scenario-4" }},
+		{"unrecognized scenario", func(d *Definition) { d.Scenario = "scenario-7" }},
 		{"empty name", func(d *Definition) { d.Name = "" }},
 		{"empty description", func(d *Definition) { d.Description = "" }},
 		{"empty operation resource", func(d *Definition) { d.Conditions.Operation.Resource = "" }},

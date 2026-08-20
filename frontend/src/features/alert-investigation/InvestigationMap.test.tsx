@@ -6,6 +6,7 @@ import * as investigationViewModelModule from "./lib/investigationViewModel";
 import {
   fixtureBrokenTraceability,
   fixtureBrokenTraceabilitySourceKey,
+  fixtureCloudTrailScenario5Intact,
   fixtureIntact,
   fixturePartial,
   fixtureScenario2Intact,
@@ -252,5 +253,47 @@ describe("InvestigationMap — contract discipline", () => {
     for (const forbidden of ["severity", "confidence", "elapsed", "duration"]) {
       expect(text).not.toContain(forbidden);
     }
+  });
+});
+
+// --- AWS CloudTrail alert (ADR-0006): renders without crashing and
+// without misleading Kubernetes-only fields --------------------------
+
+describe("InvestigationMap — AWS CloudTrail alert (scenario 5)", () => {
+  it("renders without throwing for a CloudTrail-shaped raw event and normalized event", () => {
+    // The decisive regression proof: before SourceSubmissionSpecimen's
+    // CloudTrail branch existed, this render call threw
+    // (`raw.user.username` on a raw event with no `user` field at all).
+    expect(() => render(<InvestigationMap data={fixtureCloudTrailScenario5Intact} />)).not.toThrow();
+  });
+
+  it("never renders the literal text \"undefined\" anywhere on the page", () => {
+    // Guards every K8s-only field access across the whole map (raw.stage,
+    // raw.requestReceivedTimestamp, evidenceRegister's audit-ID summary,
+    // etc.), not just the one already-known crash site above.
+    const { container } = render(<InvestigationMap data={fixtureCloudTrailScenario5Intact} />);
+    expect(container.textContent).not.toMatch(/\bundefined\b/i);
+  });
+
+  it("shows the real CloudTrail identity, operation, and outcome — never a blank dash for a recorded successful outcome", () => {
+    const { container } = render(<InvestigationMap data={fixtureCloudTrailScenario5Intact} />);
+    const text = container.textContent!;
+    expect(text).toContain("arn:aws:iam::123456789012:user/alice");
+    expect(text).toContain("CreateAccessKey");
+    expect(text).toContain("iam.amazonaws.com");
+    // outcome.code is genuinely absent for a CloudTrail event (its own
+    // native signal is errorCode/successful, not an HTTP code) -- the
+    // formatOutcome fix must render "success" here, not "—" (which would
+    // misrepresent a real recorded outcome as unrecorded) and not
+    // "undefined" (already covered above).
+    expect(text).toContain("success");
+  });
+
+  it("carries cloudTrailIAMAction content on the Normalized Event surface, not a Kubernetes-only exec/podCreation/clusterRoleBinding block", () => {
+    render(<InvestigationMap data={fixtureCloudTrailScenario5Intact} />);
+    expect(screen.getByText("cloudTrailIAMAction.affectedUser")).toBeInTheDocument();
+    expect(screen.queryByText(/^exec\./)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^podCreation\./)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^clusterRoleBinding\./)).not.toBeInTheDocument();
   });
 });

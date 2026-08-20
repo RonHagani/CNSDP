@@ -385,8 +385,8 @@ func TestProcessOne_AdvancesOldestNormalizedSubmission_WhenNothingElsePending(t 
 	if got.Status != submission.StatusEvaluated {
 		t.Errorf("status = %q, want %q", got.Status, submission.StatusEvaluated)
 	}
-	if n := countDetectionResults(t, db, id); n != 3 {
-		t.Errorf("detection_results rows = %d, want 3", n)
+	if n := countDetectionResults(t, db, id); n != 6 {
+		t.Errorf("detection_results rows = %d, want 6", n)
 	}
 }
 

@@ -72,8 +72,23 @@ export interface Target {
   subresource?: string;
 }
 
+/**
+ * `code` is Kubernetes' own outcome signal (an HTTP response code);
+ * `errorCode`/`successful` are AWS CloudTrail's (an absent `errorCode`
+ * means success) -- `code` is always absent for a CloudTrail event and
+ * `errorCode` is always absent for a Kubernetes one. The real backend
+ * always serializes `successful` (no `omitempty` on
+ * internal/normalization.Outcome.Successful), including for a Kubernetes
+ * event whose scenario never consults it (e.g. scenario 1, where it is
+ * always `false` without meaning "failed"); it is typed optional here
+ * only so fixtures/tests written before this field existed keep
+ * type-checking unchanged. See `formatOutcome` (src/lib/outcome.ts), the
+ * one place this ambiguity is resolved for display.
+ */
 export interface Outcome {
   code?: number;
+  errorCode?: string;
+  successful?: boolean;
 }
 
 export interface ExecCharacteristics {
@@ -108,6 +123,18 @@ export interface ClusterRoleBindingCharacteristics {
   subjects?: RbacSubject[];
 }
 
+/** internal/normalization.CloudTrailIAMAction -- AWS CloudTrail scenarios
+ *  4-6's (ADR-0006) affected-principal content: the affected user and MFA
+ *  device (scenario 4), the affected user (scenario 5), or the affected
+ *  principal and referenced policy ARN (scenario 6, held verbatim in
+ *  `policyName` despite the field's name -- see the backend's own doc
+ *  comment). */
+export interface CloudTrailIAMAction {
+  affectedUser?: string;
+  affectedDevice?: string;
+  policyName?: string;
+}
+
 /** internal/normalization.Event */
 export interface NormalizedEvent {
   subject: Subject;
@@ -118,6 +145,52 @@ export interface NormalizedEvent {
   exec?: ExecCharacteristics;
   podCreation?: PodCreationCharacteristics;
   clusterRoleBinding?: ClusterRoleBindingCharacteristics;
+  cloudTrailIAMAction?: CloudTrailIAMAction;
+}
+
+/**
+ * The AWS CloudTrail management-event record shape (ADR-0006, FR-002):
+ * the fields internal/validation and internal/normalization's own
+ * `cloudTrailRecord` decode targets read, restated here for the frontend.
+ * The real stored raw event may carry additional standard CloudTrail
+ * fields this platform does not currently read (FR-032 preserves the
+ * submission byte-for-byte) -- this type models only what the product
+ * itself relies on, the same "not an exhaustive per-API field mapping"
+ * scope internal/normalization/normalization.go's own doc comments
+ * describe for `cloudTrailTargetOf`/`cloudTrailIAMActionOf`.
+ */
+export interface CloudTrailRawRecord {
+  eventID: string;
+  eventTime: string;
+  eventSource: string;
+  eventName: string;
+  eventCategory: string;
+  userIdentity: {
+    type?: string;
+    arn?: string;
+    userName?: string;
+  };
+  requestParameters?: Record<string, unknown> | null;
+  responseElements?: Record<string, unknown> | null;
+  errorCode?: string;
+  /** A real posted record carries many standard CloudTrail fields this
+   *  product does not read (eventVersion, awsRegion, eventType, ...) --
+   *  FR-032 preserves them byte-for-byte, so this index signature accepts
+   *  them rather than narrowing the type to only the fields above. */
+  [key: string]: unknown;
+}
+
+/** Distinguishes a CloudTrail-shaped raw event from a Kubernetes one by
+ *  the one field only CloudTrail records ever carry -- `RawAuditEvent` has
+ *  no `eventID` field at all. The wire response carries no explicit
+ *  source-family discriminator (internal/retrieval/retrieval.go), so
+ *  content shape is the only signal available to the frontend, mirroring
+ *  how the backend itself attributes source family by which intake
+ *  endpoint received the submission rather than by sniffing content. */
+export function isCloudTrailRawEvent(
+  raw: RawAuditEvent | CloudTrailRawRecord,
+): raw is CloudTrailRawRecord {
+  return "eventID" in raw;
 }
 
 export interface Characteristic {
@@ -183,7 +256,7 @@ export interface AlertInvestigationResponse {
   alertId: number;
   sourceEvent: {
     available: boolean;
-    rawEvent?: RawAuditEvent;
+    rawEvent?: RawAuditEvent | CloudTrailRawRecord;
   };
   validationOutcome: {
     available: boolean;

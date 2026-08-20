@@ -128,8 +128,8 @@ func TestAdvance_PersistsAllThreeResultsAndAdvancesStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("normalization.Get: %v", err)
 	}
-	if n := countDetectionResults(t, db, rec.ID); n != 3 {
-		t.Fatalf("detection_results rows = %d, want 3 (one per active definition)", n)
+	if n := countDetectionResults(t, db, rec.ID); n != 6 {
+		t.Fatalf("detection_results rows = %d, want 6 (one per active definition)", n)
 	}
 
 	results := readDetectionResultsByScenario(t, db, rec.ID)
@@ -151,7 +151,7 @@ func TestAdvance_PersistsAllThreeResultsAndAdvancesStatus(t *testing.T) {
 		t.Errorf("match reason = %+v, want scenario-1 with 2 satisfied characteristics (stdin+tty)", reason)
 	}
 
-	for _, scenario := range []string{"scenario-2", "scenario-3"} {
+	for _, scenario := range []string{"scenario-2", "scenario-3", "scenario-4", "scenario-5", "scenario-6"} {
 		r, ok := results[scenario]
 		if !ok {
 			t.Fatalf("no detection_results row for %s", scenario)
@@ -185,8 +185,8 @@ func TestAdvance_RetryAfterSuccess_NoDuplicate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("normalization.Get: %v", err)
 	}
-	if n := countDetectionResults(t, db, rec.ID); n != 3 {
-		t.Errorf("detection_results rows after retry = %d, want still 3 (no duplicates)", n)
+	if n := countDetectionResults(t, db, rec.ID); n != 6 {
+		t.Errorf("detection_results rows after retry = %d, want still 6 (no duplicates)", n)
 	}
 	got, err := submission.Get(context.Background(), db, sub.ID)
 	if err != nil {
@@ -251,8 +251,8 @@ func TestAdvance_PreexistingIdenticalResults_SafeRetrySucceeds(t *testing.T) {
 	if got.Status != submission.StatusEvaluated {
 		t.Errorf("status = %q, want %q", got.Status, submission.StatusEvaluated)
 	}
-	if n := countDetectionResults(t, db, rec.ID); n != 3 {
-		t.Errorf("detection_results rows = %d, want 3 (no duplicates)", n)
+	if n := countDetectionResults(t, db, rec.ID); n != 6 {
+		t.Errorf("detection_results rows = %d, want 6 (no duplicates)", n)
 	}
 }
 

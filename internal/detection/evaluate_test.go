@@ -357,3 +357,224 @@ func TestEvaluate_CrossScenario_EventOnlyMatchesItsOwnDefinition(t *testing.T) {
 		t.Error("scenario-2 event matched scenario-3's definition, want false")
 	}
 }
+
+// --- evaluate, scenarios 4-6 (AWS CloudTrail, ADR-0006) -----------------
+
+// cloudTrailIAMEvent builds a minimal normalized CloudTrail event: a
+// successful IAM API call (verb) with the given CloudTrailIAMAction
+// content. Individual tests override Outcome.Successful or the action
+// content to build their negative-control variants.
+func cloudTrailIAMEvent(verb string, action normalization.CloudTrailIAMAction) normalization.Event {
+	return normalization.Event{
+		Target:              normalization.Target{Resource: "iam.amazonaws.com"},
+		Operation:           normalization.Operation{Verb: verb},
+		Outcome:             normalization.Outcome{Successful: true},
+		CloudTrailIAMAction: &action,
+	}
+}
+
+func TestEvaluate_Scenario4_DeactivateMFADevice_Matches(t *testing.T) {
+	def := realDefinition(t, "scenario-4.yaml")
+	event := cloudTrailIAMEvent("DeactivateMFADevice", normalization.CloudTrailIAMAction{
+		AffectedUser: "victim", AffectedDevice: "arn:aws:iam::123456789012:mfa/victim",
+	})
+
+	matched, satisfied := evaluate(event, def)
+	if !matched {
+		t.Fatal("matched = false, want true")
+	}
+	if len(satisfied) != 1 || satisfied[0].ID != "mfa_device_deactivated" {
+		t.Errorf("satisfied = %+v, want exactly [mfa_device_deactivated]", satisfied)
+	}
+}
+
+func TestEvaluate_Scenario4_DeleteVirtualMFADevice_Matches(t *testing.T) {
+	def := realDefinition(t, "scenario-4.yaml")
+	event := cloudTrailIAMEvent("DeleteVirtualMFADevice", normalization.CloudTrailIAMAction{
+		AffectedUser: "victim", AffectedDevice: "arn:aws:iam::123456789012:mfa/victim",
+	})
+
+	matched, satisfied := evaluate(event, def)
+	if !matched {
+		t.Fatal("matched = false, want true")
+	}
+	if len(satisfied) != 1 || satisfied[0].ID != "mfa_device_deleted" {
+		t.Errorf("satisfied = %+v, want exactly [mfa_device_deleted]", satisfied)
+	}
+}
+
+// TestEvaluate_Scenario4_NegativeControl_NeighboringIAMOperation is the
+// AC-032 negative control: a successful EnableMFADevice call -- a
+// neighboring IAM operation that does not remove an MFA device -- must not
+// match.
+func TestEvaluate_Scenario4_NegativeControl_NeighboringIAMOperation(t *testing.T) {
+	def := realDefinition(t, "scenario-4.yaml")
+	event := cloudTrailIAMEvent("EnableMFADevice", normalization.CloudTrailIAMAction{
+		AffectedUser: "victim", AffectedDevice: "arn:aws:iam::123456789012:mfa/victim",
+	})
+
+	if matched, _ := evaluate(event, def); matched {
+		t.Error("matched = true, want false for a neighboring IAM operation (EnableMFADevice)")
+	}
+}
+
+func TestEvaluate_Scenario4_UnsuccessfulRemoval_NoMatch(t *testing.T) {
+	def := realDefinition(t, "scenario-4.yaml")
+	event := cloudTrailIAMEvent("DeactivateMFADevice", normalization.CloudTrailIAMAction{AffectedUser: "victim"})
+	event.Outcome = normalization.Outcome{Successful: false, ErrorCode: "AccessDenied"}
+
+	if matched, _ := evaluate(event, def); matched {
+		t.Error("matched = true, want false: scenario 4 requires a successful call (FR-037)")
+	}
+}
+
+func TestEvaluate_Scenario5_CreateAccessKey_Matches(t *testing.T) {
+	def := realDefinition(t, "scenario-5.yaml")
+	event := cloudTrailIAMEvent("CreateAccessKey", normalization.CloudTrailIAMAction{AffectedUser: "bob"})
+
+	matched, satisfied := evaluate(event, def)
+	if !matched {
+		t.Fatal("matched = false, want true")
+	}
+	if len(satisfied) != 1 || satisfied[0].ID != "access_key_created" {
+		t.Errorf("satisfied = %+v, want exactly [access_key_created]", satisfied)
+	}
+}
+
+// TestEvaluate_Scenario5_NegativeControl_NeighboringKeyOperations is the
+// AC-033 negative control: UpdateAccessKey and DeleteAccessKey are
+// neighboring IAM key operations, not key creation, and must not match.
+func TestEvaluate_Scenario5_NegativeControl_NeighboringKeyOperations(t *testing.T) {
+	def := realDefinition(t, "scenario-5.yaml")
+	for _, verb := range []string{"UpdateAccessKey", "DeleteAccessKey"} {
+		event := cloudTrailIAMEvent(verb, normalization.CloudTrailIAMAction{AffectedUser: "bob"})
+		if matched, _ := evaluate(event, def); matched {
+			t.Errorf("matched = true for %s, want false", verb)
+		}
+	}
+}
+
+func TestEvaluate_Scenario5_UnsuccessfulCreateAccessKey_NoMatch(t *testing.T) {
+	def := realDefinition(t, "scenario-5.yaml")
+	event := cloudTrailIAMEvent("CreateAccessKey", normalization.CloudTrailIAMAction{AffectedUser: "bob"})
+	event.Outcome = normalization.Outcome{Successful: false, ErrorCode: "LimitExceeded"}
+
+	if matched, _ := evaluate(event, def); matched {
+		t.Error("matched = true, want false: scenario 5 requires a successful call (FR-038)")
+	}
+}
+
+func TestEvaluate_Scenario6_AttachUserPolicy_ExactAdministratorAccess_Matches(t *testing.T) {
+	def := realDefinition(t, "scenario-6.yaml")
+	event := cloudTrailIAMEvent("AttachUserPolicy", normalization.CloudTrailIAMAction{
+		AffectedUser: "victim", PolicyName: administratorAccessPolicyARN,
+	})
+
+	matched, satisfied := evaluate(event, def)
+	if !matched {
+		t.Fatal("matched = false, want true")
+	}
+	if len(satisfied) != 1 || satisfied[0].ID != "administrator_access_attached_to_user" {
+		t.Errorf("satisfied = %+v, want exactly [administrator_access_attached_to_user]", satisfied)
+	}
+}
+
+func TestEvaluate_Scenario6_AttachRolePolicy_ExactAdministratorAccess_Matches(t *testing.T) {
+	def := realDefinition(t, "scenario-6.yaml")
+	event := cloudTrailIAMEvent("AttachRolePolicy", normalization.CloudTrailIAMAction{
+		AffectedUser: "victim-role", PolicyName: administratorAccessPolicyARN,
+	})
+
+	matched, satisfied := evaluate(event, def)
+	if !matched {
+		t.Fatal("matched = false, want true")
+	}
+	if len(satisfied) != 1 || satisfied[0].ID != "administrator_access_attached_to_role" {
+		t.Errorf("satisfied = %+v, want exactly [administrator_access_attached_to_role]", satisfied)
+	}
+}
+
+// TestEvaluate_Scenario6_NegativeControl_CustomerManagedPolicySameName is
+// the AC-034 negative control proving exact-identity comparison: a
+// customer-managed policy that merely shares the AdministratorAccess name
+// (a distinct ARN, carrying the caller's own account id rather than the
+// literal "aws" AWS-managed segment) must not match.
+func TestEvaluate_Scenario6_NegativeControl_CustomerManagedPolicySameName(t *testing.T) {
+	def := realDefinition(t, "scenario-6.yaml")
+	const customerManagedARN = "arn:aws:iam::123456789012:policy/AdministratorAccess"
+
+	for _, verb := range []string{"AttachUserPolicy", "AttachRolePolicy"} {
+		event := cloudTrailIAMEvent(verb, normalization.CloudTrailIAMAction{
+			AffectedUser: "victim", PolicyName: customerManagedARN,
+		})
+		if matched, _ := evaluate(event, def); matched {
+			t.Errorf("matched = true for %s with customer-managed policy %q, want false (name-only match must not be sufficient)", verb, customerManagedARN)
+		}
+	}
+}
+
+// TestEvaluate_Scenario6_NegativeControl_DetachOperations is the AC-034
+// negative control proving detach operations, even when referencing the
+// exact AWS-managed AdministratorAccess policy, must not match -- scenario
+// 6 evaluates attachment only (FR-039).
+func TestEvaluate_Scenario6_NegativeControl_DetachOperations(t *testing.T) {
+	def := realDefinition(t, "scenario-6.yaml")
+	for _, verb := range []string{"DetachUserPolicy", "DetachRolePolicy"} {
+		event := cloudTrailIAMEvent(verb, normalization.CloudTrailIAMAction{
+			AffectedUser: "victim", PolicyName: administratorAccessPolicyARN,
+		})
+		if matched, _ := evaluate(event, def); matched {
+			t.Errorf("matched = true for %s, want false", verb)
+		}
+	}
+}
+
+func TestEvaluate_Scenario6_UnsuccessfulAttachment_NoMatch(t *testing.T) {
+	def := realDefinition(t, "scenario-6.yaml")
+	event := cloudTrailIAMEvent("AttachUserPolicy", normalization.CloudTrailIAMAction{
+		AffectedUser: "victim", PolicyName: administratorAccessPolicyARN,
+	})
+	event.Outcome = normalization.Outcome{Successful: false, ErrorCode: "AccessDenied"}
+
+	if matched, _ := evaluate(event, def); matched {
+		t.Error("matched = true, want false: scenario 6 requires a successful call (FR-039)")
+	}
+}
+
+// TestEvaluate_CrossFamilyIsolation_KubernetesAndCloudTrailNeverMatchEachOther
+// proves the two source families are structurally isolated purely by each
+// definition's own declared operation -- no family-aware branching exists
+// anywhere in the generic evaluator: a real Kubernetes event can never
+// match a CloudTrail definition, and a real CloudTrail event can never
+// match a Kubernetes definition.
+func TestEvaluate_CrossFamilyIsolation_KubernetesAndCloudTrailNeverMatchEachOther(t *testing.T) {
+	k8sDefs := []Definition{
+		realDefinition(t, "scenario-1.yaml"),
+		realDefinition(t, "scenario-2.yaml"),
+		realDefinition(t, "scenario-3.yaml"),
+	}
+	cloudTrailDefs := []Definition{
+		realDefinition(t, "scenario-4.yaml"),
+		realDefinition(t, "scenario-5.yaml"),
+		realDefinition(t, "scenario-6.yaml"),
+	}
+
+	k8sEvent := normalization.Event{
+		Target:    normalization.Target{Resource: "pods", Subresource: "exec"},
+		Operation: normalization.Operation{Verb: "get"},
+		Outcome:   normalization.Outcome{Code: 101},
+		Exec:      &normalization.ExecCharacteristics{Stdin: true, TTY: true},
+	}
+	for _, def := range cloudTrailDefs {
+		if matched, _ := evaluate(k8sEvent, def); matched {
+			t.Errorf("kubernetes event matched CloudTrail definition %s, want false", def.Scenario)
+		}
+	}
+
+	cloudTrailEvent := cloudTrailIAMEvent("CreateAccessKey", normalization.CloudTrailIAMAction{AffectedUser: "bob"})
+	for _, def := range k8sDefs {
+		if matched, _ := evaluate(cloudTrailEvent, def); matched {
+			t.Errorf("CloudTrail event matched kubernetes definition %s, want false", def.Scenario)
+		}
+	}
+}

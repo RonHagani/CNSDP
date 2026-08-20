@@ -1,13 +1,14 @@
 import type { NormalizedEventInspection } from "@/features/alert-investigation/lib/artifactInspection";
+import { formatOutcome } from "@/lib/outcome";
 import styles from "./evidence-map.module.css";
 
 /**
  * The Normalized Event field surface (UX spec §7): the central artifact,
  * one row per field, generic across whichever single scenario block
- * (`exec` | `podCreation` | `clusterRoleBinding`) is populated — no
- * scenario-specific branch in the rendering mechanism itself beyond
- * checking which block is present (a real, contract-typed fact, not an
- * invented distinction).
+ * (`exec` | `podCreation` | `clusterRoleBinding` | `cloudTrailIAMAction`)
+ * is populated — no scenario-specific branch in the rendering mechanism
+ * itself beyond checking which block is present (a real, contract-typed
+ * fact, not an invented distinction).
  *
  * `highlightedPath` is the selected characteristic's own
  * `ProvenanceState.normalizedPath` (Verified/Partial only — Unavailable
@@ -58,7 +59,7 @@ export function NormalizedEventSurface({
     ...(event.target.namespace
       ? ([["target.namespace", event.target.namespace]] as [string, string][])
       : []),
-    ["outcome.code", String(event.outcome.code ?? "—")],
+    ["outcome.code", formatOutcome(event.outcome)],
     ["requestTime", event.requestTime],
   ];
 
@@ -88,6 +89,12 @@ export function NormalizedEventSurface({
         event.clusterRoleBinding.subjects.map((s) => `${s.kind}:${s.name}`).join(", "),
       ]);
     }
+  }
+  if (event.cloudTrailIAMAction) {
+    const { affectedUser, affectedDevice, policyName } = event.cloudTrailIAMAction;
+    if (affectedUser) rows.push(["cloudTrailIAMAction.affectedUser", affectedUser]);
+    if (affectedDevice) rows.push(["cloudTrailIAMAction.affectedDevice", affectedDevice]);
+    if (policyName) rows.push(["cloudTrailIAMAction.policyName", policyName]);
   }
 
   return (

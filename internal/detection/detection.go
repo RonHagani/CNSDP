@@ -55,11 +55,16 @@ type Characteristic struct {
 }
 
 // approvedScenarios is the closed set PD-04 approved for v0.1. Nothing
-// outside this package should declare its own copy.
+// outside this package should declare its own copy. Scenario 7 (root-account
+// activity, FR-040) is deliberately not yet a member: its detection
+// definition is out of scope for this slice (ADR-0006).
 var approvedScenarios = map[string]bool{
 	"scenario-1": true,
 	"scenario-2": true,
 	"scenario-3": true,
+	"scenario-4": true,
+	"scenario-5": true,
+	"scenario-6": true,
 }
 
 // Parse strictly decodes exactly one YAML document into a Definition:

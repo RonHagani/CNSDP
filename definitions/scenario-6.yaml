@@ -1,0 +1,16 @@
+scenario: scenario-6
+name: AdministratorAccess policy attached
+description: >
+  Detection of a successful AttachUserPolicy or AttachRolePolicy AWS IAM
+  API call whose referenced policy is exactly the AWS-managed
+  AdministratorAccess policy, not merely a customer-managed policy that
+  happens to share its name.
+conditions:
+  operation:
+    resource: iam.amazonaws.com
+  requires_outcome: success
+  requires_any:
+    - id: administrator_access_attached_to_user
+      description: The API call attached the AWS-managed AdministratorAccess policy to an IAM user (AttachUserPolicy).
+    - id: administrator_access_attached_to_role
+      description: The API call attached the AWS-managed AdministratorAccess policy to an IAM role (AttachRolePolicy).

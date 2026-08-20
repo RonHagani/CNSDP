@@ -1,0 +1,15 @@
+scenario: scenario-4
+name: MFA device deactivated or deleted
+description: >
+  Detection of a successful DeactivateMFADevice or DeleteVirtualMFADevice
+  AWS IAM API call, indicating an MFA device was disabled or removed from
+  an IAM user.
+conditions:
+  operation:
+    resource: iam.amazonaws.com
+  requires_outcome: success
+  requires_any:
+    - id: mfa_device_deactivated
+      description: The API call deactivated an IAM user's MFA device (DeactivateMFADevice).
+    - id: mfa_device_deleted
+      description: The API call deleted an IAM user's virtual MFA device (DeleteVirtualMFADevice).
