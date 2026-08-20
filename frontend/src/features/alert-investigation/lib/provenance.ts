@@ -66,6 +66,17 @@ const CHARACTERISTIC_NORMALIZED_PATH: Record<string, string> = {
   host_ipc: "podCreation.hostIPC",
   host_path_volume: "podCreation.hostPathVolume",
   role_ref_cluster_admin: "clusterRoleBinding.roleRef.name",
+  // AWS CloudTrail scenarios 4-6 (definitions/scenario-{4,5,6}.yaml,
+  // ADR-0006). Each always resolves to the Partial state below, never
+  // Verified: buildLineageLinks describes only Kubernetes' own raw-to-
+  // normalized rules, and no structurally verified raw path exists yet for
+  // a CloudTrail-derived field (the same limitation already documented for
+  // podCreation/clusterRoleBinding's requestObject-derived fields).
+  mfa_device_deactivated: "cloudTrailIAMAction.affectedDevice",
+  mfa_device_deleted: "cloudTrailIAMAction.affectedDevice",
+  access_key_created: "cloudTrailIAMAction.affectedUser",
+  administrator_access_attached_to_user: "cloudTrailIAMAction.policyName",
+  administrator_access_attached_to_role: "cloudTrailIAMAction.policyName",
 };
 
 /**
@@ -139,6 +150,10 @@ export function deriveProvenanceState(
   );
 
   if (normalizedPath) {
+    // buildLineageLinks itself yields no links for a CloudTrail-shaped raw
+    // event (lib/lineage.ts's own guard), so every CloudTrail characteristic
+    // correctly falls through to the Partial state below instead of a
+    // fabricated link.
     const links = buildLineageLinks(data.normalizedEvent.event, data.sourceEvent.rawEvent);
     const link = links.find((l) => l.normalizedPath === normalizedPath);
     if (link) {

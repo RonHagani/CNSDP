@@ -1,6 +1,7 @@
 import type {
   AlertInvestigationResponse,
   AlertSummary,
+  CloudTrailRawRecord,
   DetectionDefinition,
   EvidenceArtifactId,
   MatchReason,
@@ -18,7 +19,9 @@ import { buildDeclaredConditions, type DeclaredConditions } from "./detectionCon
  * detection-conditions object are not interchangeable shapes.
  */
 
-export type SourceEventInspection = { available: true; rawEvent: RawAuditEvent } | { available: false };
+export type SourceEventInspection =
+  | { available: true; rawEvent: RawAuditEvent | CloudTrailRawRecord }
+  | { available: false };
 
 export type ValidationOutcomeInspection =
   | { available: true; outcome: "valid" | "invalid" | "incomplete" | "unsupported"; reason?: string }

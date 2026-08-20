@@ -36,6 +36,12 @@ const testToken = "walking-skeleton-test-token"
 // shape ARCH-01 §8 names for the walking-skeleton demonstration.
 const scenario1EventJSON = `{"kind":"Event","apiVersion":"audit.k8s.io/v1","auditID":"34b75a57-e1c0-4659-a21f-2d39256f018c","stage":"ResponseComplete","requestURI":"/api/v1/namespaces/default/pods/high-risk-pod/exec?stdin=true&tty=true","verb":"get","user":{"username":"kubernetes-admin"},"objectRef":{"resource":"pods","namespace":"default","name":"high-risk-pod","subresource":"exec"},"responseStatus":{"code":101},"requestReceivedTimestamp":"2026-07-21T15:25:11.901891Z"}`
 
+// cloudTrailScenario5EventJSON is a real-shaped CreateAccessKey CloudTrail
+// management event (ADR-0006, scenario 5, FR-038) -- the same fixture
+// content internal/normalization's own scenario-5 tests use, posted here
+// through the real HTTP intake endpoint rather than seeded directly.
+const cloudTrailScenario5EventJSON = `{"eventVersion":"1.08","eventTime":"2026-08-18T12:34:56Z","eventSource":"iam.amazonaws.com","eventName":"CreateAccessKey","eventCategory":"Management","awsRegion":"us-east-1","userIdentity":{"type":"IAMUser","arn":"arn:aws:iam::123456789012:user/alice","userName":"alice"},"requestParameters":{"userName":"bob"},"responseElements":{"accessKey":{"userName":"bob","accessKeyId":"AKIAEXAMPLE","status":"Active"}},"eventID":"walking-skeleton-ct-scenario5-1","eventType":"AwsApiCall"}`
+
 // retrievalResponse mirrors the subset of internal/retrieval's unexported
 // wire response this test needs to assert on.
 type retrievalResponse struct {
@@ -47,8 +53,19 @@ type retrievalResponse struct {
 		Available bool   `json:"available"`
 		Outcome   string `json:"outcome"`
 	} `json:"validationOutcome"`
-	DetectionResult struct {
+	NormalizedEvent struct {
 		Available bool `json:"available"`
+		Event     struct {
+			CloudTrailIAMAction *struct {
+				AffectedUser string `json:"affectedUser"`
+			} `json:"cloudTrailIAMAction"`
+		} `json:"event"`
+	} `json:"normalizedEvent"`
+	DetectionResult struct {
+		Available   bool `json:"available"`
+		MatchReason struct {
+			Scenario string `json:"scenario"`
+		} `json:"matchReason"`
 	} `json:"detectionResult"`
 	Alert struct {
 		Available bool `json:"available"`
@@ -67,6 +84,7 @@ func newHarness(t *testing.T, db *sql.DB) (baseURL string) {
 
 	mux := http.NewServeMux()
 	mux.Handle("POST /v1/audit-events", &intake.Handler{DB: db, Token: testToken})
+	mux.Handle("POST /v1/cloudtrail-events", &intake.CloudTrailHandler{DB: db, Token: testToken})
 	mux.Handle("GET /v1/alerts/{id}", &retrieval.Handler{DB: db, Token: testToken})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -101,6 +119,45 @@ func postEventList(t *testing.T, baseURL, token string, events ...string) *http.
 		t.Fatalf("post event list: %v", err)
 	}
 	return resp
+}
+
+// postCloudTrailEvent posts one native CloudTrail record (no batch
+// envelope) to the real CloudTrail intake endpoint -- the single-record
+// contract intake.CloudTrailHandler serves (ADR-0006).
+func postCloudTrailEvent(t *testing.T, baseURL, token, event string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/v1/cloudtrail-events", strings.NewReader(event))
+	if err != nil {
+		t.Fatalf("build cloudtrail intake request: %v", err)
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("post cloudtrail event: %v", err)
+	}
+	return resp
+}
+
+// decodeCloudTrailIntakeResponse extracts the admitted submission id from a
+// successful CloudTrail intake response body -- the CloudTrailHandler's own
+// single-object shape ({"id":...}), distinct from the Kubernetes endpoint's
+// batch {"results":[...]} envelope decoded by decodeIntakeResponse above.
+func decodeCloudTrailIntakeResponse(t *testing.T, resp *http.Response) int64 {
+	t.Helper()
+	defer resp.Body.Close()
+	var body struct {
+		ID    int64  `json:"id"`
+		Error string `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode cloudtrail intake response: %v", err)
+	}
+	if body.Error != "" {
+		t.Fatalf("cloudtrail intake result: unexpected error %q", body.Error)
+	}
+	return body.ID
 }
 
 func getAlert(t *testing.T, baseURL, token string, alertID int64) *http.Response {
@@ -258,6 +315,71 @@ func TestWalkingSkeleton_IntakeToEvidencedToRetrieval(t *testing.T) {
 	unauthPost.Body.Close()
 	if unauthPost.StatusCode != http.StatusUnauthorized {
 		t.Errorf("unauthenticated intake POST status = %d, want %d", unauthPost.StatusCode, http.StatusUnauthorized)
+	}
+}
+
+// TestWalkingSkeleton_CloudTrailScenario5_IntakeToEvidencedToRetrieval is
+// the AWS CloudTrail counterpart of TestWalkingSkeleton_IntakeToEvidencedToRetrieval:
+// a real CreateAccessKey CloudTrail record, posted to the real
+// /v1/cloudtrail-events endpoint, driven to evidenced entirely by
+// worker.Run, and retrieved back through the real, authenticated retrieval
+// endpoint -- proving scenario 5 (ADR-0006, FR-038, AC-033) produces a real
+// detection match and alert through the same generic detection -> alert ->
+// evidence -> traceability -> retrieval path scenario 1-3 already exercise,
+// with no CloudTrail-specific code anywhere in that downstream path.
+func TestWalkingSkeleton_CloudTrailScenario5_IntakeToEvidencedToRetrieval(t *testing.T) {
+	db := testutil.MigratedPostgres(t)
+	if err := detection.Load(context.Background(), db); err != nil {
+		t.Fatalf("detection.Load: %v", err)
+	}
+	baseURL := newHarness(t, db)
+
+	resp := postCloudTrailEvent(t, baseURL, testToken, cloudTrailScenario5EventJSON)
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		t.Fatalf("cloudtrail intake POST status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	submissionID := decodeCloudTrailIntakeResponse(t, resp)
+
+	waitForStatus(t, db, submissionID, submission.StatusEvidenced, 10*time.Second)
+
+	alertID := alertIDForSubmission(t, db, submissionID)
+
+	getResp := getAlert(t, baseURL, testToken, alertID)
+	defer getResp.Body.Close()
+	if getResp.StatusCode != http.StatusOK {
+		t.Fatalf("retrieval GET status = %d, want %d", getResp.StatusCode, http.StatusOK)
+	}
+	var got retrievalResponse
+	if err := json.NewDecoder(getResp.Body).Decode(&got); err != nil {
+		t.Fatalf("decode retrieval response: %v", err)
+	}
+	if got.AlertID != alertID {
+		t.Errorf("alertId = %d, want %d", got.AlertID, alertID)
+	}
+	if !got.SourceEvent.Available {
+		t.Error("sourceEvent.available = false, want true")
+	}
+	if !got.ValidationOutcome.Available || got.ValidationOutcome.Outcome != "valid" {
+		t.Errorf("validationOutcome = %+v, want available with outcome \"valid\"", got.ValidationOutcome)
+	}
+	if !got.NormalizedEvent.Available {
+		t.Error("normalizedEvent.available = false, want true")
+	}
+	if got.NormalizedEvent.Event.CloudTrailIAMAction == nil || got.NormalizedEvent.Event.CloudTrailIAMAction.AffectedUser != "bob" {
+		t.Errorf("normalizedEvent.event.cloudTrailIAMAction = %+v, want AffectedUser=bob", got.NormalizedEvent.Event.CloudTrailIAMAction)
+	}
+	if !got.DetectionResult.Available {
+		t.Error("detectionResult.available = false, want true")
+	}
+	if got.DetectionResult.MatchReason.Scenario != "scenario-5" {
+		t.Errorf("detectionResult.matchReason.scenario = %q, want %q", got.DetectionResult.MatchReason.Scenario, "scenario-5")
+	}
+	if !got.Alert.Available {
+		t.Error("alert.available = false, want true")
+	}
+	if !got.Traceability.Intact {
+		t.Error("traceability.intact = false, want true (full alert-to-source chain)")
 	}
 }
 

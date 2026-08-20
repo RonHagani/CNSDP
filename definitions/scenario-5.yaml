@@ -1,0 +1,13 @@
+scenario: scenario-5
+name: New IAM access key created
+description: >
+  Detection of a successful CreateAccessKey AWS IAM API call, indicating a
+  new access key was issued for an IAM user.
+conditions:
+  operation:
+    resource: iam.amazonaws.com
+    verb: CreateAccessKey
+  requires_outcome: success
+  requires_all:
+    - id: access_key_created
+      description: The API call created a new IAM access key (CreateAccessKey).

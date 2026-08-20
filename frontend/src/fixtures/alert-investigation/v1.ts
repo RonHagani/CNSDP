@@ -121,9 +121,46 @@
  *     -- it correctly produces no link for these fields, which is what
  *     leaves them in the UX specification's Partial provenance state
  *     (§3.5) rather than manufacturing an unverified one.
+ *
+ * Provenance for the AWS CloudTrail scenario-5 (id: 7) fixture, added to
+ * exercise the platform's second telemetry source family (ADR-0006) end to
+ * end in this UI:
+ *
+ *   - Raw source event: byte-identical in content to the real-shaped
+ *     `cloudTrailScenario5JSON` fixture already used by the Go backend's own
+ *     tests (internal/normalization/normalization_test.go,
+ *     cmd/platform/walkingskeleton_integration_test.go
+ *     `cloudTrailScenario5EventJSON`) -- a real CreateAccessKey management
+ *     event, not synthetic data invented for this fixture.
+ *   - Normalized event: hand-derived by applying the documented CloudTrail
+ *     normalization rules (internal/normalization/normalization.go
+ *     `normalizeCloudTrail`) to that raw event -- subject.username from the
+ *     requesting identity's ARN, operation.verb from eventName,
+ *     target.resource from eventSource, target.name and
+ *     cloudTrailIAMAction.affectedUser from requestParameters.userName,
+ *     outcome.successful from the absence of a recorded errorCode.
+ *   - Detection definition: byte-identical in content to
+ *     definitions/scenario-5.yaml.
+ *   - Detection-definition revision: computed the same illustrative way as
+ *     every Kubernetes fixture's revision above (ADR-0004's documented
+ *     scheme) -- not verified against a live backend instance, and not
+ *     authoritative.
+ *   - Match reason and alert summary: derived directly from the above,
+ *     matching internal/detection/evaluate.go's `evaluate` /
+ *     `characteristicSet` and internal/alerting/alerting.go's
+ *     `buildSummary` construction rules.
+ *   - alertId: 7, the next sequential id after the six existing Kubernetes
+ *     fixtures.
+ *   - Field-level raw-to-normalized provenance is deliberately NOT modeled
+ *     here or in lib/lineage.ts, for the same reason as the scenario-2/3
+ *     fixtures above: lib/lineage.ts only ever describes Kubernetes' own
+ *     raw-to-normalized rules (lib/provenance.ts's own `rawEvent` guard
+ *     never passes it a CloudTrail-shaped raw event), so
+ *     `cloudTrailIAMAction`'s fields correctly resolve to the Partial
+ *     provenance state rather than an invented raw path.
  */
 
-import type { AlertInvestigationResponse, RawAuditEvent } from "@/types/contract";
+import type { AlertInvestigationResponse, CloudTrailRawRecord, RawAuditEvent } from "@/types/contract";
 
 const scenario1RawEvent: RawAuditEvent = {
   kind: "Event",
@@ -613,6 +650,110 @@ export const fixtureBrokenTraceabilitySourceKey: AlertInvestigationResponse = {
   traceability: { intact: false, failedLink: "source_key" },
 };
 
+// --- Scenario 5: successful AWS CloudTrail CreateAccessKey (ADR-0006) --
+
+const cloudTrailScenario5RawEvent: CloudTrailRawRecord = {
+  eventVersion: "1.08",
+  eventTime: "2026-08-18T12:34:56Z",
+  eventSource: "iam.amazonaws.com",
+  eventName: "CreateAccessKey",
+  eventCategory: "Management",
+  awsRegion: "us-east-1",
+  userIdentity: {
+    type: "IAMUser",
+    arn: "arn:aws:iam::123456789012:user/alice",
+    userName: "alice",
+  },
+  requestParameters: { userName: "bob" },
+  responseElements: { accessKey: { userName: "bob", accessKeyId: "AKIAEXAMPLE", status: "Active" } },
+  eventID: "5f6a2b1c-0000-0000-0000-000000000001",
+  eventType: "AwsApiCall",
+};
+
+/** Illustrative revision hash — see file-level provenance note above. */
+const cloudTrailScenario5Revision = "ca5128f067ef7a698ae5585670db30e3ba218832e8d6cd11077c7f1a246adebb";
+
+const cloudTrailScenario5Definition: AlertInvestigationResponse["detectionDefinition"] = {
+  available: true,
+  revision: cloudTrailScenario5Revision,
+  definition: {
+    scenario: "scenario-5",
+    name: "New IAM access key created",
+    description:
+      "Detection of a successful CreateAccessKey AWS IAM API call, indicating a new access key was issued for an IAM user.\n",
+    conditions: {
+      operation: { resource: "iam.amazonaws.com", verb: "CreateAccessKey" },
+      requires_outcome: "success",
+      requires_all: [
+        {
+          id: "access_key_created",
+          description: "The API call created a new IAM access key (CreateAccessKey).",
+        },
+      ],
+    },
+  },
+};
+
+const cloudTrailScenario5MatchReason: AlertInvestigationResponse["detectionResult"] = {
+  available: true,
+  matchReason: {
+    scenario: "scenario-5",
+    definitionName: "New IAM access key created",
+    definitionRevision: cloudTrailScenario5Revision,
+    satisfiedCharacteristics: [
+      {
+        id: "access_key_created",
+        description: "The API call created a new IAM access key (CreateAccessKey).",
+      },
+    ],
+  },
+};
+
+const cloudTrailScenario5NormalizedEvent: AlertInvestigationResponse["normalizedEvent"] = {
+  available: true,
+  event: {
+    subject: { username: "arn:aws:iam::123456789012:user/alice" },
+    operation: { verb: "CreateAccessKey", requestURI: "" },
+    target: { resource: "iam.amazonaws.com", name: "bob" },
+    outcome: { successful: true },
+    requestTime: "2026-08-18T12:34:56Z",
+    cloudTrailIAMAction: { affectedUser: "bob" },
+  },
+};
+
+const cloudTrailScenario5AlertSummary: AlertInvestigationResponse["alert"] = {
+  available: true,
+  summary: {
+    matchReason: cloudTrailScenario5MatchReason.matchReason!,
+    subject: { username: "arn:aws:iam::123456789012:user/alice" },
+    operation: { verb: "CreateAccessKey", requestURI: "" },
+    target: { resource: "iam.amazonaws.com", name: "bob" },
+    outcome: { successful: true },
+    requestTime: "2026-08-18T12:34:56Z",
+  },
+};
+
+/**
+ * id: 7 — Scenario 5, successful AWS CloudTrail CreateAccessKey. All six
+ * artifacts available; traceability intact. The first AWS CloudTrail-family
+ * fixture (ADR-0006): its raw event, normalized event, and detection
+ * definition are all a different shape from every Kubernetes fixture above
+ * -- `sourceEvent.rawEvent` is a `CloudTrailRawRecord`, not a
+ * `RawAuditEvent`, and `normalizedEvent.event` carries `cloudTrailIAMAction`
+ * rather than `exec`/`podCreation`/`clusterRoleBinding` -- proving the
+ * investigation UI renders a second source family without redesign.
+ */
+export const fixtureCloudTrailScenario5Intact: AlertInvestigationResponse = {
+  alertId: 7,
+  sourceEvent: { available: true, rawEvent: cloudTrailScenario5RawEvent },
+  validationOutcome: { available: true, outcome: "valid" },
+  normalizedEvent: cloudTrailScenario5NormalizedEvent,
+  detectionDefinition: cloudTrailScenario5Definition,
+  detectionResult: cloudTrailScenario5MatchReason,
+  alert: cloudTrailScenario5AlertSummary,
+  traceability: { intact: true },
+};
+
 export const fixturesById: Record<string, AlertInvestigationResponse> = {
   "1": fixtureIntact,
   "2": fixturePartial,
@@ -620,4 +761,5 @@ export const fixturesById: Record<string, AlertInvestigationResponse> = {
   "4": fixtureScenario2Intact,
   "5": fixtureScenario3Intact,
   "6": fixtureBrokenTraceabilitySourceKey,
+  "7": fixtureCloudTrailScenario5Intact,
 };

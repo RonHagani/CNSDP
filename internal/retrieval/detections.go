@@ -34,9 +34,9 @@ type detectionItem struct {
 
 // detectionsListResponse is the wire shape for a successful GET
 // /v1/detections: the active definitions in the deterministic order
-// detection.ActiveDefinitions already returns them (scenario-1,
-// scenario-2, scenario-3 -- alphabetical filename order, per
-// loadDefinitionsFromFS), plus the total count.
+// detection.ActiveDefinitions already returns them (scenario-1 through
+// scenario-6 -- alphabetical filename order, per loadDefinitionsFromFS),
+// plus the total count.
 type detectionsListResponse struct {
 	Detections []detectionItem `json:"detections"`
 	Total      int             `json:"total"`

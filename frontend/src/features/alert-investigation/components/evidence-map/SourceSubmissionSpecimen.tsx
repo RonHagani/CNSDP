@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import type { SourceEventInspection } from "@/features/alert-investigation/lib/artifactInspection";
+import { isCloudTrailRawEvent } from "@/types/contract";
 import { JsonTree } from "../JsonTree";
 import styles from "./evidence-map.module.css";
 
@@ -42,6 +43,17 @@ function renderHighlightedText(text: string, highlight: string | undefined) {
  * affordance reuses `JsonTree` unchanged for the complete `RawAuditEvent`
  * (UX spec §5's `annotations`/full `sourceIPs`/complete `requestObject`
  * requirement) — explicit and never auto-expanded.
+ *
+ * A CloudTrail-shaped raw event (`isCloudTrailRawEvent`, ADR-0006) takes an
+ * early, wholly separate return: its identity/request fields
+ * (`eventID`/`eventName`/`userIdentity`/`eventSource`) share no field names
+ * with `RawAuditEvent`'s (`auditID`/`verb`/`user`/`objectRef`), so reusing
+ * the Kubernetes tiers below for it would either crash (`raw.user` is
+ * undefined) or silently print `undefined` next to a field label -- exactly
+ * what this branch exists to avoid. Its raw payload is `requestParameters`,
+ * the CloudTrail analog of `requestObject`; no raw-substring marking
+ * applies here, since `rawHighlight` is only ever computed for a
+ * Kubernetes-shaped raw event (`lib/provenance.ts`).
  *
  * Verified-only raw substring marking: when the selected characteristic is
  * Verified and its exact locator is present verbatim in `requestURI`
@@ -111,6 +123,65 @@ export function SourceSubmissionSpecimen({
   }
 
   const raw = inspection.rawEvent;
+
+  if (isCloudTrailRawEvent(raw)) {
+    return (
+      <section className={`${styles.artifactShape} ${styles.specimen}`} aria-labelledby="specimen-heading">
+        <h2 id="specimen-heading" className={styles.eyebrow}>
+          Source submission
+        </h2>
+
+        <div className={styles.specimenTier1}>
+          <p className={`${styles.technical} ${styles.wrapLongValue}`}>eventID {raw.eventID}</p>
+          <p className={styles.technical}>eventName {raw.eventName}</p>
+          <p className={`${styles.technical} ${styles.wrapLongValue}`}>
+            userIdentity {raw.userIdentity.arn ?? raw.userIdentity.userName ?? raw.userIdentity.type ?? "—"}
+          </p>
+          <p className={`${styles.technical} ${styles.wrapLongValue}`}>eventSource {raw.eventSource}</p>
+          <p className={styles.technical}>errorCode {raw.errorCode || "—"}</p>
+        </div>
+
+        <div className={styles.specimenTier2}>
+          <p>{raw.eventCategory}</p>
+          <p className={styles.wrapLongValue}>eventTime {raw.eventTime}</p>
+        </div>
+
+        <div className={styles.specimenTier3}>
+          <p className={styles.eyebrow}>Raw payload</p>
+          <div className={styles.specimenRawBox} ref={rawBoxRef}>
+            <JsonTree
+              data={raw.requestParameters ?? {}}
+              linkablePaths={EMPTY_PATHS}
+              highlightedPaths={EMPTY_PATHS}
+              dimOthers={false}
+              onSelectPath={() => {}}
+            />
+          </div>
+
+          <button
+            type="button"
+            className={styles.plainButton}
+            aria-expanded={fullRecordExpanded}
+            onClick={() => setFullRecordExpanded((v) => !v)}
+          >
+            {fullRecordExpanded ? "Hide full raw record" : "View full raw record"}
+          </button>
+          {fullRecordExpanded && (
+            <div className={styles.specimenRawBox}>
+              <JsonTree
+                data={raw}
+                linkablePaths={EMPTY_PATHS}
+                highlightedPaths={EMPTY_PATHS}
+                dimOthers={false}
+                onSelectPath={() => {}}
+              />
+            </div>
+          )}
+        </div>
+      </section>
+    );
+  }
+
   const target = [raw.objectRef?.resource, raw.objectRef?.subresource].filter(Boolean).join("/");
 
   return (

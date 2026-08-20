@@ -1,5 +1,6 @@
 import type { DocketHeaderViewModel } from "@/features/alert-investigation/lib/investigationViewModel";
 import type { FindingViewModel } from "@/features/alert-investigation/lib/finding";
+import { formatOutcome } from "@/lib/outcome";
 import styles from "./evidence-map.module.css";
 
 /**
@@ -41,7 +42,7 @@ export function AlertIdentityHeader({
               {[finding.target?.resource, finding.target?.subresource].filter(Boolean).join("/") || "—"}
             </span>
             {" · outcome "}
-            <span className={styles.technical}>{finding.outcome?.code ?? "—"}</span>
+            <span className={styles.technical}>{finding.outcome ? formatOutcome(finding.outcome) : "—"}</span>
           </>
         )}
       </p>
