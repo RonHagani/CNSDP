@@ -358,6 +358,256 @@ Compose stack instead of `go test`.
    `satisfiedCharacteristics` (the fixture requests both), and
    `traceability.intact` is `true`.
 
+## AWS CloudTrail live delivery (bridge)
+
+Everything above proves the CloudTrail intake (`POST /v1/cloudtrail-events`)
+against fixture or recorded records — the endpoint itself needs no bridge
+at all. This section is optional and covers proving that same, unchanged
+endpoint against a **real** AWS account's own CloudTrail activity, via the
+external delivery bridge approved by ADR-0006
+(`docs/adr/0006-aws-cloudtrail-delivery-and-intake-topology.md`):
+CloudTrail Trail → EventBridge → SQS → `cmd/cloudtrail-bridge` →
+`POST /v1/cloudtrail-events`.
+
+**This is not part of the platform's own two-service Compose deployment**
+(ARCH-01 §7, NFR-033/034) — the bridge is a separate command you run
+yourself, against your own personal-sandbox AWS account, entirely outside
+`docker-compose.yml`.
+
+### Prerequisites
+
+- The CNSDP reference environment already running (see "Quick start"
+  above), with `POST /v1/cloudtrail-events` reachable and authenticated.
+- Go 1.26.5+ (to `go run`/build the bridge).
+- AWS CLI v2, authenticated to a **personal sandbox account** — never a
+  production or shared account (see "Cost and safety notes" below).
+- A stable IAM principal (role or user ARN) you control, to authorize the
+  bridge's dedicated IAM role.
+
+### AWS login, profile, and role setup
+
+1. Authenticate with your own AWS identity, e.g. AWS SSO:
+
+   ```powershell
+   aws configure sso
+   aws sso login --profile <your-sso-profile>
+   ```
+
+2. Determine the **stable** IAM ARN behind that identity — not the
+   ephemeral session ARN `aws sts get-caller-identity` reports while
+   logged in (shape `arn:aws:sts::<account-id>:assumed-role/...`, which
+   changes on every login and cannot be used as a durable IAM trust
+   principal). For an SSO permission set:
+
+   ```powershell
+   aws iam list-roles --query "Roles[?contains(RoleName,'<permission-set-name>')].Arn" --output text
+   ```
+
+3. Run the provisioning script (below) with that stable ARN as
+   `-OperatorPrincipalArn`.
+
+4. After it prints `cnsdp-cloudtrail-bridge-role`'s ARN, add a profile to
+   `~/.aws/config` that assumes it:
+
+   ```ini
+   [profile cnsdp-cloudtrail-bridge]
+   role_arn = arn:aws:iam::<account-id>:role/cnsdp-cloudtrail-bridge-role
+   source_profile = <your-sso-profile>
+   ```
+
+No static AWS access key is created or used anywhere in this default
+path — the bridge calls only the AWS SDK's standard credential chain and
+never reads, holds, or logs an access key or session token itself (see
+`cmd/cloudtrail-bridge/.env.example`). A static-key fallback is
+deliberately out of scope for this slice.
+
+### Provisioning command
+
+```powershell
+./scripts/provision-cloudtrail-bridge.ps1 -OperatorPrincipalArn arn:aws:iam::<account-id>:role/<your-role-name>
+```
+
+Safe to re-run — every resource is created only if missing, and every
+policy/attribute is re-applied idempotently. Creates: an S3 bucket (+
+public-access block + the CloudTrail-required bucket policy), a
+single-region `us-east-1` trail (write-only management events, global
+service events included), an EventBridge rule, an SQS main queue + DLQ,
+and `cnsdp-cloudtrail-bridge-role`. Prints the non-secret values needed
+below. It never prints or creates `CNSDP_API_TOKEN` — get that from this
+repository's own root `.env`.
+
+### Bridge configuration
+
+```powershell
+Copy-Item cmd/cloudtrail-bridge/.env.example cmd/cloudtrail-bridge/.env
+```
+
+Fill in (or export in your shell instead of writing to the file):
+`AWS_PROFILE` (the profile from step 4 above), `AWS_REGION=us-east-1`,
+`SQS_QUEUE_URL` (the provisioning script's output), `CNSDP_ENDPOINT`
+(your running CNSDP's `/v1/cloudtrail-events` URL), and
+`CNSDP_API_TOKEN` (copied from the platform's own `.env` — never a newly
+invented value).
+
+### Starting CNSDP
+
+Already covered above ("Starting the stack") — confirm
+`docker compose ps` shows both services `Up (healthy)` before starting
+the bridge.
+
+### Starting the bridge
+
+```powershell
+$env:AWS_REGION = "us-east-1"
+$env:AWS_PROFILE = "cnsdp-cloudtrail-bridge"
+$env:SQS_QUEUE_URL = "<from provisioning output>"
+$env:CNSDP_ENDPOINT = "http://127.0.0.1:8080/v1/cloudtrail-events"
+$env:CNSDP_API_TOKEN = "<API_TOKEN from .env>"
+go run ./cmd/cloudtrail-bridge
+```
+
+Expected startup log: a `cloudtrail-bridge starting` line naming the
+region, queue URL, resolved queue ARN, and endpoint, followed by a
+long-poll loop with no further output until a message arrives. Leave it
+running in this terminal for the demo below. Stop it with Ctrl+C
+(SIGINT) — it shuts down gracefully, leaving any in-flight message
+untouched (safely redeliverable later).
+
+### Scenario 5 (CreateAccessKey) live demo
+
+Scenario 5 is the safest live trigger: purely additive (issues one new
+credential on a disposable, policy-less user), weakens no existing
+security control, and is completely and trivially reversible.
+
+1. Create a disposable IAM user:
+
+   ```powershell
+   aws iam create-user --user-name cnsdp-demo-user
+   ```
+
+2. Trigger the scenario:
+
+   ```powershell
+   aws iam create-access-key --user-name cnsdp-demo-user
+   ```
+
+3. Watch the bridge's terminal for an `admitted` log line, then check
+   CNSDP:
+
+   ```powershell
+   curl -s http://127.0.0.1:8080/v1/alerts -H "Authorization: Bearer $env:API_TOKEN"
+   ```
+
+   Expect one new alert whose `detectionName` is "New IAM access key
+   created". Fetch it in full and verify the evidence:
+
+   ```powershell
+   curl -s http://127.0.0.1:8080/v1/alerts/<id> -H "Authorization: Bearer $env:API_TOKEN"
+   ```
+
+   Check: `detectionResult.matchReason.scenario` is `"scenario-5"`,
+   `satisfiedCharacteristics` includes `access_key_created`,
+   `sourceEvent.available` is `true` (the real CloudTrail record),
+   and `traceability.intact` is `true`.
+
+   CloudTrail itself never includes the created key's `secretAccessKey`
+   value in a `CreateAccessKey` event's `responseElements` — only the
+   access key ID and status. Neither this bridge nor CNSDP performs any
+   redaction of its own: the record is forwarded and persisted exactly
+   as CloudTrail delivered it, so this demo is safe only because
+   CloudTrail never puts secret key material in the record in the first
+   place, not because of anything CNSDP does with it.
+
+   Typical observed latency (API call to visible alert) is on the order
+   of one to a few minutes in normal operation — dominated by
+   CloudTrail's own delivery step, not by CNSDP or the bridge (see
+   "Delivery and reliability limitations" below). To tell a delivery
+   failure from a detection failure: check whether the SQS queue ever
+   received a message at all (AWS Console or `aws sqs
+   get-queue-attributes --attribute-names ApproximateNumberOfMessages`);
+   if it did, check the bridge's own log for a POST outcome; if that was
+   `200`, check `GET /v1/submissions` for the admitted record's
+   validation outcome.
+
+### Immediate cleanup
+
+Delete the access key right away — do not leave a live credential
+sitting unused, even on a policy-less user:
+
+```powershell
+aws iam delete-access-key --user-name cnsdp-demo-user --access-key-id <id-from-step-2>
+aws iam delete-user --user-name cnsdp-demo-user   # optional, if not repeating the demo
+```
+
+### Teardown
+
+When done testing AWS delivery entirely:
+
+```powershell
+./scripts/teardown-cloudtrail-bridge.ps1
+```
+
+Removes every resource provisioning created, tolerating already-missing
+resources, in dependency-safe order (EventBridge target before rule,
+trail stopped before deleted, then queues, then the IAM role, then
+bucket objects before the bucket). Never touches anything outside the
+`cnsdp-cloudtrail-bridge-*` naming prefix.
+
+### Delivery and reliability limitations
+
+Read before relying on this path for anything beyond a demonstration:
+
+- **CloudTrail's delivery of events to EventBridge is documented by AWS
+  as best-effort, not durable.** In rare cases a real API call's event
+  may simply never reach EventBridge at all — nothing on the CNSDP or
+  bridge side can detect that gap; there is no sequence number or count
+  exposed anywhere in this pipeline that would reveal a missing event.
+- **SQS's own durability and retry guarantees begin only once an event
+  has reached the queue.** From there, standard SQS at-least-once
+  delivery applies, and the bridge's own retry/backoff/DLQ behavior
+  (documented in `cmd/cloudtrail-bridge`'s own source comments) governs
+  delivery to CNSDP.
+- **The SQS DLQ is a durability and inspection boundary, not a
+  malformed-event quarantine.** The main queue's redrive policy moves a
+  message to the DLQ once it has been received `maxReceiveCount=50`
+  times without being deleted — that can happen to a perfectly valid
+  CloudTrail event, not just a bad one, if CNSDP or the network path to
+  it is down or rejecting requests for long enough. 50 was chosen to
+  deliberately tolerate a substantially longer transient outage than
+  this project's original value of 5. It does not make delivery
+  lossless: after any sustained outage, check the DLQ's
+  `ApproximateNumberOfMessagesVisible` (`aws sqs get-queue-attributes
+  --queue-url <dlq-url> --attribute-names
+  ApproximateNumberOfMessagesVisible`) and, if it is nonzero, inspect
+  and explicitly redrive or otherwise reprocess those messages by hand —
+  nothing in this slice does so automatically.
+- **CNSDP is idempotent for redelivery, keyed by the CloudTrail record's
+  own `eventID`.** A record delivered more than once — SQS redelivery,
+  or a bridge restart reprocessing an undeleted message — is safely
+  deduplicated into exactly one submission, never a duplicate alert.
+- **This demo proves a real, successful delivery path end to end** — a
+  genuine AWS API call, through to a CNSDP alert with intact evidence
+  and traceability. **It does not prove exactly-once or lossless
+  delivery**, a formal latency SLA (AWS publishes none for the
+  CloudTrail→EventBridge hop), or behavior under sustained volume or an
+  extended AWS-side outage.
+
+### Cost and safety notes
+
+- Expected incremental cost on a personal sandbox account: near zero.
+  The first copy of management events delivered to one trail carries no
+  CloudTrail service charge (only negligible S3 storage for the log
+  files, which this slice never reads); AWS-service-sourced EventBridge
+  events are not billed as custom events; this demo's SQS volume is well
+  within the standing free tier.
+- What could unexpectedly cost more: configuring the trail for
+  read+write instead of write-only management events, a multi-region
+  trail, or data-event logging — the provisioning script does none of
+  these.
+- Recommended safeguards: an AWS Budget alert at a low threshold; a
+  personal sandbox account only, never production or shared; never
+  root-account credentials for any part of this.
+
 ## Stopping and resetting
 
 **Routine stop (preserves data).** Use this at the end of a normal
